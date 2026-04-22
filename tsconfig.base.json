@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@platform/ai-core": ["packages/ai-core/src"],
+      "@platform/config": ["packages/config/src"],
+      "@platform/database": ["packages/database/src"],
+      "@platform/logging": ["packages/logging/src"],
+      "@platform/tenant-core": ["packages/tenant-core/src"],
+      "@platform/types": ["packages/types/src"],
+      "@platform/utils": ["packages/utils/src"]
+    }
+  }
+}

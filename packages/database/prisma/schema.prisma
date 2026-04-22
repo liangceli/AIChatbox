@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ConversationStatus {
+  OPEN
+  AWAITING_CUSTOMER
+  AWAITING_AGENT
+  PENDING_HUMAN
+  RESOLVED
+  CLOSED
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum ConversationChannel {
+  WIDGET
+  EMAIL
+  PHONE
+  API
+}
+
+enum MessageAuthor {
+  CUSTOMER
+  ASSISTANT
+  AGENT
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  SYSTEM_EVENT
+  HANDOFF_EVENT
+  INTERNAL_NOTE
+}
+
+enum KnowledgeDocumentStatus {
+  DRAFT
+  INDEXING
+  READY
+  FAILED
+  ARCHIVED
+}
+
+enum KnowledgeDocumentSourceType {
+  FILE
+  URL
+  MANUAL
+  INTEGRATION
+}
+
+model Tenant {
+  id              String           @id @default(cuid())
+  slug            String           @unique
+  name            String
+  status          TenantStatus     @default(ACTIVE)
+  defaultLocale   String?
+  branding        Json?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  roles           Role[]
+  customers       Customer[]
+  conversations   Conversation[]
+  messages        Message[]
+  knowledgeBases  KnowledgeBase[]
+  knowledgeDocs   KnowledgeDocument[]
+  knowledgeChunks KnowledgeChunk[]
+  agentConfig     AgentConfig?
+}
+
+model User {
+  id                    String          @id @default(cuid())
+  email                 String          @unique
+  name                  String?
+  isPlatformAdmin       Boolean         @default(false)
+  metadata              Json?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  roles                 Role[]
+  assignedConversations Conversation[]  @relation("AssignedConversations")
+  authoredMessages      Message[]       @relation("AuthoredMessages")
+}
+
+/// Tenant-scoped user membership with a role label.
+/// This remains intentionally lightweight and is not a full RBAC design.
+model Role {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, userId])
+  @@index([tenantId, name])
+}
+
+model Customer {
+  id             String         @id @default(cuid())
+  tenantId       String
+  externalId     String?
+  email          String?
+  name           String?
+  metadata       Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  tenant         Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations  Conversation[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, externalId])
+  @@index([tenantId, email])
+}
+
+model Conversation {
+  id                  String              @id @default(cuid())
+  tenantId            String
+  customerId          String
+  assignedUserId      String?
+  channel             ConversationChannel @default(WIDGET)
+  status              ConversationStatus  @default(OPEN)
+  subject             String?
+  handoffRequestedAt  DateTime?
+  handoffReason       String?
+  lastMessageAt       DateTime?
+  metadata            Json?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer            Customer            @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  assignedUser        User?               @relation("AssignedConversations", fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages            Message[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status, updatedAt])
+  @@index([tenantId, customerId])
+}
+
+model Message {
+  id              String         @id @default(cuid())
+  tenantId        String
+  conversationId  String
+  authorUserId    String?
+  authorType      MessageAuthor
+  messageType     MessageType    @default(TEXT)
+  content         String
+  citations       Json?
+  payload         Json?
+  metadata        Json?
+  createdAt       DateTime       @default(now())
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation    Conversation   @relation(fields: [conversationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  authorUser      User?          @relation("AuthoredMessages", fields: [authorUserId], references: [id], onDelete: SetNull)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, conversationId, createdAt])
+  @@index([tenantId, authorUserId, createdAt])
+  @@index([tenantId, messageType, createdAt])
+}
+
+model KnowledgeBase {
+  id            String              @id @default(cuid())
+  tenantId      String
+  slug          String
+  name          String
+  description   String?
+  metadata      Json?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  tenant        Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  documents     KnowledgeDocument[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, slug])
+  @@index([tenantId, name])
+}
+
+model KnowledgeDocument {
+  id                String                      @id @default(cuid())
+  tenantId          String
+  knowledgeBaseId   String
+  title             String
+  sourceType        KnowledgeDocumentSourceType
+  sourceUri         String?
+  checksum          String?
+  storageKey        String?
+  status            KnowledgeDocumentStatus    @default(DRAFT)
+  chunkCount        Int                        @default(0)
+  metadata          Json?
+  ingestedAt        DateTime?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  tenant            Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  knowledgeBase     KnowledgeBase              @relation(fields: [knowledgeBaseId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  chunks            KnowledgeChunk[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@index([knowledgeBaseId])
+}
+
+model KnowledgeChunk {
+  id                   String              @id @default(cuid())
+  tenantId             String
+  knowledgeDocumentId  String
+  chunkIndex           Int
+  content              String
+  tokenCount           Int?
+  sourceLocator        Json?
+  metadata             Json?
+  createdAt            DateTime            @default(now())
+  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  knowledgeDocument    KnowledgeDocument   @relation(fields: [knowledgeDocumentId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, knowledgeDocumentId, chunkIndex])
+  @@index([tenantId, knowledgeDocumentId])
+}
+
+model AgentConfig {
+  id                 String    @id @default(cuid())
+  tenantId           String    @unique
+  displayName        String
+  systemPrompt       String?
+  welcomeMessage     String?
+  fallbackMessage    String?
+  handoffEnabled     Boolean   @default(true)
+  escalationRules    Json?
+  retrievalSettings  Json?
+  widgetSettings     Json?
+  metadata           Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([id, tenantId])
+}
