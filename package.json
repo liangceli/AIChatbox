@@ -12,6 +12,7 @@
     "clean": "turbo run clean",
     "db:generate": "pnpm --filter @platform/database prisma:generate",
     "db:migrate:dev": "pnpm --filter @platform/database prisma:migrate:dev",
+    "db:seed": "pnpm --filter @platform/database prisma:seed",
     "db:studio": "pnpm --filter @platform/database prisma:studio"
   },
   "devDependencies": {

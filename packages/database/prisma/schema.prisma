@@ -121,6 +121,7 @@ model Customer {
   conversations  Conversation[]
 
   @@unique([id, tenantId])
+  @@unique([tenantId, externalId])
   @@index([tenantId, externalId])
   @@index([tenantId, email])
 }

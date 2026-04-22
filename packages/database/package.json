@@ -11,7 +11,8 @@
     }
   },
   "prisma": {
-    "schema": "prisma/schema.prisma"
+    "schema": "prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -19,16 +20,19 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node -e \"console.log('No tests configured for database yet')\"",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:generate": "dotenv -e ../../.env -- prisma generate",
+    "prisma:migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
+    "prisma:studio": "dotenv -e ../../.env -- prisma studio",
+    "prisma:seed": "dotenv -e ../../.env -- prisma db seed"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "dotenv-cli": "^8.0.0",
     "prisma": "^5.18.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.5.4"
   }
 }

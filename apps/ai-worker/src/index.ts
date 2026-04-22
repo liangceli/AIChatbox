@@ -1,3 +1,4 @@
+import "./load-env";
 import { loadServerEnv } from "@platform/config";
 import { createLogger } from "@platform/logging";
 

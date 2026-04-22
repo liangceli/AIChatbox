@@ -1,3 +1,5 @@
+import { LocalChatDemo } from "./components/local-chat-demo";
+
 const surfaceAreas = [
   "Tenant configuration and branding",
   "Agent prompts and escalation policy",
@@ -6,6 +8,9 @@ const surfaceAreas = [
 ];
 
 export default function HomePage() {
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000/v1";
+  const tenantSlug = process.env.NEXT_PUBLIC_DEFAULT_TENANT_SLUG ?? "kasta";
+
   return (
     <main className="page-shell">
       <section className="hero-card">
@@ -33,6 +38,11 @@ export default function HomePage() {
               <li key={item}>{item}</li>
             ))}
           </ul>
+        </article>
+
+        <article className="panel">
+          <h2>Live local test</h2>
+          <LocalChatDemo apiBaseUrl={apiBaseUrl} tenantSlug={tenantSlug} />
         </article>
       </section>
     </main>

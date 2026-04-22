@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { z } from "zod";
 
 export const serverEnvSchema = z.object({
@@ -15,6 +18,19 @@ export const serverEnvSchema = z.object({
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
+
+export function loadWorkspaceEnv(cwd = process.cwd()): void {
+  const candidates = [resolve(cwd, ".env"), resolve(cwd, "../../.env")];
+
+  for (const path of candidates) {
+    if (existsSync(path)) {
+      dotenv.config({
+        path,
+        override: false
+      });
+    }
+  }
+}
 
 export function loadServerEnv(source: Record<string, string | undefined>): ServerEnv {
   return serverEnvSchema.parse(source);
