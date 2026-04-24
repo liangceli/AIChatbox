@@ -111,6 +111,7 @@ model Role {
 model Customer {
   id             String         @id @default(cuid())
   tenantId       String
+  visitorId      String?
   externalId     String?
   email          String?
   name           String?
@@ -121,7 +122,9 @@ model Customer {
   conversations  Conversation[]
 
   @@unique([id, tenantId])
+  @@unique([tenantId, visitorId])
   @@unique([tenantId, externalId])
+  @@index([tenantId, visitorId])
   @@index([tenantId, externalId])
   @@index([tenantId, email])
 }

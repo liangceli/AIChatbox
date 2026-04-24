@@ -18,7 +18,7 @@ async function bootstrap() {
       whitelist: true
     })
   );
-  app.use(["/v1/chat", "/v1/conversations"], createTenantResolutionMiddleware(prisma));
+  app.use(["/v1/chat", "/v1/conversations", "/v1/knowledge-bases"], createTenantResolutionMiddleware(prisma));
 
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen(port);

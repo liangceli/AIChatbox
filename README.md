@@ -57,10 +57,10 @@ If you already run PostgreSQL or Redis locally, point `.env` at those services i
 corepack pnpm db:generate
 ```
 
-5. Apply the initial migration:
+5. Apply the migrations:
 
 ```bash
-corepack pnpm db:migrate:dev -- --name init_minimal_chat_workflow
+corepack pnpm db:migrate:dev -- --name knowledge_loop
 ```
 
 6. Seed local data:
@@ -98,20 +98,55 @@ The seed creates tenant-scoped demo data only:
 
 This keeps Kasta-specific data isolated to development seed data, not platform core.
 
-## Minimal Chat Flow
+## First Knowledge Loop
+
+The first knowledge loop is intentionally simple and synchronous:
+
+- knowledge documents are created from manual pasted text
+- ingestion stores the raw content on the `KnowledgeDocument`
+- chunking is deterministic, size-based, and runs during document creation
+- retrieval is tenant-scoped keyword scoring over `KnowledgeChunk.content`
+- assistant replies use retrieved chunks when available
+- citations are stored directly on `Message.citations`
+
+This is not a full vector or embedding pipeline yet. It is a minimal closed loop that proves tenant-aware ingestion, retrieval, grounded reply generation, and citation persistence.
+
+## Minimal Chat + Knowledge Flow
 
 1. Start the workspace with `corepack pnpm dev`
 2. Open `http://localhost:3000`
-3. Use the "Live local test" panel to send a message against the API
+3. Use the "Knowledge loop" panel to confirm the default knowledge base exists
+4. Create a manual document with known content, for example:
+   `Returns policy: Kasta allows returns within 30 days with the original receipt.`
+5. Confirm the document shows `status: ready` and a non-zero chunk count
+6. Use the "Live local test" panel to ask a matching question, such as:
+   `What is the returns policy?`
+7. Verify the assistant response includes grounded content and the cited document title
 4. Verify the API health endpoint at `http://localhost:4000/v1/health`
 
 You can also test the backend directly:
+
+Create a knowledge document in the seeded default knowledge base:
+
+```bash
+curl -X GET http://localhost:4000/v1/knowledge-bases \
+  -H "x-tenant-slug: kasta"
+```
+
+```bash
+curl -X POST http://localhost:4000/v1/knowledge-bases/<knowledge-base-id>/documents \
+  -H "Content-Type: application/json" \
+  -H "x-tenant-slug: kasta" \
+  -d "{\"title\":\"Returns Policy\",\"content\":\"Kasta allows returns within 30 days with the original receipt.\",\"sourceType\":\"manual\"}"
+```
+
+Then ask a knowledge-grounded question:
 
 ```bash
 curl -X POST http://localhost:4000/v1/chat/messages \
   -H "Content-Type: application/json" \
   -H "x-tenant-slug: kasta" \
-  -d "{\"message\":\"Hello\",\"visitorId\":\"local-test-visitor\"}"
+  -d "{\"message\":\"What is the returns policy?\",\"visitorId\":\"local-test-visitor\"}"
 ```
 
 Then fetch the conversation:
@@ -121,12 +156,20 @@ curl http://localhost:4000/v1/conversations/<conversation-id> \
   -H "x-tenant-slug: kasta"
 ```
 
-And list its messages:
+And list its messages, including persisted citations on the assistant message:
 
 ```bash
 curl http://localhost:4000/v1/conversations/<conversation-id>/messages \
   -H "x-tenant-slug: kasta"
 ```
+
+## Knowledge API
+
+- `GET /v1/knowledge-bases`
+- `POST /v1/knowledge-bases`
+- `GET /v1/knowledge-bases/:knowledgeBaseId`
+- `GET /v1/knowledge-bases/:knowledgeBaseId/documents`
+- `POST /v1/knowledge-bases/:knowledgeBaseId/documents`
 
 ## Multi-Tenant Intent
 

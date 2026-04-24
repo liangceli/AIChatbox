@@ -1,10 +1,11 @@
 import type { CSSProperties, FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   ChatMessageRecord,
   SendChatMessageResponse,
   WidgetBootstrapOptions
 } from "@platform/types";
+import { persistAnonymousVisitorId, resolveAnonymousVisitorId } from "@platform/utils";
 
 const shellStyle: CSSProperties = {
   width: 360,
@@ -68,21 +69,12 @@ const messageListStyle: CSSProperties = {
   gap: 10
 };
 
-function createVisitorId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-
-  return `visitor-${Date.now()}`;
-}
-
 export function CustomerWidget({
   tenantSlug,
   apiBaseUrl,
   visitorId: initialVisitorId,
   theme
 }: WidgetBootstrapOptions) {
-  const storageKey = useMemo(() => `customer-widget:${tenantSlug}:visitor-id`, [tenantSlug]);
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [draft, setDraft] = useState("");
   const [conversationId, setConversationId] = useState<string>();
@@ -91,28 +83,18 @@ export function CustomerWidget({
   const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
-    if (initialVisitorId) {
-      setVisitorId(initialVisitorId);
-      return;
-    }
-
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const storedVisitorId = window.localStorage.getItem(storageKey);
-    const nextVisitorId = storedVisitorId ?? createVisitorId();
-
-    window.localStorage.setItem(storageKey, nextVisitorId);
-    setVisitorId(nextVisitorId);
-  }, [initialVisitorId, storageKey]);
+    setVisitorId(resolveAnonymousVisitorId(tenantSlug, initialVisitorId) ?? "");
+    setConversationId(undefined);
+    setMessages([]);
+    setError(undefined);
+  }, [initialVisitorId, tenantSlug]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const message = draft.trim();
 
-    if (!message || isSending) {
+    if (!message || isSending || !visitorId) {
       return;
     }
 
@@ -140,12 +122,8 @@ export function CustomerWidget({
       const payload = (await response.json()) as SendChatMessageResponse;
       setConversationId(payload.conversation.id);
       setMessages(payload.messages);
-      setVisitorId(payload.visitorId);
+      setVisitorId(persistAnonymousVisitorId(tenantSlug, payload.visitorId));
       setDraft("");
-
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(storageKey, payload.visitorId);
-      }
     } catch (submissionError: unknown) {
       setError(submissionError instanceof Error ? submissionError.message : "Unable to send message.");
     } finally {
@@ -184,6 +162,14 @@ export function CustomerWidget({
                 {message.authorType === "customer" ? "You" : "Assistant"}
               </strong>
               <div>{message.content}</div>
+              {message.citations?.length ? (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}>
+                  Sources:{" "}
+                  {message.citations
+                    .map((citation) => `${citation.title} (chunk ${citation.chunkIndex})`)
+                    .join(", ")}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -197,7 +183,7 @@ export function CustomerWidget({
             onChange={(event) => setDraft(event.target.value)}
           />
 
-          <button type="submit" style={buttonStyle} disabled={isSending}>
+          <button type="submit" style={buttonStyle} disabled={isSending || !visitorId}>
             {isSending ? "Sending..." : "Send message"}
           </button>
         </form>

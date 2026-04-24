@@ -8,11 +8,13 @@ export interface ChatTurn {
 }
 
 export interface RetrievedChunk {
-  documentId: string;
+  knowledgeDocumentId: string;
+  chunkId: string;
   title: string;
   content: string;
+  chunkIndex: number;
   score: number;
-  sourceUrl?: string;
+  sourceUri?: string;
 }
 
 export interface AssistantResponse {
@@ -29,9 +31,11 @@ export interface AiRuntimeContext {
 
 export function buildCitations(chunks: RetrievedChunk[]): Citation[] {
   return chunks.map((chunk) => ({
-    documentId: chunk.documentId,
+    knowledgeDocumentId: chunk.knowledgeDocumentId,
+    chunkId: chunk.chunkId,
     title: chunk.title,
-    url: chunk.sourceUrl,
+    chunkIndex: chunk.chunkIndex,
+    sourceUri: chunk.sourceUri,
     excerpt: chunk.content.slice(0, 240)
   }));
 }

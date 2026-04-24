@@ -6,7 +6,7 @@ import type {
   MessageAuthor,
   MessageType
 } from "@platform/database";
-import type { ChatMessageRecord, ConversationSummary } from "@platform/types";
+import type { ChatMessageRecord, Citation, ConversationSummary } from "@platform/types";
 
 function mapAuthorType(authorType: MessageAuthor): ChatMessageRecord["authorType"] {
   return authorType.toLowerCase() as ChatMessageRecord["authorType"];
@@ -22,6 +22,42 @@ function mapChannel(channel: ConversationChannel): ConversationSummary["channel"
 
 function mapStatus(status: ConversationStatus): ConversationSummary["status"] {
   return status.toLowerCase();
+}
+
+function mapCitations(citations: Message["citations"]): Citation[] | null {
+  if (!Array.isArray(citations)) {
+    return null;
+  }
+
+  const mapped = citations.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return [];
+    }
+
+    const citation = value as Record<string, unknown>;
+
+    if (
+      typeof citation.knowledgeDocumentId !== "string" ||
+      typeof citation.chunkId !== "string" ||
+      typeof citation.title !== "string" ||
+      typeof citation.chunkIndex !== "number"
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        knowledgeDocumentId: citation.knowledgeDocumentId,
+        chunkId: citation.chunkId,
+        title: citation.title,
+        chunkIndex: citation.chunkIndex,
+        sourceUri: typeof citation.sourceUri === "string" ? citation.sourceUri : null,
+        excerpt: typeof citation.excerpt === "string" ? citation.excerpt : undefined
+      }
+    ];
+  });
+
+  return mapped.length > 0 ? mapped : null;
 }
 
 export function toConversationSummary(conversation: Conversation): ConversationSummary {
@@ -43,6 +79,7 @@ export function toChatMessageRecord(message: Message): ChatMessageRecord {
     messageType: mapMessageType(message.messageType),
     content: message.content,
     createdAt: message.createdAt.toISOString(),
-    authorUserId: message.authorUserId ?? null
+    authorUserId: message.authorUserId ?? null,
+    citations: mapCitations(message.citations)
   };
 }

@@ -13,6 +13,11 @@ export function createTenantResolutionMiddleware(prisma: PrismaClient) {
     next: NextFunction
   ) {
     try {
+      if (request.method === "OPTIONS") {
+        next();
+        return;
+      }
+
       const headerValue = request.headers[TENANT_HEADER_NAME];
       const tenantSlug = Array.isArray(headerValue) ? headerValue[0] : headerValue;
 

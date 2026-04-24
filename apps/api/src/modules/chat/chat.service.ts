@@ -2,13 +2,15 @@ import {
   ConversationChannel,
   ConversationStatus,
   MessageAuthor,
-  MessageType
+  MessageType,
+  Prisma
 } from "@platform/database";
 import type { SendChatMessageResponse } from "@platform/types";
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
+import { KnowledgeRetrievalService } from "../knowledge/knowledge-retrieval.service";
 import type { SendChatMessageDto } from "./dto/send-chat-message.dto";
 import { toChatMessageRecord, toConversationSummary } from "./chat.presenter";
 import { AssistantReplyService } from "./assistant-reply.service";
@@ -17,6 +19,8 @@ import { AssistantReplyService } from "./assistant-reply.service";
 export class ChatService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(KnowledgeRetrievalService)
+    private readonly knowledgeRetrievalService: KnowledgeRetrievalService,
     @Inject(AssistantReplyService)
     private readonly assistantReplyService: AssistantReplyService
   ) {}
@@ -28,16 +32,22 @@ export class ChatService {
       throw new BadRequestException("Message content cannot be empty.");
     }
 
+    const retrievedChunks = await this.knowledgeRetrievalService.retrieveRelevantChunks(
+      tenant,
+      normalizedMessage
+    );
+
     return this.prisma.client.$transaction(async (tx) => {
       const visitorId = input.visitorId?.trim() || randomUUID();
       const customer = await tx.customer.upsert({
         where: {
-          tenantId_externalId: {
+          tenantId_visitorId: {
             tenantId: tenant.id,
-            externalId: visitorId
+            visitorId
           }
         },
         update: {
+          visitorId,
           metadata: {
             visitorId,
             anonymous: true
@@ -45,6 +55,7 @@ export class ChatService {
         },
         create: {
           tenantId: tenant.id,
+          visitorId,
           externalId: visitorId,
           metadata: {
             visitorId,
@@ -99,7 +110,8 @@ export class ChatService {
         displayName: agentConfig?.displayName ?? `${tenant.name} Assistant`,
         welcomeMessage: agentConfig?.welcomeMessage,
         fallbackMessage: agentConfig?.fallbackMessage,
-        userMessage: customerMessage.content
+        userMessage: customerMessage.content,
+        retrievedChunks
       });
 
       const assistantMessage = await tx.message.create({
@@ -108,7 +120,10 @@ export class ChatService {
           conversationId: conversation.id,
           authorType: MessageAuthor.ASSISTANT,
           messageType: MessageType.TEXT,
-          content: assistantReply
+          content: assistantReply.content,
+          citations: assistantReply.citations
+            ? (assistantReply.citations as unknown as Prisma.InputJsonValue)
+            : undefined
         }
       });
 

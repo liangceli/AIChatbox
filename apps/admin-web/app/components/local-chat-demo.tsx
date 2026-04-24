@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChatMessageRecord, SendChatMessageResponse } from "@platform/types";
+import { persistAnonymousVisitorId, resolveAnonymousVisitorId } from "@platform/utils";
 
 const shellStyle = {
   display: "grid",
@@ -21,14 +22,6 @@ const customerMessageStyle = {
   color: "#fffaf6"
 } as const;
 
-function createVisitorId() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-
-  return `visitor-${Date.now()}`;
-}
-
 export function LocalChatDemo({
   apiBaseUrl,
   tenantSlug
@@ -36,17 +29,24 @@ export function LocalChatDemo({
   apiBaseUrl: string;
   tenantSlug: string;
 }) {
-  const visitorId = useMemo(() => createVisitorId(), []);
+  const [visitorId, setVisitorId] = useState<string>();
   const [messages, setMessages] = useState<ChatMessageRecord[]>([]);
   const [draft, setDraft] = useState("");
   const [conversationId, setConversationId] = useState<string>();
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string>();
 
+  useEffect(() => {
+    setVisitorId(resolveAnonymousVisitorId(tenantSlug) ?? undefined);
+    setConversationId(undefined);
+    setMessages([]);
+    setError(undefined);
+  }, [tenantSlug]);
+
   async function sendMessage() {
     const message = draft.trim();
 
-    if (!message || isSending) {
+    if (!message || isSending || !visitorId) {
       return;
     }
 
@@ -74,6 +74,7 @@ export function LocalChatDemo({
       const payload = (await response.json()) as SendChatMessageResponse;
       setMessages(payload.messages);
       setConversationId(payload.conversation.id);
+      setVisitorId(persistAnonymousVisitorId(tenantSlug, payload.visitorId));
       setDraft("");
     } catch (requestError: unknown) {
       setError(requestError instanceof Error ? requestError.message : "Unable to send message.");
@@ -87,7 +88,7 @@ export function LocalChatDemo({
       <div>
         <strong>Local chat demo</strong>
         <div style={{ color: "#6e5f53", fontSize: "0.95rem", marginTop: 6 }}>
-          Tenant header: {tenantSlug} | Visitor: {visitorId}
+          Tenant header: {tenantSlug} | Visitor: {visitorId ?? "initializing..."}
         </div>
       </div>
 
@@ -105,6 +106,14 @@ export function LocalChatDemo({
               {message.authorType === "customer" ? "You" : "Assistant"}
             </strong>
             <div>{message.content}</div>
+            {message.citations?.length ? (
+              <div style={{ marginTop: 6, fontSize: "0.9rem", color: "#6e5f53" }}>
+                Sources:{" "}
+                {message.citations
+                  .map((citation) => `${citation.title} (chunk ${citation.chunkIndex})`)
+                  .join(", ")}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -125,7 +134,7 @@ export function LocalChatDemo({
       <button
         type="button"
         onClick={sendMessage}
-        disabled={isSending}
+        disabled={isSending || !visitorId}
         style={{
           alignSelf: "start",
           border: 0,

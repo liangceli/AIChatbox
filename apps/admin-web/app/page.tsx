@@ -1,3 +1,4 @@
+import { KnowledgeBasePanel } from "./components/knowledge-base-panel";
 import { LocalChatDemo } from "./components/local-chat-demo";
 
 const surfaceAreas = [
@@ -43,6 +44,11 @@ export default function HomePage() {
         <article className="panel">
           <h2>Live local test</h2>
           <LocalChatDemo apiBaseUrl={apiBaseUrl} tenantSlug={tenantSlug} />
+        </article>
+
+        <article className="panel">
+          <h2>Knowledge loop</h2>
+          <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={tenantSlug} />
         </article>
       </section>
     </main>

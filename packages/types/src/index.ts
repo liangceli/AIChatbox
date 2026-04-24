@@ -18,10 +18,35 @@ export interface TenantBranding {
 }
 
 export interface Citation {
-  documentId: string;
+  knowledgeDocumentId: string;
+  chunkId: string;
   title: string;
-  url?: string;
+  chunkIndex: number;
+  sourceUri?: string | null;
   excerpt?: string;
+}
+
+export interface KnowledgeBaseRecord {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  documentCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeDocumentRecord {
+  id: string;
+  knowledgeBaseId: string;
+  title: string;
+  status: string;
+  sourceType: string;
+  sourceUri?: string | null;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+  ingestedAt?: string | null;
 }
 
 export interface WidgetTheme {
@@ -53,6 +78,7 @@ export interface ChatMessageRecord {
   content: string;
   createdAt: string;
   authorUserId?: string | null;
+  citations?: Citation[] | null;
 }
 
 export interface SendChatMessageRequest {
@@ -68,4 +94,18 @@ export interface SendChatMessageResponse {
   customerMessage: ChatMessageRecord;
   assistantMessage: ChatMessageRecord;
   messages: ChatMessageRecord[];
+}
+
+export interface CreateKnowledgeBaseRequest {
+  name: string;
+  slug?: string;
+  description?: string;
+}
+
+export interface CreateKnowledgeDocumentRequest {
+  title: string;
+  content: string;
+  sourceType?: "manual" | "file" | "url" | "integration";
+  sourceUri?: string;
+  metadata?: JsonObject;
 }
