@@ -78,7 +78,34 @@ export interface ChatMessageRecord {
   content: string;
   createdAt: string;
   authorUserId?: string | null;
+  authorName?: string | null;
   citations?: Citation[] | null;
+}
+
+export interface ConversationCustomerRecord {
+  id: string;
+  visitorId?: string | null;
+  email?: string | null;
+  name?: string | null;
+}
+
+export interface SupportUserRecord {
+  id: string;
+  email: string;
+  name?: string | null;
+  roleName?: string | null;
+}
+
+export interface ConversationListItem extends ConversationSummary {
+  customer: ConversationCustomerRecord;
+  assignedUser?: SupportUserRecord | null;
+  handoffRequestedAt?: string | null;
+  handoffReason?: string | null;
+  isHandoffPending: boolean;
+}
+
+export interface ConversationDetail extends ConversationListItem {
+  messages: ChatMessageRecord[];
 }
 
 export interface SendChatMessageRequest {
@@ -108,4 +135,18 @@ export interface CreateKnowledgeDocumentRequest {
   sourceType?: "manual" | "file" | "url" | "integration";
   sourceUri?: string;
   metadata?: JsonObject;
+}
+
+export interface RequestConversationHandoffRequest {
+  visitorId?: string;
+  reason?: string;
+}
+
+export interface AssignConversationRequest {
+  userId: string;
+}
+
+export interface SendAgentReplyRequest {
+  userId: string;
+  message: string;
 }

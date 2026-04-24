@@ -78,6 +78,12 @@ export class ChatService {
         throw new NotFoundException("Conversation not found for this tenant and visitor.");
       }
 
+      if (existingConversation?.status === ConversationStatus.PENDING_HUMAN) {
+        throw new BadRequestException(
+          "This conversation is waiting for a human agent. Refresh the conversation for updates."
+        );
+      }
+
       const conversation =
         existingConversation ??
         (await tx.conversation.create({
@@ -110,6 +116,7 @@ export class ChatService {
         displayName: agentConfig?.displayName ?? `${tenant.name} Assistant`,
         welcomeMessage: agentConfig?.welcomeMessage,
         fallbackMessage: agentConfig?.fallbackMessage,
+        handoffEnabled: agentConfig?.handoffEnabled ?? false,
         userMessage: customerMessage.content,
         retrievedChunks
       });

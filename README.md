@@ -60,7 +60,7 @@ corepack pnpm db:generate
 5. Apply the migrations:
 
 ```bash
-corepack pnpm db:migrate:dev -- --name knowledge_loop
+corepack pnpm --filter @platform/database exec dotenv -e ../../.env -- prisma migrate deploy
 ```
 
 6. Seed local data:
@@ -103,7 +103,7 @@ This keeps Kasta-specific data isolated to development seed data, not platform c
 The first knowledge loop is intentionally simple and synchronous:
 
 - knowledge documents are created from manual pasted text
-- ingestion stores the raw content on the `KnowledgeDocument`
+- ingestion immediately chunks the submitted content into `KnowledgeChunk` rows
 - chunking is deterministic, size-based, and runs during document creation
 - retrieval is tenant-scoped keyword scoring over `KnowledgeChunk.content`
 - assistant replies use retrieved chunks when available
@@ -170,6 +170,46 @@ curl http://localhost:4000/v1/conversations/<conversation-id>/messages \
 - `GET /v1/knowledge-bases/:knowledgeBaseId`
 - `GET /v1/knowledge-bases/:knowledgeBaseId/documents`
 - `POST /v1/knowledge-bases/:knowledgeBaseId/documents`
+
+## First Human Handoff Loop
+
+The first human support workflow is intentionally direct:
+
+- the customer widget can request a human after a conversation has started
+- handoff marks the conversation as `PENDING_HUMAN`
+- the backend stores `handoffRequestedAt`, `handoffReason`, and a `HANDOFF_EVENT` message
+- the admin app can list tenant-scoped conversations and focus on pending human items
+- the admin app can open a conversation, assign it to a tenant support user, and send a human reply
+- agent replies are stored as `Message` rows with `authorType = AGENT`
+- after a human reply, the conversation moves to `AWAITING_CUSTOMER`
+- the customer widget can refresh the conversation to see the handoff event and human reply
+
+This milestone does not add auth, realtime sockets, CRM sync, or multi-channel routing. It is the first end-to-end support handoff loop.
+
+## Minimal Handoff Test Flow
+
+1. Start the workspace with `corepack pnpm dev`
+2. Open `http://localhost:3000`
+3. Use the "Live local test" panel to send a customer message
+4. Click `Talk to human`
+5. Confirm the conversation shows `pending_human` and includes a system handoff event
+6. In the "Human handoff" panel, keep the filter on `Pending human`
+7. Open the pending conversation, assign it to the seeded support user, and send a manual reply
+8. Return to the local chat demo and click `Refresh conversation`
+9. Confirm the human reply is now visible in the customer-visible message history
+
+The seeded support user for local testing is still `support@kasta.example`.
+
+## Conversation API
+
+- `GET /v1/conversations`
+- `GET /v1/conversations/support-users`
+- `GET /v1/conversations/:conversationId`
+- `GET /v1/conversations/:conversationId/detail`
+- `GET /v1/conversations/:conversationId/messages`
+- `POST /v1/conversations/:conversationId/handoff`
+- `POST /v1/conversations/:conversationId/assign`
+- `POST /v1/conversations/:conversationId/agent-replies`
 
 ## Multi-Tenant Intent
 

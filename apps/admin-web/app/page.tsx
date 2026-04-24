@@ -1,3 +1,4 @@
+import { ConversationOpsPanel } from "./components/conversation-ops-panel";
 import { KnowledgeBasePanel } from "./components/knowledge-base-panel";
 import { LocalChatDemo } from "./components/local-chat-demo";
 
@@ -49,6 +50,11 @@ export default function HomePage() {
         <article className="panel">
           <h2>Knowledge loop</h2>
           <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={tenantSlug} />
+        </article>
+
+        <article className="panel">
+          <h2>Human handoff</h2>
+          <ConversationOpsPanel apiBaseUrl={apiBaseUrl} tenantSlug={tenantSlug} />
         </article>
       </section>
     </main>

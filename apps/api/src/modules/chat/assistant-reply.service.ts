@@ -14,6 +14,7 @@ interface ReplyInput {
   displayName: string;
   welcomeMessage?: string | null;
   fallbackMessage?: string | null;
+  handoffEnabled?: boolean;
   userMessage: string;
   retrievedChunks: RetrievedKnowledgeChunk[];
 }
@@ -73,9 +74,12 @@ export class AssistantReplyService {
     }
 
     const fallbackLead = input.fallbackMessage ?? input.welcomeMessage ?? `I am ${input.displayName}.`;
+    const handoffHint = input.handoffEnabled
+      ? " If you need a person to take over, request human support in the chat."
+      : "";
 
     return {
-      content: `${fallbackLead} I could not find a relevant knowledge-base match for "${normalizedMessage}".`,
+      content: `${fallbackLead} I could not find a relevant knowledge-base match for "${normalizedMessage}".${handoffHint}`,
       citations: null
     };
   }

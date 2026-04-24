@@ -71,7 +71,13 @@ export function toConversationSummary(conversation: Conversation): ConversationS
   };
 }
 
-export function toChatMessageRecord(message: Message): ChatMessageRecord {
+type MessageWithOptionalAuthor = Message & {
+  authorUser?: {
+    name: string | null;
+  } | null;
+};
+
+export function toChatMessageRecord(message: MessageWithOptionalAuthor): ChatMessageRecord {
   return {
     id: message.id,
     conversationId: message.conversationId,
@@ -80,6 +86,7 @@ export function toChatMessageRecord(message: Message): ChatMessageRecord {
     content: message.content,
     createdAt: message.createdAt.toISOString(),
     authorUserId: message.authorUserId ?? null,
+    authorName: message.authorUser?.name ?? null,
     citations: mapCitations(message.citations)
   };
 }
