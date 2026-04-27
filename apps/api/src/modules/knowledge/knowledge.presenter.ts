@@ -1,10 +1,16 @@
 import type {
+  KnowledgeChunk,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeDocumentSourceType,
   KnowledgeDocumentStatus
 } from "@platform/database";
-import type { KnowledgeBaseRecord, KnowledgeDocumentRecord } from "@platform/types";
+import type {
+  KnowledgeBaseRecord,
+  KnowledgeChunkRecord,
+  KnowledgeDocumentDetail,
+  KnowledgeDocumentRecord
+} from "@platform/types";
 
 function mapDocumentStatus(status: KnowledgeDocumentStatus): KnowledgeDocumentRecord["status"] {
   return status.toLowerCase();
@@ -40,5 +46,27 @@ export function toKnowledgeDocumentRecord(document: KnowledgeDocument): Knowledg
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
     ingestedAt: document.ingestedAt?.toISOString() ?? null
+  };
+}
+
+export function toKnowledgeChunkRecord(chunk: KnowledgeChunk): KnowledgeChunkRecord {
+  return {
+    id: chunk.id,
+    knowledgeDocumentId: chunk.knowledgeDocumentId,
+    chunkIndex: chunk.chunkIndex,
+    content: chunk.content,
+    tokenCount: chunk.tokenCount,
+    sourceLocator: chunk.sourceLocator ?? undefined,
+    createdAt: chunk.createdAt.toISOString()
+  };
+}
+
+export function toKnowledgeDocumentDetail(
+  document: KnowledgeDocument & { chunks: KnowledgeChunk[] }
+): KnowledgeDocumentDetail {
+  return {
+    ...toKnowledgeDocumentRecord(document),
+    metadata: document.metadata ?? undefined,
+    chunks: document.chunks.map(toKnowledgeChunkRecord)
   };
 }

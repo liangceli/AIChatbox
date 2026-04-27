@@ -6,7 +6,7 @@ import {
   Prisma
 } from "@platform/database";
 import type { SendChatMessageResponse } from "@platform/types";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
@@ -17,6 +17,8 @@ import { AssistantReplyService } from "./assistant-reply.service";
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeRetrievalService)
@@ -130,9 +132,20 @@ export class ChatService {
           content: assistantReply.content,
           citations: assistantReply.citations
             ? (assistantReply.citations as unknown as Prisma.InputJsonValue)
-            : undefined
+            : undefined,
+          metadata: {
+            retrieval: {
+              usedFallback: assistantReply.usedFallback,
+              retrievedChunkCount: retrievedChunks.length,
+              chunkIds: retrievedChunks.map((chunk) => chunk.chunkId)
+            }
+          }
         }
       });
+
+      this.logger.debug(
+        `Assistant reply for tenant ${tenant.slug} conversation ${conversation.id}: fallback=${assistantReply.usedFallback}, chunks=${retrievedChunks.length}`
+      );
 
       const updatedConversation = await tx.conversation.update({
         where: {

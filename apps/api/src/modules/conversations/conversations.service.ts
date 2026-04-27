@@ -333,6 +333,51 @@ export class ConversationsService {
     return this.getConversationDetail(tenant, conversationId);
   }
 
+  async clearMessageHistory(
+    tenant: ResolvedTenant,
+    conversationId: string
+  ): Promise<ConversationDetail> {
+    await this.ensureConversation(tenant.id, conversationId);
+
+    await this.prisma.client.$transaction([
+      this.prisma.client.message.deleteMany({
+        where: {
+          tenantId: tenant.id,
+          conversationId
+        }
+      }),
+      this.prisma.client.conversation.update({
+        where: {
+          id_tenantId: {
+            id: conversationId,
+            tenantId: tenant.id
+          }
+        },
+        data: {
+          status: ConversationStatus.OPEN,
+          handoffRequestedAt: null,
+          handoffReason: null,
+          lastMessageAt: null
+        }
+      })
+    ]);
+
+    return this.getConversationDetail(tenant, conversationId);
+  }
+
+  async deleteConversation(tenant: ResolvedTenant, conversationId: string): Promise<void> {
+    await this.ensureConversation(tenant.id, conversationId);
+
+    await this.prisma.client.conversation.delete({
+      where: {
+        id_tenantId: {
+          id: conversationId,
+          tenantId: tenant.id
+        }
+      }
+    });
+  }
+
   private async loadConversationDetail(
     tenantId: string,
     conversationId: string
@@ -381,6 +426,24 @@ export class ConversationsService {
 
     if (!membership) {
       throw new BadRequestException("Assigned user is not a member of this tenant.");
+    }
+  }
+
+  private async ensureConversation(tenantId: string, conversationId: string): Promise<void> {
+    const conversation = await this.prisma.client.conversation.findUnique({
+      where: {
+        id_tenantId: {
+          id: conversationId,
+          tenantId
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!conversation) {
+      throw new NotFoundException("Conversation not found.");
     }
   }
 

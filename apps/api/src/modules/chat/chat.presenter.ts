@@ -52,6 +52,9 @@ function mapCitations(citations: Message["citations"]): Citation[] | null {
         title: citation.title,
         chunkIndex: citation.chunkIndex,
         sourceUri: typeof citation.sourceUri === "string" ? citation.sourceUri : null,
+        sourceLocator: citation.sourceLocator,
+        relevanceScore:
+          typeof citation.relevanceScore === "number" ? citation.relevanceScore : undefined,
         excerpt: typeof citation.excerpt === "string" ? citation.excerpt : undefined
       }
     ];

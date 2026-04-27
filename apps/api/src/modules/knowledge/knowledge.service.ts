@@ -1,22 +1,38 @@
 import { KnowledgeDocumentSourceType, KnowledgeDocumentStatus, Prisma } from "@platform/database";
-import type { KnowledgeBaseRecord, KnowledgeDocumentRecord } from "@platform/types";
+import type {
+  KnowledgeBaseRecord,
+  KnowledgeChunkRecord,
+  KnowledgeDocumentDetail,
+  KnowledgeDocumentRecord,
+  ImportUrlKnowledgeDocumentResult
+} from "@platform/types";
 import { slugify } from "@platform/utils";
 import {
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException
 } from "@nestjs/common";
+import { createHash } from "node:crypto";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { CreateKnowledgeBaseDto } from "./dto/create-knowledge-base.dto";
 import { CreateManualKnowledgeDocumentDto } from "./dto/create-manual-knowledge-document.dto";
+import { ImportUrlKnowledgeDocumentDto } from "./dto/import-url-knowledge-document.dto";
 import { KnowledgeChunkingService } from "./knowledge-chunking.service";
-import { toKnowledgeBaseRecord, toKnowledgeDocumentRecord } from "./knowledge.presenter";
+import {
+  toKnowledgeBaseRecord,
+  toKnowledgeChunkRecord,
+  toKnowledgeDocumentDetail,
+  toKnowledgeDocumentRecord
+} from "./knowledge.presenter";
 
 @Injectable()
 export class KnowledgeService {
+  private readonly logger = new Logger(KnowledgeService.name);
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeChunkingService)
@@ -154,6 +170,8 @@ export class KnowledgeService {
         title: input.title.trim(),
         sourceType,
         sourceUri: input.sourceUri?.trim() || null,
+        content: normalizedContent,
+        checksum: this.createChecksum(normalizedContent),
         status: KnowledgeDocumentStatus.INDEXING,
         metadata: input.metadata
           ? (input.metadata as Prisma.InputJsonValue)
@@ -161,53 +179,7 @@ export class KnowledgeService {
       }
     });
 
-    try {
-      const chunks = this.knowledgeChunkingService.chunkText(normalizedContent);
-
-      await this.prisma.client.$transaction([
-        this.prisma.client.knowledgeChunk.createMany({
-          data: chunks.map((chunk) => ({
-            tenantId: tenant.id,
-            knowledgeDocumentId: document.id,
-            chunkIndex: chunk.chunkIndex,
-            content: chunk.content,
-            tokenCount: chunk.tokenCount,
-            sourceLocator: chunk.sourceLocator
-          }))
-        }),
-        this.prisma.client.knowledgeDocument.update({
-          where: {
-            id_tenantId: {
-              id: document.id,
-              tenantId: tenant.id
-            }
-          },
-          data: {
-            chunkCount: chunks.length,
-            status: KnowledgeDocumentStatus.READY,
-            ingestedAt: new Date()
-          }
-        })
-      ]);
-    } catch (error: unknown) {
-      await this.prisma.client.knowledgeDocument.update({
-        where: {
-          id_tenantId: {
-            id: document.id,
-            tenantId: tenant.id
-          }
-        },
-        data: {
-          status: KnowledgeDocumentStatus.FAILED,
-          metadata: {
-            ...(input.metadata ?? {}),
-            ingestionError: error instanceof Error ? error.message : "Unknown ingestion error"
-          } as Prisma.InputJsonValue
-        }
-      });
-
-      throw error;
-    }
+    await this.processDocumentContent(tenant.id, document.id, normalizedContent, input.metadata);
 
     const storedDocument = await this.prisma.client.knowledgeDocument.findUnique({
       where: {
@@ -223,6 +195,189 @@ export class KnowledgeService {
     }
 
     return toKnowledgeDocumentRecord(storedDocument);
+  }
+
+  async importUrlDocument(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    input: ImportUrlKnowledgeDocumentDto
+  ): Promise<KnowledgeDocumentRecord> {
+    await this.ensureKnowledgeBase(tenant, knowledgeBaseId);
+
+    const url = input.url.trim();
+    const fetched = await this.fetchUrlContent(url);
+    const title = input.title?.trim() || fetched.title || url;
+
+    return this.createManualDocument(tenant, knowledgeBaseId, {
+      title,
+      content: fetched.content,
+      sourceType: "url",
+      sourceUri: url,
+      metadata: {
+        importedFromUrl: true,
+        importedAt: new Date().toISOString()
+      }
+    });
+  }
+
+  async importUrlDocuments(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    urls: string[]
+  ): Promise<ImportUrlKnowledgeDocumentResult[]> {
+    await this.ensureKnowledgeBase(tenant, knowledgeBaseId);
+
+    const uniqueUrls = Array.from(new Set(urls.map((url) => url.trim()).filter(Boolean)));
+    const results: ImportUrlKnowledgeDocumentResult[] = [];
+
+    for (const url of uniqueUrls) {
+      try {
+        const document = await this.importUrlDocument(tenant, knowledgeBaseId, { url });
+
+        results.push({
+          url,
+          status: "ready",
+          document
+        });
+      } catch (error: unknown) {
+        results.push({
+          url,
+          status: "failed",
+          error: error instanceof Error ? error.message : "Unknown URL import error"
+        });
+      }
+    }
+
+    return results;
+  }
+
+  async getKnowledgeDocument(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    documentId: string
+  ): Promise<KnowledgeDocumentDetail> {
+    const document = await this.prisma.client.knowledgeDocument.findFirst({
+      where: {
+        id: documentId,
+        tenantId: tenant.id,
+        knowledgeBaseId
+      },
+      include: {
+        chunks: {
+          orderBy: {
+            chunkIndex: "asc"
+          }
+        }
+      }
+    });
+
+    if (!document) {
+      throw new NotFoundException("Knowledge document not found.");
+    }
+
+    return toKnowledgeDocumentDetail(document);
+  }
+
+  async listKnowledgeDocumentChunks(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    documentId: string
+  ): Promise<KnowledgeChunkRecord[]> {
+    await this.ensureKnowledgeDocument(tenant.id, knowledgeBaseId, documentId);
+
+    const chunks = await this.prisma.client.knowledgeChunk.findMany({
+      where: {
+        tenantId: tenant.id,
+        knowledgeDocumentId: documentId
+      },
+      orderBy: {
+        chunkIndex: "asc"
+      }
+    });
+
+    return chunks.map(toKnowledgeChunkRecord);
+  }
+
+  async reprocessKnowledgeDocument(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    documentId: string,
+    replacementContent?: string
+  ): Promise<KnowledgeDocumentDetail> {
+    const document = await this.prisma.client.knowledgeDocument.findFirst({
+      where: {
+        id: documentId,
+        tenantId: tenant.id,
+        knowledgeBaseId
+      }
+    });
+
+    if (!document) {
+      throw new NotFoundException("Knowledge document not found.");
+    }
+
+    if (document.status === KnowledgeDocumentStatus.ARCHIVED) {
+      throw new BadRequestException("Archived knowledge documents cannot be reprocessed.");
+    }
+
+    const normalizedContent = replacementContent?.trim() || document.content?.trim();
+
+    if (!normalizedContent) {
+      throw new BadRequestException("No stored document content is available to reprocess.");
+    }
+
+    await this.processDocumentContent(tenant.id, document.id, normalizedContent, document.metadata);
+
+    return this.getKnowledgeDocument(tenant, knowledgeBaseId, documentId);
+  }
+
+  async archiveKnowledgeDocument(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    documentId: string
+  ): Promise<KnowledgeDocumentRecord> {
+    await this.ensureKnowledgeDocument(tenant.id, knowledgeBaseId, documentId);
+
+    const document = await this.prisma.client.$transaction(async (tx) => {
+      await tx.knowledgeChunk.deleteMany({
+        where: {
+          tenantId: tenant.id,
+          knowledgeDocumentId: documentId
+        }
+      });
+
+      return tx.knowledgeDocument.update({
+        where: {
+          id_tenantId: {
+            id: documentId,
+            tenantId: tenant.id
+          }
+        },
+        data: {
+          status: KnowledgeDocumentStatus.ARCHIVED,
+          chunkCount: 0
+        }
+      });
+    });
+
+    return toKnowledgeDocumentRecord(document);
+  }
+
+  async deleteKnowledgeDocument(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    documentId: string
+  ): Promise<void> {
+    await this.ensureKnowledgeDocument(tenant.id, knowledgeBaseId, documentId);
+
+    await this.prisma.client.knowledgeDocument.delete({
+      where: {
+        id_tenantId: {
+          id: documentId,
+          tenantId: tenant.id
+        }
+      }
+    });
   }
 
   private async ensureKnowledgeBase(tenant: ResolvedTenant, knowledgeBaseId: string): Promise<void> {
@@ -241,6 +396,135 @@ export class KnowledgeService {
     }
   }
 
+  private async ensureKnowledgeDocument(
+    tenantId: string,
+    knowledgeBaseId: string,
+    documentId: string
+  ): Promise<void> {
+    const document = await this.prisma.client.knowledgeDocument.findFirst({
+      where: {
+        id: documentId,
+        tenantId,
+        knowledgeBaseId
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (!document) {
+      throw new NotFoundException("Knowledge document not found.");
+    }
+  }
+
+  private async processDocumentContent(
+    tenantId: string,
+    documentId: string,
+    content: string,
+    currentMetadata?: Prisma.JsonValue | Record<string, unknown> | null
+  ): Promise<void> {
+    const chunks = this.knowledgeChunkingService.chunkText(content);
+
+    if (chunks.length === 0) {
+      throw new BadRequestException("Document content did not produce any chunks.");
+    }
+
+    const checksum = this.createChecksum(content);
+
+    try {
+      await this.prisma.client.$transaction(async (tx) => {
+        await tx.knowledgeDocument.update({
+          where: {
+            id_tenantId: {
+              id: documentId,
+              tenantId
+            }
+          },
+          data: {
+            status: KnowledgeDocumentStatus.INDEXING,
+            content,
+            checksum,
+            chunkCount: 0
+          }
+        });
+
+        await tx.knowledgeChunk.deleteMany({
+          where: {
+            tenantId,
+            knowledgeDocumentId: documentId
+          }
+        });
+
+        await tx.knowledgeChunk.createMany({
+          data: chunks.map((chunk) => ({
+            tenantId,
+            knowledgeDocumentId: documentId,
+            chunkIndex: chunk.chunkIndex,
+            content: chunk.content,
+            tokenCount: chunk.tokenCount,
+            sourceLocator: chunk.sourceLocator,
+            metadata: {
+              checksum
+            }
+          }))
+        });
+
+        await tx.knowledgeDocument.update({
+          where: {
+            id_tenantId: {
+              id: documentId,
+              tenantId
+            }
+          },
+          data: {
+            chunkCount: chunks.length,
+            status: KnowledgeDocumentStatus.READY,
+            ingestedAt: new Date(),
+            metadata: {
+              ...(this.isPlainObject(currentMetadata) ? currentMetadata : {}),
+              ingestion: {
+                chunkCount: chunks.length,
+                checksum,
+                processedAt: new Date().toISOString()
+              }
+            } as Prisma.InputJsonValue
+          }
+        });
+      });
+
+      this.logger.log(
+        `Processed knowledge document ${documentId} for tenant ${tenantId}: ${chunks.length} chunks`
+      );
+    } catch (error: unknown) {
+      await this.prisma.client.knowledgeDocument.update({
+        where: {
+          id_tenantId: {
+            id: documentId,
+            tenantId
+          }
+        },
+        data: {
+          status: KnowledgeDocumentStatus.FAILED,
+          metadata: {
+            ...(this.isPlainObject(currentMetadata) ? currentMetadata : {}),
+            ingestionError: error instanceof Error ? error.message : "Unknown ingestion error",
+            failedAt: new Date().toISOString()
+          } as Prisma.InputJsonValue
+        }
+      });
+
+      throw error;
+    }
+  }
+
+  private createChecksum(content: string): string {
+    return createHash("sha256").update(content).digest("hex");
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value));
+  }
+
   private resolveSourceType(sourceType?: string): KnowledgeDocumentSourceType {
     switch (sourceType?.trim().toUpperCase()) {
       case "FILE":
@@ -252,5 +536,75 @@ export class KnowledgeService {
       default:
         return KnowledgeDocumentSourceType.MANUAL;
     }
+  }
+
+  private async fetchUrlContent(url: string): Promise<{ title: string | null; content: string }> {
+    let response: Response;
+
+    try {
+      response = await fetch(url, {
+        headers: {
+          "user-agent": "HanecoAIPilotBot/0.1 knowledge-import"
+        }
+      });
+    } catch (error: unknown) {
+      throw new BadRequestException(
+        `Unable to fetch URL: ${error instanceof Error ? error.message : "Unknown fetch error"}`
+      );
+    }
+
+    if (!response.ok) {
+      throw new BadRequestException(`URL fetch failed with status ${response.status}.`);
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
+      throw new BadRequestException(`Unsupported URL content type: ${contentType || "unknown"}.`);
+    }
+
+    const raw = await response.text();
+    const title = this.extractHtmlTitle(raw);
+    const content = contentType.includes("text/html") ? this.extractReadableText(raw) : raw.trim();
+
+    if (!content || content.length < 40) {
+      throw new BadRequestException("Fetched URL did not contain enough readable text.");
+    }
+
+    return {
+      title,
+      content: content.slice(0, 50000)
+    };
+  }
+
+  private extractHtmlTitle(html: string): string | null {
+    const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+
+    return match ? this.decodeHtml(match[1]!).replace(/\s+/g, " ").trim() : null;
+  }
+
+  private extractReadableText(html: string): string {
+    return this.decodeHtml(
+      html
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+        .replace(/<\/(p|div|section|article|li|h1|h2|h3|tr)>/gi, "\n")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n\s+/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+    );
+  }
+
+  private decodeHtml(value: string): string {
+    return value
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'");
   }
 }

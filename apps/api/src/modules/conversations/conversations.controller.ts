@@ -5,7 +5,7 @@ import type {
   ConversationSummary,
   SupportUserRecord
 } from "@platform/types";
-import { Body, Controller, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, Query } from "@nestjs/common";
 import { CurrentTenant } from "../../common/tenant/current-tenant.decorator";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { AssignConversationDto } from "./dto/assign-conversation.dto";
@@ -92,5 +92,22 @@ export class ConversationsController {
       body.userId,
       body.message
     );
+  }
+
+  @Delete(":conversationId/messages")
+  async clearMessageHistory(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("conversationId") conversationId: string
+  ): Promise<ConversationDetail> {
+    return this.conversationsService.clearMessageHistory(tenant, conversationId);
+  }
+
+  @Delete(":conversationId")
+  async deleteConversation(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("conversationId") conversationId: string
+  ): Promise<{ deleted: true }> {
+    await this.conversationsService.deleteConversation(tenant, conversationId);
+    return { deleted: true };
   }
 }

@@ -7,6 +7,8 @@ export interface RetrievedKnowledgeChunk {
   title: string;
   chunkIndex: number;
   sourceUri?: string | null;
+  sourceLocator?: unknown;
+  relevanceScore?: number;
   content: string;
 }
 
@@ -22,6 +24,7 @@ interface ReplyInput {
 interface ReplyOutput {
   content: string;
   citations: Citation[] | null;
+  usedFallback: boolean;
 }
 
 function createExcerpt(content: string, maxLength = 220): string {
@@ -42,7 +45,8 @@ export class AssistantReplyService {
     if (!normalizedMessage) {
       return {
         content: input.fallbackMessage ?? "I can help once you send a message.",
-        citations: null
+        citations: null,
+        usedFallback: true
       };
     }
 
@@ -53,34 +57,92 @@ export class AssistantReplyService {
         title: chunk.title,
         chunkIndex: chunk.chunkIndex,
         sourceUri: chunk.sourceUri ?? null,
+        sourceLocator: chunk.sourceLocator ?? undefined,
+        relevanceScore: chunk.relevanceScore,
         excerpt: createExcerpt(chunk.content, 180)
       }));
-      const primary = citations[0]!;
-      const supporting = citations
-        .slice(1, 3)
-        .map((citation) => `"${citation.excerpt}"`)
-        .join(" ");
+      const groundedPoints = this.selectGroundedSentences(normalizedMessage, input.retrievedChunks);
+
+      if (groundedPoints.length === 0) {
+        return this.createFallback(input, normalizedMessage);
+      }
 
       return {
         content: [
-          input.welcomeMessage ?? `I am ${input.displayName}.`,
-          `Based on the current knowledge base, the most relevant guidance is: "${primary.excerpt}".`,
-          supporting ? `Additional context: ${supporting}` : null
+          `Based on the support knowledge base, ${groundedPoints[0]}`,
+          groundedPoints.length > 1 ? `Also relevant: ${groundedPoints.slice(1, 3).join(" ")}` : null
         ]
           .filter(Boolean)
           .join(" "),
-        citations
+        citations,
+        usedFallback: false
       };
     }
 
+    return this.createFallback(input, normalizedMessage);
+  }
+
+  private createFallback(input: ReplyInput, normalizedMessage: string): ReplyOutput {
     const fallbackLead = input.fallbackMessage ?? input.welcomeMessage ?? `I am ${input.displayName}.`;
     const handoffHint = input.handoffEnabled
       ? " If you need a person to take over, request human support in the chat."
       : "";
 
     return {
-      content: `${fallbackLead} I could not find a relevant knowledge-base match for "${normalizedMessage}".${handoffHint}`,
-      citations: null
+      content: `${fallbackLead} I do not have enough matching knowledge-base evidence to answer "${normalizedMessage}" confidently.${handoffHint}`,
+      citations: null,
+      usedFallback: true
     };
+  }
+
+  private selectGroundedSentences(
+    question: string,
+    chunks: RetrievedKnowledgeChunk[],
+    limit = 3
+  ): string[] {
+    const terms = this.extractTerms(question);
+
+    return chunks
+      .flatMap((chunk) =>
+        this.splitSentences(chunk.content).map((sentence) => ({
+          sentence,
+          score: this.scoreSentence(sentence, terms, chunk.relevanceScore ?? 0)
+        }))
+      )
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score)
+      .filter(
+        (candidate, index, candidates) =>
+          candidates.findIndex((existing) => existing.sentence === candidate.sentence) === index
+      )
+      .slice(0, limit)
+      .map((candidate) => candidate.sentence);
+  }
+
+  private splitSentences(content: string): string[] {
+    return content
+      .replace(/\s+/g, " ")
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length >= 20)
+      .slice(0, 12);
+  }
+
+  private extractTerms(question: string): string[] {
+    return Array.from(
+      new Set(
+        question
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter((term) => term.length >= 3)
+      )
+    );
+  }
+
+  private scoreSentence(sentence: string, terms: string[], chunkScore: number): number {
+    const normalized = sentence.toLowerCase();
+    const matchedTerms = terms.filter((term) => normalized.includes(term)).length;
+
+    return matchedTerms * 10 + Math.min(chunkScore, 20);
   }
 }

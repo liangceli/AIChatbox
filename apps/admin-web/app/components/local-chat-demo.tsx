@@ -10,20 +10,49 @@ import { persistAnonymousVisitorId, resolveAnonymousVisitorId } from "@platform/
 
 const shellStyle = {
   display: "grid",
-  gap: "16px"
+  gap: "14px"
 } as const;
 
 const messageStyle = {
+  maxWidth: "88%",
   padding: "12px 14px",
-  borderRadius: "16px",
-  background: "#f6efe7",
-  color: "#231a14"
+  borderRadius: "18px 18px 18px 6px",
+  background: "#ffffff",
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+  boxShadow: "0 10px 24px rgba(15, 23, 42, 0.06)",
+  color: "#0f172a",
+  lineHeight: 1.5
 } as const;
 
 const customerMessageStyle = {
   ...messageStyle,
-  background: "#b85c38",
-  color: "#fffaf6"
+  justifySelf: "end",
+  borderRadius: "18px 18px 6px 18px",
+  background: "#111827",
+  border: "1px solid rgba(17, 24, 39, 0.9)",
+  color: "#f8fafc"
+} as const;
+
+const controlButtonStyle = {
+  alignSelf: "start",
+  border: 0,
+  borderRadius: "14px",
+  padding: "11px 14px",
+  background: "#111827",
+  color: "#ffffff",
+  cursor: "pointer",
+  font: "inherit",
+  fontSize: "0.9rem",
+  fontWeight: 700,
+  boxShadow: "0 12px 22px rgba(17, 24, 39, 0.14)"
+} as const;
+
+const secondaryButtonStyle = {
+  ...controlButtonStyle,
+  border: "1px solid rgba(15, 23, 42, 0.12)",
+  background: "#ffffff",
+  color: "#0f172a",
+  boxShadow: "none"
 } as const;
 
 const authorLabels: Record<MessageAuthorType, string> = {
@@ -192,15 +221,62 @@ export function LocalChatDemo({
 
   return (
     <section style={shellStyle}>
-      <div>
-        <strong>Local chat demo</strong>
-        <div style={{ color: "#6e5f53", fontSize: "0.95rem", marginTop: 6 }}>
-          Tenant header: {tenantSlug} | Visitor: {visitorId ?? "initializing..."}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px"
+        }}
+      >
+        <div>
+          <strong>Local chat demo</strong>
+          <div style={{ color: "#64748b", fontSize: "0.92rem", marginTop: 6 }}>
+            Tenant header: {tenantSlug}
+          </div>
         </div>
-        <div style={{ color: "#6e5f53", fontSize: "0.95rem", marginTop: 4 }}>{summaryText}</div>
+        <span
+          style={{
+            borderRadius: "999px",
+            padding: "7px 10px",
+            background: isPendingHuman ? "#fff7ed" : "#ecfdf5",
+            border: isPendingHuman
+              ? "1px solid rgba(249, 115, 22, 0.16)"
+              : "1px solid rgba(16, 185, 129, 0.16)",
+            color: isPendingHuman ? "#9a3412" : "#047857",
+            fontSize: "0.78rem",
+            fontWeight: 700,
+            whiteSpace: "nowrap"
+          }}
+        >
+          {isPendingHuman ? "Human pending" : conversation ? "AI online" : "Ready"}
+        </span>
       </div>
 
-      <div style={{ display: "grid", gap: "10px" }}>
+      <div
+        style={{
+          borderRadius: "18px",
+          padding: "11px 12px",
+          background: "#f8fafc",
+          border: "1px solid rgba(15, 23, 42, 0.08)",
+          color: "#64748b",
+          fontSize: "0.9rem",
+          lineHeight: 1.45
+        }}
+      >
+        {summaryText}
+        <div style={{ marginTop: 4 }}>Visitor: {visitorId ?? "initializing..."}</div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "10px",
+          maxHeight: "340px",
+          overflowY: "auto",
+          padding: "2px"
+        }}
+      >
         {messages.length === 0 ? <div style={messageStyle}>{summaryText}</div> : null}
 
         {messages.map((message) => (
@@ -208,22 +284,32 @@ export function LocalChatDemo({
             key={message.id}
             style={message.authorType === "customer" ? customerMessageStyle : messageStyle}
           >
-            <strong style={{ display: "block", marginBottom: 4 }}>
+            <strong
+              style={{
+                display: "block",
+                marginBottom: 5,
+                color: message.authorType === "customer" ? "#cbd5e1" : "#475569",
+                fontSize: "0.78rem"
+              }}
+            >
               {message.authorType === "agent" && message.authorName
-                ? `${authorLabels[message.authorType]} · ${message.authorName}`
+                ? `${authorLabels[message.authorType]} - ${message.authorName}`
                 : authorLabels[message.authorType]}
             </strong>
             <div>{message.content}</div>
             {message.citations?.length ? (
-              <div style={{ marginTop: 6, fontSize: "0.9rem", color: "#6e5f53" }}>
-                Sources:{" "}
-                {message.citations
-                  .map((citation) => `${citation.title} (chunk ${citation.chunkIndex})`)
-                  .join(", ")}
+              <div style={{ marginTop: 8, fontSize: "0.82rem", color: "#64748b" }}>
+                <strong style={{ display: "block", marginBottom: 4 }}>Sources</strong>
+                {message.citations.map((citation) => (
+                  <div key={`${citation.chunkId}-${citation.chunkIndex}`}>
+                    {citation.title} - chunk {citation.chunkIndex}
+                    {citation.sourceUri ? ` - ${citation.sourceUri}` : ""}
+                  </div>
+                ))}
               </div>
             ) : null}
             {message.messageType !== "text" ? (
-              <div style={{ marginTop: 6, fontSize: "0.85rem", color: "#6e5f53" }}>
+              <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#64748b" }}>
                 type: {message.messageType}
               </div>
             ) : null}
@@ -237,11 +323,14 @@ export function LocalChatDemo({
         placeholder={isPendingHuman ? "Human support is pending." : "Ask a support question"}
         disabled={isPendingHuman}
         style={{
-          minHeight: "96px",
-          borderRadius: "16px",
-          border: "1px solid rgba(62, 44, 31, 0.12)",
-          padding: "12px",
+          minHeight: "92px",
+          borderRadius: "18px",
+          border: "1px solid rgba(148, 163, 184, 0.35)",
+          background: "#ffffff",
+          padding: "13px 14px",
           font: "inherit",
+          lineHeight: 1.45,
+          outline: "none",
           opacity: isPendingHuman ? 0.65 : 1
         }}
       />
@@ -251,15 +340,7 @@ export function LocalChatDemo({
           type="button"
           onClick={sendMessage}
           disabled={isSending || !visitorId || isPendingHuman}
-          style={{
-            alignSelf: "start",
-            border: 0,
-            borderRadius: "999px",
-            padding: "12px 16px",
-            background: "#231a14",
-            color: "#fffaf6",
-            cursor: "pointer"
-          }}
+          style={controlButtonStyle}
         >
           {isSending ? "Sending..." : "Send test message"}
         </button>
@@ -268,15 +349,7 @@ export function LocalChatDemo({
           type="button"
           onClick={requestHandoff}
           disabled={!conversation?.id || isRequestingHandoff || isPendingHuman}
-          style={{
-            alignSelf: "start",
-            border: "1px solid rgba(35, 26, 20, 0.2)",
-            borderRadius: "999px",
-            padding: "12px 16px",
-            background: "#fffaf6",
-            color: "#231a14",
-            cursor: "pointer"
-          }}
+          style={secondaryButtonStyle}
         >
           {isRequestingHandoff ? "Requesting..." : "Talk to human"}
         </button>
@@ -285,22 +358,14 @@ export function LocalChatDemo({
           type="button"
           onClick={refreshConversation}
           disabled={!conversation?.id || isRefreshing}
-          style={{
-            alignSelf: "start",
-            border: "1px solid rgba(35, 26, 20, 0.2)",
-            borderRadius: "999px",
-            padding: "12px 16px",
-            background: "#fffaf6",
-            color: "#231a14",
-            cursor: "pointer"
-          }}
+          style={secondaryButtonStyle}
         >
           {isRefreshing ? "Refreshing..." : "Refresh conversation"}
         </button>
       </div>
 
       {conversation ? (
-        <div style={{ color: "#6e5f53", fontSize: "0.95rem", display: "grid", gap: "4px" }}>
+        <div style={{ color: "#64748b", fontSize: "0.88rem", display: "grid", gap: "4px" }}>
           <div>Conversation ID: {conversation.id}</div>
           <div>Status: {conversation.status}</div>
           {conversation.handoffRequestedAt ? (
@@ -309,7 +374,19 @@ export function LocalChatDemo({
         </div>
       ) : null}
 
-      {error ? <div style={{ color: "#b42318" }}>{error}</div> : null}
+      {error ? (
+        <div
+          style={{
+            borderRadius: "14px",
+            padding: "10px 12px",
+            background: "#fef2f2",
+            border: "1px solid rgba(220, 38, 38, 0.16)",
+            color: "#991b1b"
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -98,18 +98,22 @@ The seed creates tenant-scoped demo data only:
 
 This keeps Kasta-specific data isolated to development seed data, not platform core.
 
-## First Knowledge Loop
+## Knowledge Loop
 
-The first knowledge loop is intentionally simple and synchronous:
+The knowledge loop is still intentionally lightweight, but now behaves more like a commercial support RAG workflow:
 
-- knowledge documents are created from manual pasted text
-- ingestion immediately chunks the submitted content into `KnowledgeChunk` rows
-- chunking is deterministic, size-based, and runs during document creation
-- retrieval is tenant-scoped keyword scoring over `KnowledgeChunk.content`
-- assistant replies use retrieved chunks when available
-- citations are stored directly on `Message.citations`
+- knowledge bases and documents are tenant-scoped
+- manual document content is stored on `KnowledgeDocument.content` so documents can be reprocessed
+- ingestion sets document status to `INDEXING`, replaces stale chunks, writes deterministic `KnowledgeChunk` rows, then marks the document `READY`
+- failed ingestion marks the document `FAILED` and stores lightweight error metadata
+- archived documents are marked `ARCHIVED`, have their chunks removed, and are excluded from retrieval
+- chunking is deterministic and prefers paragraph/sentence boundaries with overlap
+- retrieval is tenant-scoped keyword ranking with phrase matching, title boosts, token coverage, and relevance scores
+- assistant replies use retrieved evidence only when matching chunks are strong enough
+- weak or missing evidence produces a cautious fallback response and can point users toward human handoff
+- citations are stored directly on `Message.citations` with document id, chunk id, title, chunk index, source URI, source locator, relevance score, and excerpt
 
-This is not a full vector or embedding pipeline yet. It is a minimal closed loop that proves tenant-aware ingestion, retrieval, grounded reply generation, and citation persistence.
+This is not a vector or embedding pipeline yet. Retrieval is isolated in `KnowledgeRetrievalService` so a future embedding-backed implementation can replace it without rewriting chat or admin flows.
 
 ## Minimal Chat + Knowledge Flow
 
@@ -119,10 +123,14 @@ This is not a full vector or embedding pipeline yet. It is a minimal closed loop
 4. Create a manual document with known content, for example:
    `Returns policy: Kasta allows returns within 30 days with the original receipt.`
 5. Confirm the document shows `status: ready` and a non-zero chunk count
-6. Use the "Live local test" panel to ask a matching question, such as:
+6. Open the document detail to inspect chunks
+7. Click `Reprocess document` to replace chunks from the stored document content
+8. Use `Archive document` to remove it from retrieval when it should no longer answer customer questions
+9. Use the "Live local test" panel to ask a matching question, such as:
    `What is the returns policy?`
-7. Verify the assistant response includes grounded content and the cited document title
-4. Verify the API health endpoint at `http://localhost:4000/v1/health`
+10. Verify the assistant response includes grounded content and the cited document title/chunk
+11. Ask an unsupported question and confirm the assistant uses the fallback path instead of overclaiming
+12. Verify the API health endpoint at `http://localhost:4000/v1/health`
 
 You can also test the backend directly:
 
@@ -170,6 +178,22 @@ curl http://localhost:4000/v1/conversations/<conversation-id>/messages \
 - `GET /v1/knowledge-bases/:knowledgeBaseId`
 - `GET /v1/knowledge-bases/:knowledgeBaseId/documents`
 - `POST /v1/knowledge-bases/:knowledgeBaseId/documents`
+- `GET /v1/knowledge-bases/:knowledgeBaseId/documents/:documentId`
+- `GET /v1/knowledge-bases/:knowledgeBaseId/documents/:documentId/chunks`
+- `POST /v1/knowledge-bases/:knowledgeBaseId/documents/:documentId/reprocess`
+- `POST /v1/knowledge-bases/:knowledgeBaseId/documents/:documentId/archive`
+
+Reprocessing is synchronous in this milestone. It deletes old chunks for the document, recreates chunks from the stored content or provided replacement content, updates `chunkCount`, and refreshes `ingestedAt`.
+
+Fallback behavior is deliberately conservative: when retrieval returns no sufficiently relevant chunks, the assistant says it does not have enough matching knowledge-base evidence and, if enabled for the tenant, suggests requesting human support.
+
+Still intentionally simplified:
+
+- no embeddings or vector database
+- no async ingestion queue
+- no file storage pipeline beyond storing manual document text
+- no realtime widget updates
+- no full analytics or retrieval evaluation dashboard
 
 ## First Human Handoff Loop
 

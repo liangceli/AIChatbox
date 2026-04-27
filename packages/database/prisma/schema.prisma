@@ -199,6 +199,7 @@ model KnowledgeDocument {
   title             String
   sourceType        KnowledgeDocumentSourceType
   sourceUri         String?
+  content           String?
   checksum          String?
   storageKey        String?
   status            KnowledgeDocumentStatus    @default(DRAFT)

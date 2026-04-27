@@ -12,6 +12,7 @@
     "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@platform/customer-widget": "workspace:*",
     "@platform/types": "workspace:*",
     "@platform/utils": "workspace:*",
     "next": "^14.2.0",

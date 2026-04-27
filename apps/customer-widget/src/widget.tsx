@@ -9,80 +9,217 @@ import type {
 import { persistAnonymousVisitorId, resolveAnonymousVisitorId } from "@platform/utils";
 
 const shellStyle: CSSProperties = {
-  width: 360,
+  width: 560,
   maxWidth: "100%",
-  borderRadius: 24,
+  borderRadius: 28,
   overflow: "hidden",
-  border: "1px solid rgba(15, 23, 42, 0.08)",
-  boxShadow: "0 22px 48px rgba(15, 23, 42, 0.12)",
-  background: "#ffffff",
-  fontFamily: "\"Trebuchet MS\", \"Segoe UI\", sans-serif"
+  border: "1px solid rgba(15, 23, 42, 0.1)",
+  boxShadow: "0 28px 72px rgba(15, 23, 42, 0.2)",
+  background: "#f8fafc",
+  fontFamily:
+    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
 };
 
 const headerStyle: CSSProperties = {
-  padding: "16px 18px",
-  background: "linear-gradient(135deg, #0f172a, #1d4ed8)",
-  color: "#f8fafc"
+  padding: "18px 20px 20px",
+  background:
+    "linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(30, 64, 175, 0.96))",
+  color: "#f8fafc",
+  position: "relative"
+};
+
+const headerTopStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12
+};
+
+const brandLockupStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  minWidth: 0
+};
+
+const avatarStyle: CSSProperties = {
+  width: 40,
+  height: 40,
+  borderRadius: 14,
+  background: "rgba(255, 255, 255, 0.12)",
+  border: "1px solid rgba(255, 255, 255, 0.16)",
+  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
+  objectFit: "contain",
+  padding: 6
+};
+
+const titleStyle: CSSProperties = {
+  display: "block",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  fontSize: 16,
+  fontWeight: 760,
+  letterSpacing: 0
+};
+
+const subtitleStyle: CSSProperties = {
+  marginTop: 3,
+  color: "rgba(248, 250, 252, 0.74)",
+  fontSize: 12,
+  lineHeight: 1.35
+};
+
+const statusPillStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 7,
+  flexShrink: 0,
+  borderRadius: 999,
+  padding: "7px 10px",
+  background: "rgba(255, 255, 255, 0.12)",
+  border: "1px solid rgba(255, 255, 255, 0.16)",
+  color: "#e0f2fe",
+  fontSize: 12,
+  fontWeight: 650
+};
+
+const statusDotStyle: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: 999,
+  background: "#34d399",
+  boxShadow: "0 0 0 4px rgba(52, 211, 153, 0.16)"
 };
 
 const bodyStyle: CSSProperties = {
-  padding: 18,
+  padding: 16,
   display: "grid",
   gap: 14,
-  color: "#0f172a"
+  color: "#0f172a",
+  background:
+    "linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 1))"
+};
+
+const contextBarStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "11px 12px",
+  borderRadius: 18,
+  background: "#ffffff",
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+  boxShadow: "0 10px 26px rgba(15, 23, 42, 0.06)",
+  fontSize: 12,
+  color: "#64748b"
 };
 
 const bubbleStyle: CSSProperties = {
-  padding: 14,
-  borderRadius: 16,
-  background: "#eff6ff",
-  lineHeight: 1.5
+  maxWidth: "86%",
+  padding: "12px 14px",
+  borderRadius: "18px 18px 18px 6px",
+  background: "#ffffff",
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+  boxShadow: "0 10px 22px rgba(15, 23, 42, 0.06)",
+  lineHeight: 1.52,
+  color: "#111827",
+  fontSize: 14
 };
 
 const customerBubbleStyle: CSSProperties = {
   ...bubbleStyle,
   justifySelf: "end",
-  background: "#0f172a",
-  color: "#f8fafc"
+  borderRadius: "18px 18px 6px 18px",
+  background: "#111827",
+  border: "1px solid rgba(17, 24, 39, 0.9)",
+  color: "#f8fafc",
+  boxShadow: "0 12px 24px rgba(17, 24, 39, 0.2)"
+};
+
+const systemBubbleStyle: CSSProperties = {
+  ...bubbleStyle,
+  maxWidth: "100%",
+  justifySelf: "stretch",
+  borderRadius: 18,
+  background: "#eef6ff",
+  border: "1px solid rgba(59, 130, 246, 0.14)",
+  color: "#1e3a8a"
 };
 
 const buttonStyle: CSSProperties = {
   border: 0,
-  borderRadius: 999,
-  padding: "12px 16px",
-  background: "#0f172a",
+  borderRadius: 14,
+  padding: "11px 14px",
+  background: "#111827",
   color: "#ffffff",
-  cursor: "pointer"
+  cursor: "pointer",
+  font: "inherit",
+  fontSize: 13,
+  fontWeight: 700,
+  boxShadow: "0 12px 22px rgba(17, 24, 39, 0.18)"
 };
 
 const secondaryButtonStyle: CSSProperties = {
-  borderRadius: 999,
-  padding: "12px 16px",
+  borderRadius: 14,
+  padding: "11px 13px",
   background: "#ffffff",
   color: "#0f172a",
-  border: "1px solid rgba(15, 23, 42, 0.16)",
-  cursor: "pointer"
+  border: "1px solid rgba(15, 23, 42, 0.12)",
+  cursor: "pointer",
+  font: "inherit",
+  fontSize: 13,
+  fontWeight: 700
 };
 
 const textareaStyle: CSSProperties = {
   width: "100%",
-  minHeight: 88,
-  padding: 12,
-  borderRadius: 16,
-  border: "1px solid rgba(148, 163, 184, 0.5)",
+  minHeight: 96,
+  padding: "13px 14px",
+  borderRadius: 18,
+  border: "1px solid rgba(148, 163, 184, 0.38)",
+  background: "#ffffff",
+  color: "#0f172a",
   resize: "vertical",
-  font: "inherit"
+  font: "inherit",
+  lineHeight: 1.45,
+  outline: "none",
+  boxShadow: "inset 0 1px 2px rgba(15, 23, 42, 0.04)"
 };
 
 const messageListStyle: CSSProperties = {
   display: "grid",
-  gap: 10
+  gap: 10,
+  minHeight: 360,
+  maxHeight: 560,
+  overflowY: "auto",
+  padding: "2px 2px 4px"
+};
+
+const composerStyle: CSSProperties = {
+  display: "grid",
+  gap: 10,
+  padding: 12,
+  borderRadius: 22,
+  background: "#ffffff",
+  border: "1px solid rgba(15, 23, 42, 0.08)",
+  boxShadow: "0 14px 30px rgba(15, 23, 42, 0.08)"
+};
+
+const errorStyle: CSSProperties = {
+  borderRadius: 14,
+  padding: "10px 12px",
+  background: "#fef2f2",
+  border: "1px solid rgba(220, 38, 38, 0.16)",
+  color: "#991b1b",
+  fontSize: 13,
+  lineHeight: 1.4
 };
 
 const authorLabels: Record<MessageAuthorType, string> = {
   customer: "You",
-  assistant: "Assistant",
-  agent: "Support agent",
+  assistant: "AI Assistant",
+  agent: "Support Agent",
   system: "System"
 };
 
@@ -98,7 +235,6 @@ export function CustomerWidget({
   const [error, setError] = useState<string>();
   const [isSending, setIsSending] = useState(false);
   const [isRequestingHandoff, setIsRequestingHandoff] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     setVisitorId(resolveAnonymousVisitorId(tenantSlug, initialVisitorId) ?? "");
@@ -106,19 +242,49 @@ export function CustomerWidget({
     setError(undefined);
   }, [initialVisitorId, tenantSlug]);
 
+  useEffect(() => {
+    if (!conversation?.id) {
+      return;
+    }
+
+    const events = new EventSource(
+      `${apiBaseUrl}/realtime/conversations?tenantSlug=${encodeURIComponent(tenantSlug)}`
+    );
+
+    events.addEventListener("conversation_snapshot", (event) => {
+      const payload = JSON.parse(event.data) as {
+        conversations: Array<{ id: string }>;
+      };
+
+      if (payload.conversations.some((item) => item.id === conversation.id)) {
+        void loadConversationDetail(conversation.id);
+      }
+    });
+
+    events.onerror = () => {
+      events.close();
+    };
+
+    return () => {
+      events.close();
+    };
+  }, [apiBaseUrl, tenantSlug, conversation?.id]);
+
   const isPendingHuman = conversation?.status === "pending_human";
   const messages = conversation?.messages ?? [];
+  const statusText = isPendingHuman ? "Human pending" : conversation ? "AI online" : "Ready";
+  const visitorLabel = visitorId ? visitorId.slice(0, 8) : "pending";
 
   const introCopy = useMemo(() => {
     if (!conversation) {
-      return "Send a message to start a tenant-aware support conversation.";
+      return "Hi, I can help answer questions and bring in a support agent when needed.";
     }
 
     if (isPendingHuman) {
-      return "Human support is pending. Refresh this conversation to see new replies.";
+      return "A support agent has been requested. New replies will appear here automatically.";
     }
 
-    return "Conversation is now persisted through the API and Prisma.";
+    return "I am tracking this conversation securely for the current tenant.";
   }, [conversation, isPendingHuman]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -214,16 +380,9 @@ export function CustomerWidget({
     }
   }
 
-  async function refreshConversation() {
-    if (!conversation?.id || isRefreshing) {
-      return;
-    }
-
-    setError(undefined);
-    setIsRefreshing(true);
-
+  async function loadConversationDetail(conversationId: string) {
     try {
-      const response = await fetch(`${apiBaseUrl}/conversations/${conversation.id}/detail`, {
+      const response = await fetch(`${apiBaseUrl}/conversations/${conversationId}/detail`, {
         headers: {
           "x-tenant-slug": tenantSlug
         }
@@ -239,8 +398,6 @@ export function CustomerWidget({
       setError(
         requestError instanceof Error ? requestError.message : "Unable to refresh conversation."
       );
-    } finally {
-      setIsRefreshing(false);
     }
   }
 
@@ -252,48 +409,82 @@ export function CustomerWidget({
           background: theme?.headerBackground ?? headerStyle.background
         }}
       >
-        <strong>{theme?.title ?? "Ask support"}</strong>
-        <div style={{ fontSize: 13, opacity: 0.82 }}>
-          Tenant: {tenantSlug} | API: {apiBaseUrl}
+        <div style={headerTopStyle}>
+          <div style={brandLockupStyle}>
+            <img style={avatarStyle} src="/images/logo.png" alt="" aria-hidden="true" />
+            <div style={{ minWidth: 0 }}>
+              <strong style={titleStyle}>{theme?.title ?? "AI Support"}</strong>
+              <div style={subtitleStyle}>Tenant-aware customer assistance</div>
+            </div>
+          </div>
+
+          <div style={statusPillStyle}>
+            <span style={statusDotStyle} aria-hidden="true" />
+            {statusText}
+          </div>
         </div>
       </header>
 
       <div style={bodyStyle}>
-        <div style={messageListStyle}>
-          <div style={bubbleStyle}>{introCopy}</div>
-
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              style={message.authorType === "customer" ? customerBubbleStyle : bubbleStyle}
-            >
-              <strong style={{ display: "block", marginBottom: 6, fontSize: 13 }}>
-                {message.authorType === "agent" && message.authorName
-                  ? `${authorLabels[message.authorType]} · ${message.authorName}`
-                  : authorLabels[message.authorType]}
-              </strong>
-              <div>{message.content}</div>
-              {message.citations?.length ? (
-                <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}>
-                  Sources:{" "}
-                  {message.citations
-                    .map((citation) => `${citation.title} (chunk ${citation.chunkIndex})`)
-                    .join(", ")}
-                </div>
-              ) : null}
-              {message.messageType !== "text" ? (
-                <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}>
-                  type: {message.messageType}
-                </div>
-              ) : null}
-            </div>
-          ))}
+        <div style={contextBarStyle}>
+          <span>Workspace: {tenantSlug}</span>
+          <span>Visitor: {visitorLabel}</span>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
+        <div style={messageListStyle}>
+          <div style={systemBubbleStyle}>{introCopy}</div>
+
+          {messages.map((message) => {
+            const isCustomer = message.authorType === "customer";
+
+            return (
+              <div key={message.id} style={isCustomer ? customerBubbleStyle : bubbleStyle}>
+                <strong
+                  style={{
+                    display: "block",
+                    marginBottom: 5,
+                    fontSize: 12,
+                    color: isCustomer ? "#cbd5e1" : "#475569"
+                  }}
+                >
+                  {message.authorType === "agent" && message.authorName
+                    ? `${authorLabels[message.authorType]} - ${message.authorName}`
+                    : authorLabels[message.authorType]}
+                </strong>
+                <div>{message.content}</div>
+                {message.citations?.length ? (
+                  <div
+                    style={{
+                      marginTop: 9,
+                      paddingTop: 8,
+                      borderTop: "1px solid rgba(148, 163, 184, 0.22)",
+                      fontSize: 12,
+                      color: isCustomer ? "#cbd5e1" : "#475569"
+                    }}
+                  >
+                    <strong style={{ display: "block", marginBottom: 4 }}>Sources</strong>
+                    {message.citations.map((citation) => (
+                      <div key={`${citation.chunkId}-${citation.chunkIndex}`}>
+                        {citation.title} - chunk {citation.chunkIndex}
+                        {citation.sourceUri ? ` - ${citation.sourceUri}` : ""}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {message.messageType !== "text" ? (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>
+                    type: {message.messageType}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+
+        <form onSubmit={handleSubmit} style={composerStyle}>
           <textarea
             aria-label="Message"
-            placeholder={isPendingHuman ? "Human support is pending." : "Ask a support question"}
+            placeholder={isPendingHuman ? "Human support is pending." : "Type your question..."}
             style={{
               ...textareaStyle,
               opacity: isPendingHuman ? 0.65 : 1
@@ -303,38 +494,45 @@ export function CustomerWidget({
             onChange={(event) => setDraft(event.target.value)}
           />
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-            <button type="submit" style={buttonStyle} disabled={isSending || !visitorId || isPendingHuman}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+            <button
+              type="submit"
+              style={{
+                ...buttonStyle,
+                opacity: isSending || !visitorId || isPendingHuman ? 0.56 : 1,
+                cursor: isSending || !visitorId || isPendingHuman ? "not-allowed" : "pointer"
+              }}
+              disabled={isSending || !visitorId || isPendingHuman}
+            >
               {isSending ? "Sending..." : "Send message"}
             </button>
 
             <button
               type="button"
-              style={secondaryButtonStyle}
+              style={{
+                ...secondaryButtonStyle,
+                opacity: !conversation?.id || isRequestingHandoff || isPendingHuman ? 0.56 : 1,
+                cursor:
+                  !conversation?.id || isRequestingHandoff || isPendingHuman
+                    ? "not-allowed"
+                    : "pointer"
+              }}
               disabled={!conversation?.id || isRequestingHandoff || isPendingHuman}
               onClick={requestHandoff}
             >
-              {isRequestingHandoff ? "Requesting..." : "Talk to human"}
+              {isRequestingHandoff ? "..." : "Human"}
             </button>
 
-            <button
-              type="button"
-              style={secondaryButtonStyle}
-              disabled={!conversation?.id || isRefreshing}
-              onClick={refreshConversation}
-            >
-              {isRefreshing ? "Refreshing..." : "Refresh"}
-            </button>
           </div>
         </form>
 
-        <div style={{ fontSize: 13, color: "#64748b" }}>
-          Visitor: {visitorId || "pending"}
-          {conversation?.id ? ` | Conversation: ${conversation.id}` : ""}
-          {conversation?.status ? ` | Status: ${conversation.status}` : ""}
-        </div>
+        {conversation?.id ? (
+          <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+            Conversation: {conversation.id} | Status: {conversation.status}
+          </div>
+        ) : null}
 
-        {error ? <div style={{ color: "#b91c1c", fontSize: 13 }}>{error}</div> : null}
+        {error ? <div style={errorStyle}>{error}</div> : null}
       </div>
     </section>
   );

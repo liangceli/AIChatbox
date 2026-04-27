@@ -17,12 +17,33 @@ export interface TenantBranding {
   supportEmail?: string;
 }
 
+export interface TenantOverviewRecord {
+  id: string;
+  slug: string;
+  name: string;
+  status: string;
+  conversationCount: number;
+  pendingHumanCount: number;
+  knowledgeBaseCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTenantRequest {
+  name: string;
+  slug: string;
+  supportEmail?: string;
+  defaultLocale?: string;
+}
+
 export interface Citation {
   knowledgeDocumentId: string;
   chunkId: string;
   title: string;
   chunkIndex: number;
   sourceUri?: string | null;
+  sourceLocator?: unknown;
+  relevanceScore?: number;
   excerpt?: string;
 }
 
@@ -47,6 +68,21 @@ export interface KnowledgeDocumentRecord {
   createdAt: string;
   updatedAt: string;
   ingestedAt?: string | null;
+}
+
+export interface KnowledgeChunkRecord {
+  id: string;
+  knowledgeDocumentId: string;
+  chunkIndex: number;
+  content: string;
+  tokenCount?: number | null;
+  sourceLocator?: unknown;
+  createdAt: string;
+}
+
+export interface KnowledgeDocumentDetail extends KnowledgeDocumentRecord {
+  metadata?: unknown;
+  chunks: KnowledgeChunkRecord[];
 }
 
 export interface WidgetTheme {
@@ -135,6 +171,26 @@ export interface CreateKnowledgeDocumentRequest {
   sourceType?: "manual" | "file" | "url" | "integration";
   sourceUri?: string;
   metadata?: JsonObject;
+}
+
+export interface ImportUrlKnowledgeDocumentRequest {
+  url: string;
+  title?: string;
+}
+
+export interface ImportUrlsKnowledgeDocumentRequest {
+  urls: string[];
+}
+
+export interface ImportUrlKnowledgeDocumentResult {
+  url: string;
+  status: "ready" | "failed";
+  document?: KnowledgeDocumentRecord;
+  error?: string;
+}
+
+export interface ReprocessKnowledgeDocumentRequest {
+  content?: string;
 }
 
 export interface RequestConversationHandoffRequest {

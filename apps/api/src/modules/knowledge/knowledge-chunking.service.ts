@@ -12,8 +12,9 @@ export interface ChunkedKnowledgeContent {
 
 @Injectable()
 export class KnowledgeChunkingService {
-  private readonly targetChunkSize = 700;
-  private readonly overlapSize = 120;
+  private readonly targetChunkSize = 900;
+  private readonly minimumBoundaryRatio = 0.55;
+  private readonly overlapSize = 160;
 
   chunkText(content: string): ChunkedKnowledgeContent[] {
     const normalized = content.replace(/\r\n/g, "\n").trim();
@@ -59,7 +60,7 @@ export class KnowledgeChunkingService {
         break;
       }
 
-      start = Math.max(end - this.overlapSize, start + 1);
+      start = this.findOverlapStart(normalized, start, end);
 
       while (start < normalized.length && /\s/.test(normalized[start] ?? "")) {
         start += 1;
@@ -71,12 +72,48 @@ export class KnowledgeChunkingService {
 
   private findBoundary(content: string, start: number, end: number): number {
     const window = content.slice(start, end);
+    const paragraphIndex = window.lastIndexOf("\n\n");
+
+    if (paragraphIndex > Math.floor(window.length * this.minimumBoundaryRatio)) {
+      return start + paragraphIndex;
+    }
+
+    const sentenceBoundary = Math.max(
+      window.lastIndexOf(". "),
+      window.lastIndexOf("? "),
+      window.lastIndexOf("! "),
+      window.lastIndexOf("; ")
+    );
+
+    if (sentenceBoundary > Math.floor(window.length * this.minimumBoundaryRatio)) {
+      return start + sentenceBoundary + 1;
+    }
+
     const whitespaceIndex = Math.max(window.lastIndexOf("\n"), window.lastIndexOf(" "));
 
-    if (whitespaceIndex <= Math.floor(window.length * 0.5)) {
+    if (whitespaceIndex <= Math.floor(window.length * this.minimumBoundaryRatio)) {
       return end;
     }
 
     return start + whitespaceIndex;
+  }
+
+  private findOverlapStart(content: string, previousStart: number, previousEnd: number): number {
+    const overlapFloor = Math.max(previousEnd - this.overlapSize, previousStart + 1);
+    const window = content.slice(overlapFloor, previousEnd);
+    const sentenceBoundary = Math.max(
+      window.indexOf(". "),
+      window.indexOf("? "),
+      window.indexOf("! "),
+      window.indexOf("\n")
+    );
+
+    let nextStart = sentenceBoundary >= 0 ? overlapFloor + sentenceBoundary + 1 : overlapFloor;
+
+    while (nextStart < content.length && /\s/.test(content[nextStart] ?? "")) {
+      nextStart += 1;
+    }
+
+    return nextStart;
   }
 }
