@@ -6,6 +6,8 @@
 - `LlmProviderResolverService` keeps deterministic as the default and selects OpenAI only when validated config sets `AI_PROVIDER=openai`.
 - `OpenAiLlmProviderService` has a manual real-key smoke helper exposed as `pnpm --filter @platform/api smoke:openai`.
 - Knowledge retrieval scoring now uses normalized exact-token matching and stricter one-token thresholds to reduce weak short-query false positives.
+- DB candidate lookup now uses raw terms plus normalized variants, while final retrieval scoring stays exact normalized-token based.
+- `policies` / `warranties` raw plural lookup and `case` / `showcase` false-positive regression checks passed.
 - Provider/retrieval regression coverage lives in `apps/api/scripts/provider-behavior.test.ts`.
 
 ## 后端组成
@@ -125,6 +127,7 @@ API 启动入口：
 - 手动文本、文件文本和 URL 内容最终都走 document creation + chunking。
 - `processDocumentContent` 会把 document 标记 INDEXING，删除旧 chunks，创建新 chunks，更新 READY/chunkCount/ingestedAt/metadata。
 - URL 导入使用 fetch，只支持 `text/html` 和 `text/plain`，最多保留 50000 chars。
+- Retrieval candidate lookup 使用 raw + normalized terms 查询 DB candidates；final scoring 使用 exact normalized tokens 过滤和排序。
 
 ### Conversations / Handoff
 

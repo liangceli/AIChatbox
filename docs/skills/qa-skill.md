@@ -50,6 +50,8 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Knowledge-miss messages still produce deterministic fallback.
 - OpenAI success preserves backend-generated citations from retrieved chunks even when deterministic grounded sentence scoring would return `citations: null`.
 - Short keyword retrieval matches obvious title/content evidence and avoids substring-only weak matches.
+- `policies` and `warranties` raw plural candidate lookup should return relevant policy/warranty chunks.
+- `case` should not match `showcase` by substring alone; current Kasta manual smoke can still return real `Case Studies` citations when independent case evidence exists.
 - OpenAI smoke helper is not part of normal tests and requires explicit OpenAI env.
 - OpenAI provider failure falls back to deterministic content/citations behavior and records fallback metadata.
 - Handoff rejects mismatched visitorId.
@@ -71,6 +73,8 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 - Manual QA for `fb3ca66 Add LLM provider boundary with deterministic fallback` passed.
 - QA for `355e5f6 Add OpenAI provider with deterministic fallback` passed shell-verifiable checks and accepted the citation preservation fix.
+- Retrieval candidate lookup now uses raw + normalized terms, while final scoring uses exact normalized tokens.
+- `policies` / `warranties` and `case` / `showcase` regression checks passed in API tests and QA smoke.
 - Short keyword-style retrieval now uses normalized exact-token scoring and targeted regression tests, but it is still deterministic keyword retrieval rather than semantic search.
 - `pnpm-lock.yaml` should be tracked for dependency reproducibility in this pnpm monorepo.
 

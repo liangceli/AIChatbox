@@ -59,11 +59,11 @@ Use non-watch commands for CI/build verification:
 - `pnpm test`
 - package-scoped variants such as `pnpm --filter @platform/api build`
 
-Manual OpenAI smoke test, only when a real key is available:
+Manual OpenAI smoke test, only when a real key is available. This helper is manual-only and should not be part of normal blocking automated verification:
 
 - `AI_PROVIDER=openai OPENAI_API_KEY=... OPENAI_MODEL=... pnpm --filter @platform/api smoke:openai`
 
-Expected success: real assistant text, preserved backend citation, and provider metadata without secrets. Missing OpenAI env should fail clearly and should not print the API key.
+Expected success: real assistant text, preserved backend citation, and provider metadata without secrets. Missing OpenAI env should fail clearly and should not print the API key. Real-key smoke remains pending/non-blocking until a valid key is available.
 
 Do not treat `pnpm dev` or package `dev` scripts as blocking deployment verification because they are long-running watch servers.
 

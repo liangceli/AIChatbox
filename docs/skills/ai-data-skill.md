@@ -7,8 +7,9 @@
 - `AI_PROVIDER=openai` requires `OPENAI_API_KEY` and `OPENAI_MODEL`; local deterministic development does not.
 - OpenAI success citations are generated directly from retrieved chunks through the shared backend citation helper, not through deterministic sentence scoring.
 - Manual real-key smoke helper: `pnpm --filter @platform/api smoke:openai`. It is not part of normal automated tests.
-- Short-query retrieval now uses normalized exact-token scoring with simple plural/stem handling and a stronger threshold for one-token queries.
-- Short-query regression tests cover obvious keyword matches, substring false positives, exact phrase matches, deterministic citations, and OpenAI citation preservation.
+- DB candidate lookup now uses raw terms plus normalized variants.
+- Final retrieval scoring still uses exact normalized tokens with simple plural/stem handling and a stronger threshold for one-token queries.
+- Regression tests cover `policies` / `warranties` raw plural candidate lookup, `case` / `showcase` substring false-positive prevention, exact phrase matches, deterministic citations, and OpenAI citation preservation.
 
 ## 当前 AI 状态
 
@@ -32,7 +33,10 @@
 
 流程：
 
-- 从用户问题提取 search terms，过滤 stop words。
+- 从用户问题提取 raw words 和 normalized words。
+- DB candidate lookup 使用 raw terms + normalized variants，以便 `policies`、`warranties` 这类 plural query 能先找到候选。
+- final scoring 使用 exact normalized tokens；`case` 不应因为 `showcase` substring 单独形成弱匹配。
+- `policy` 不再作为 stop word，因为 policy 是 support-domain meaningful retrieval term。
 - 提取相邻 phrase。
 - 查询当前 tenant 的 READY KnowledgeChunk。
 - 匹配 chunk content 和 document title。

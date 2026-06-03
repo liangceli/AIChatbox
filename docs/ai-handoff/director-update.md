@@ -2,49 +2,52 @@
 
 ## 1. Completed Task
 
-Completed OpenAI provider integration with deterministic fallback and accepted the QA fix for OpenAI success citation preservation.
+Completed OpenAI provider stabilization and deterministic retrieval QA hardening.
 
-Latest commit reviewed: `355e5f6 Add OpenAI provider with deterministic fallback`.
+Latest commit reviewed: `9a99d6f Stabilize OpenAI provider and retrieval QA`.
 
 ## 2. Accepted Changes
 
-- `OpenAiLlmProviderService` was added behind the existing LLM provider boundary.
-- `LlmProviderResolverService` now selects deterministic by default and OpenAI when `AI_PROVIDER=openai`.
-- `packages/config` now validates OpenAI mode: `OPENAI_API_KEY` and `OPENAI_MODEL` are required when `AI_PROVIDER=openai`.
-- `openai-prompt.ts` builds the OpenAI prompt from `LlmProviderRequest` support rules, retrieved knowledge context, and latest customer message.
-- `citation-builder.ts` centralizes backend citation mapping from retrieved chunks.
-- OpenAI success responses now preserve backend-generated citations from retrieved chunks, independent of deterministic sentence scoring.
-- OpenAI provider failure/empty response/error paths fall back to deterministic behavior.
-- API request/response contracts, Prisma schema, UI, tenant scoping, `PENDING_HUMAN`, and deterministic fallback behavior are unchanged.
+- `pnpm-lock.yaml` is now tracked for dependency reproducibility and records the OpenAI SDK dependency.
+- `.gitignore` no longer ignores `pnpm-lock.yaml`.
+- Added `apps/api/scripts/openai-smoke.ts` and `pnpm --filter @platform/api smoke:openai`; this is a manual-only, secret-safe real-key smoke helper.
+- OpenAI smoke helper requires `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; missing env fails clearly and does not print key values.
+- Knowledge retrieval DB candidate lookup now uses raw query terms plus normalized variants.
+- Final retrieval scoring still uses exact normalized tokens, with simple plural/stem handling and stricter one-token thresholds.
+- `policy` was removed from retrieval stop words because it is meaningful support-domain language.
+- API provider/retrieval tests now cover plural candidate lookup, substring false-positive prevention, exact phrases, deterministic citations, OpenAI citation preservation, metadata safety, and `PENDING_HUMAN`.
+- No UI, API contract, Prisma schema, OpenAI provider selection, handoff, or `PENDING_HUMAN` behavior changed.
 
 ## 3. Verification Summary
 
-- Latest QA result: 可以进入人工验收; no blocking issue found.
-- QA reran shell-verifiable checks: `@platform/api` test/typecheck/lint/build passed; `@platform/config` typecheck/lint/build passed; `@platform/ai-core` typecheck/lint/build passed.
-- `@platform/api` test now includes mocked provider behavior tests, including OpenAI success citation preservation when deterministic grounding would return `citations: null`.
-- Manual checks recorded by QA passed for health, deterministic knowledge hit/miss, handoff, `PENDING_HUMAN`, deterministic startup without OpenAI env, and OpenAI config validation failure when key/model are missing.
-- Real OpenAI success smoke test was not run because no OpenAI API key is currently available.
+- Latest QA result: 人工验收已通过.
+- QA verified `@platform/api` test/typecheck/lint/build passed.
+- QA verified `@platform/config` and `@platform/ai-core` typecheck/build passed.
+- API tests passed for `policies` / `warranties` raw plural candidate lookup and `case` / `showcase` substring false-positive prevention.
+- Manual retrieval smoke passed for `policies`, `warranties`, and current-data `case` behavior.
+- OpenAI missing-env smoke failed as expected with `OpenAI smoke test requires AI_PROVIDER=openai.` and did not print secrets.
+- `pnpm-lock.yaml` secret grep passed and dependency grep confirmed `openai@6.41.0`.
+- Real OpenAI key smoke remains pending/non-blocking because no key is currently available.
 
 ## 4. Remaining Risks
 
 - Real OpenAI success smoke testing remains pending until a valid OpenAI API key is available.
-- `pnpm-lock.yaml` is ignored/untracked despite the new OpenAI dependency; confirm dependency reproducibility policy.
-- Short keyword-style questions can still produce weak deterministic retrieval matches.
+- Retrieval remains deterministic keyword matching, not semantic/vector retrieval.
+- Broader raw + normalized DB candidate lookup can return more candidates, but final exact normalized scoring should filter weak ones.
 - Provider metadata remains additive and should continue to be tolerated by downstream metadata consumers.
 
 ## 5. Updated Docs
 
-- `docs/skills/ai-chatbox-skill.md`: updated provider status, OpenAI mode, env requirements, prompt/citation behavior.
-- `docs/skills/backend-skill.md`: documented OpenAI provider selection, env validation, citation helper, and fallback behavior.
-- `docs/skills/ai-data-skill.md`: documented OpenAI provider behavior, shared citation helper, metadata, and citation preservation.
-- `docs/skills/current-status.md`: recorded latest OpenAI provider/citation fix task, verification summary, risks, and next tasks.
-- `docs/skills/qa-skill.md`: added OpenAI provider regression checks, mocked test location, and real-key smoke test gap.
-- `docs/skills/deployment-skill.md`: updated runtime env docs for `AI_PROVIDER`, OpenAI key/model/tokens/timeout.
-- `docs/skills/decision-log.md`: recorded OpenAI provider and OpenAI success citation decisions.
+- `docs/skills/current-status.md`: reconciled latest accepted task, QA result, lockfile policy, smoke helper, retrieval QA, and next tasks.
+- `docs/skills/ai-data-skill.md`: clarified raw + normalized DB candidate lookup and exact normalized-token scoring.
+- `docs/skills/backend-skill.md`: recorded retrieval candidate/scoring behavior and regression checks.
+- `docs/skills/qa-skill.md`: recorded `policies` / `warranties`, `case` / `showcase`, smoke helper, and lockfile QA outcomes.
+- `docs/skills/deployment-skill.md`: clarified manual-only, secret-safe OpenAI smoke helper and pending real-key smoke.
 - `docs/ai-handoff/director-update.md`: refreshed for latest commit and QA handoff.
+- Existing committed docs already recorded `pnpm-lock.yaml` tracking and OpenAI readiness decisions in `decision-log.md`.
 
 ## 6. Recommended Next Tasks
 
-1. When an OpenAI API key is available, run a real OpenAI success smoke test for retrieved chunks, citations, provider metadata, and retrieval metadata.
-2. Confirm repository policy for `pnpm-lock.yaml` because ignored/untracked lockfile weakens dependency reproducibility with the new OpenAI dependency.
-3. Improve deterministic retrieval quality for short keyword-style questions or tighten retrieval thresholds before embedding/vector work.
+1. When an OpenAI API key is available, run `pnpm --filter @platform/api smoke:openai` and confirm real assistant text, preserved citation, provider metadata, and secret-safe output.
+2. Keep monitoring deterministic retrieval quality after raw + normalized candidate lookup, especially short keyword-style support questions.
+3. Plan the next retrieval upgrade path, likely embeddings/vector search, only when the product need is explicit.

@@ -30,12 +30,11 @@
 
 ## 最新已接受任务
 
-- 最新提交：`355e5f6 Add OpenAI provider with deterministic fallback`。
-- 已接受任务：增加 OpenAI provider，并修复 OpenAI success citation preservation，使 successful OpenAI replies 直接从 retrieved chunks 生成 backend citations。
-- 主要变更：`OpenAiLlmProviderService`、OpenAI prompt helper、shared `buildBackendCitations`、provider behavior tests、OpenAI env validation 和 provider resolver selection。
-- 保持不变：没有 Prisma schema/UI/API request/response contract 变化；tenant scoping、retrieval、deterministic fallback、`PENDING_HUMAN` guard 保持。
-- QA 结果：可以进入人工验收；QA fix 已接受，无 blocking issue。QA handoff 同时记录多项人工验收通过，真实 OpenAI success smoke test 因无 OpenAI key 未执行。
-- 验证摘要：`@platform/api` test/typecheck/lint/build 通过；`@platform/config` 和 `@platform/ai-core` typecheck/lint/build 通过；config/ai-core tests 通过但仍是 placeholder。
+- 最新提交：`9a99d6f Stabilize OpenAI provider and retrieval QA`。
+- 已接受任务：稳定 OpenAI provider readiness、提交 `pnpm-lock.yaml`、加入 manual OpenAI smoke helper，并修复 deterministic retrieval candidate lookup。
+- 主要变更：`pnpm-lock.yaml` 现在应被跟踪；`apps/api/scripts/openai-smoke.ts` 是 manual-only、secret-safe real-key smoke helper；DB candidate lookup 使用 raw terms + normalized variants；final retrieval scoring 继续使用 exact normalized tokens。
+- QA 结果：人工验收已通过。`policies` / `warranties` raw plural candidate lookup 通过；`case` / `showcase` 弱 substring 回归检查通过；real OpenAI key smoke 因无 key 仍 pending/non-blocking。
+- 验证摘要：`@platform/api` test/typecheck/lint/build 通过；`@platform/config` 和 `@platform/ai-core` typecheck/build 通过；OpenAI missing-env smoke 按预期失败且不打印 secret；lockfile secret grep 通过且确认包含 `openai@6.41.0`。
 
 ## 已实现能力
 
@@ -46,6 +45,8 @@
 - `@platform/ai-core` 提供 LLM provider boundary，API 当前通过 resolver 支持 deterministic 和 OpenAI provider。
 - `AI_PROVIDER=deterministic` 是默认值；`AI_PROVIDER=openai` 要求 `OPENAI_API_KEY` 和 `OPENAI_MODEL`。
 - OpenAI success citations 通过 shared backend citation helper 从 retrieved chunks 生成，不依赖 deterministic grounded sentence scoring。
+- Knowledge retrieval 的 DB candidate lookup 使用 raw + normalized terms；final scoring 使用 exact normalized tokens，以保留 plural/stem 查询能力并减少 substring-only 弱匹配。
+- `pnpm-lock.yaml` 已纳入依赖可复现策略。
 - Knowledge base 支持创建、手动文本、文件文本、单 URL/批量 URL 导入、chunking、reprocess、archive、delete。
 - Handoff 支持 customer 请求人工、support user 分配、agent reply。
 - Realtime 当前是 2 秒一次的 SSE snapshot，不是 websocket 协作层。
@@ -64,7 +65,7 @@
 ## 已观察风险
 
 - 真实 OpenAI success smoke test 尚未执行；有 key 后需要补测 OpenAI success citations、provider metadata 和 retrieval metadata。
-- `pnpm-lock.yaml` 当前 ignored/untracked，但最新提交引入了 `openai` dependency；需要确认依赖可复现策略。
+- real-key OpenAI smoke helper 是 manual-only；不要把它作为 normal/blocking automated test。
 - 短 keyword-style questions 仍可能产生弱相关 deterministic retrieval matches。
 - Tenant list/create 目前是 platform-level API，没有认证或管理员校验；生产化前需要补齐权限边界。
 - Customer widget 使用 `/images/logo.png` 作为头像路径；作为独立 embeddable 包接入外部站点时需要确认静态资源策略。
@@ -72,8 +73,8 @@
 
 ## 推荐下一步
 
-1. 有 OpenAI key 后执行 real-key smoke test，重点验证 OpenAI success citations、provider metadata、retrieval metadata。
-2. 确认 `pnpm-lock.yaml` 策略；当前 QA 记录 lockfile ignored/untracked 会削弱 dependency reproducibility。
-3. 改善 deterministic retrieval 对短 keyword-style questions 的弱匹配问题，或在真实 embedding work 前增加更严格阈值。
-4. 为 API 增加最小 auth/RBAC 方案，至少保护 tenant management 和 admin/agent actions。
-5. 将 knowledge ingestion 从同步 API 请求逐步迁移到 worker/queue。
+1. 有 OpenAI key 后执行 manual real-key smoke test，重点验证 OpenAI success citations、provider metadata、retrieval metadata，确认不会泄露 key。
+2. 继续观察 deterministic retrieval 的短 query 行为，尤其是 raw candidate lookup 扩大后是否仍被 exact normalized scoring 正确过滤。
+3. 为 API 增加最小 auth/RBAC 方案，至少保护 tenant management 和 admin/agent actions。
+4. 将 knowledge ingestion 从同步 API 请求逐步迁移到 worker/queue。
+5. 规划 embeddings/vector retrieval，但不要在没有明确需求前引入。
