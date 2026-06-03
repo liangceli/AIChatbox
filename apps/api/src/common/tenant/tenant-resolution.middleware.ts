@@ -4,6 +4,9 @@ import type { NextFunction, Response } from "express";
 import type { TenantRequest } from "./tenant.types";
 import { toResolvedTenant } from "./tenant.types";
 
+//解析tenant的文件
+
+// 请求里面要带这个header
 const TENANT_HEADER_NAME = "x-tenant-slug";
 
 export function createTenantResolutionMiddleware(prisma: PrismaClient) {
@@ -13,7 +16,7 @@ export function createTenantResolutionMiddleware(prisma: PrismaClient) {
     next: NextFunction
   ) {
     try {
-      if (request.method === "OPTIONS") {
+      if (request.method === "OPTIONS") { //如果是option请求 直接放行
         next();
         return;
       }

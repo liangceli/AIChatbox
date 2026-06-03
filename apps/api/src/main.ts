@@ -15,12 +15,12 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
-      whitelist: true
+      whitelist: true //移除DTO中没有定义的字段
     })
   );
   app.use(
     ["/v1/chat", "/v1/conversations", "/v1/knowledge-bases", "/v1/realtime"],
-    createTenantResolutionMiddleware(prisma)
+    createTenantResolutionMiddleware(prisma) //只有这些routes才会进入tenant解析逻辑
   );
 
   const port = Number(process.env.API_PORT ?? 4000);

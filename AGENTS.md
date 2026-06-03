@@ -50,3 +50,9 @@ Note: this starter scaffold keeps linting lightweight. Current `lint` scripts ac
 2. Add API modules against tenant-aware schemas.
 3. Add ingestion and retrieval pipelines in `apps/ai-worker`.
 4. Keep UI apps thin and configuration-driven.
+
+## Project Skills Maintenance
+
+- Project skills live in `docs/skills/`.
+- After every meaningful project change, update any affected skill documents so they reflect the current codebase.
+- In every final response after project work, append this exact sentence: `【此次更新已完成 skills已经同步】`
