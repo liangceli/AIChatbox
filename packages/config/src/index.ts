@@ -3,19 +3,45 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 
-export const serverEnvSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-  DATABASE_URL: z
-    .string()
-    .min(1)
-    .default("postgresql://postgres:postgres@localhost:5432/ai_support_platform"),
-  REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
-  API_PORT: z.coerce.number().int().positive().default(4000),
-  NEXT_PUBLIC_API_BASE_URL: z.string().min(1).default("http://localhost:4000/v1"),
-  NEXT_PUBLIC_DEFAULT_TENANT_SLUG: z.string().min(1).default("demo"),
-  WIDGET_DEFAULT_TENANT_SLUG: z.string().min(1).default("demo"),
-  OPENAI_API_KEY: z.string().optional()
-});
+export const serverEnvSchema = z
+  .object({
+    NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    DATABASE_URL: z
+      .string()
+      .min(1)
+      .default("postgresql://postgres:postgres@localhost:5432/ai_support_platform"),
+    REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
+    API_PORT: z.coerce.number().int().positive().default(4000),
+    NEXT_PUBLIC_API_BASE_URL: z.string().min(1).default("http://localhost:4000/v1"),
+    NEXT_PUBLIC_DEFAULT_TENANT_SLUG: z.string().min(1).default("demo"),
+    WIDGET_DEFAULT_TENANT_SLUG: z.string().min(1).default("demo"),
+    AI_PROVIDER: z.enum(["deterministic", "openai"]).default("deterministic"),
+    OPENAI_API_KEY: z.string().optional(),
+    OPENAI_MODEL: z.string().optional(),
+    OPENAI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().optional(),
+    OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(30000)
+  })
+  .superRefine((env, context) => {
+    if (env.AI_PROVIDER !== "openai") {
+      return;
+    }
+
+    if (!env.OPENAI_API_KEY?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OPENAI_API_KEY"],
+        message: "OPENAI_API_KEY is required when AI_PROVIDER=openai."
+      });
+    }
+
+    if (!env.OPENAI_MODEL?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OPENAI_MODEL"],
+        message: "OPENAI_MODEL is required when AI_PROVIDER=openai."
+      });
+    }
+  });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 

@@ -5,16 +5,7 @@ import type {
   LlmRetrievedKnowledgeChunk
 } from "@platform/ai-core";
 import { Injectable } from "@nestjs/common";
-
-function createExcerpt(content: string, maxLength = 220): string {
-  const normalized = content.replace(/\s+/g, " ").trim();
-
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxLength).trimEnd()}...`;
-}
+import { buildBackendCitations } from "./citation-builder";
 
 @Injectable()
 export class AssistantReplyService implements LlmProvider {
@@ -32,16 +23,7 @@ export class AssistantReplyService implements LlmProvider {
     }
 
     if (input.retrievedChunks.length > 0) {
-      const citations = input.retrievedChunks.map((chunk) => ({
-        knowledgeDocumentId: chunk.knowledgeDocumentId,
-        chunkId: chunk.chunkId,
-        title: chunk.title,
-        chunkIndex: chunk.chunkIndex,
-        sourceUri: chunk.sourceUri ?? null,
-        sourceLocator: chunk.sourceLocator ?? undefined,
-        relevanceScore: chunk.relevanceScore,
-        excerpt: createExcerpt(chunk.content, 180)
-      }));
+      const citations = buildBackendCitations(input.retrievedChunks);
       const groundedPoints = this.selectGroundedSentences(normalizedMessage, input.retrievedChunks);
 
       if (groundedPoints.length === 0) {

@@ -153,7 +153,11 @@ export class ChatService {
             provider: {
               name: assistantReply.metadata.providerName,
               mode: assistantReply.metadata.mode,
-              deterministic: assistantReply.metadata.deterministic
+              deterministic: assistantReply.metadata.deterministic,
+              model: assistantReply.metadata.model,
+              fallbackReason: assistantReply.metadata.fallbackReason,
+              latencyMs: assistantReply.metadata.latencyMs,
+              responseId: assistantReply.metadata.responseId
             }
           }
         }

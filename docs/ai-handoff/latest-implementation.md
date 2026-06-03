@@ -2,98 +2,71 @@
 
 ## 1. Original Task Brief
 
-Task title: Add LLM Provider Boundary While Preserving Deterministic Assistant Fallback
+QA fix request:
 
-Summary:
-
-- Create a clean backend/provider boundary for future real LLM integrations.
-- Do not call any real external LLM API.
-- Keep the current deterministic/template assistant behavior as the default.
-- Preserve tenant-scoped chat flow, message persistence, citations, retrieval metadata, and `PENDING_HUMAN` behavior.
-- Avoid new large AI dependencies, Prisma schema changes, UI changes, and tenant-specific hardcoding.
-- Update this handoff file after implementation.
+- Fix OpenAI success citation preservation.
+- Current `OpenAiLlmProviderService.generateReply` gets success citations through `this.deterministicProvider.generateReply(input).citations`.
+- If deterministic sentence scoring has no grounded points, citations can become `null` even when `input.retrievedChunks` exists and OpenAI succeeds.
+- OpenAI success should generate backend citations directly from `input.retrievedChunks`, or use a shared citation helper.
+- Add a mocked OpenAI success test where retrieved chunks exist but do not trigger deterministic grounded sentence scoring, and assert OpenAI response still includes citations.
 
 ## 2. Changed Files
 
 | File | Why it changed |
 | -- | -- |
-| `packages/ai-core/src/index.ts` | Added shared LLM provider request/response, retrieved chunk, tenant/conversation/agent context, metadata, provider mode, and provider interface contracts. |
-| `apps/api/package.json` | Added `@platform/ai-core` as an API workspace dependency because API now imports the shared provider contract. |
-| `apps/api/src/modules/chat/assistant-reply.service.ts` | Converted the existing deterministic reply service into the default `LlmProvider` implementation while preserving its reply and citation behavior. |
-| `apps/api/src/modules/chat/llm-provider-resolver.service.ts` | Added a small resolver that currently returns the deterministic provider and prepares the API for future provider selection. |
-| `apps/api/src/modules/chat/chat.module.ts` | Registered the provider resolver in the Chat module. |
-| `apps/api/src/modules/chat/chat.service.ts` | Updated chat orchestration to call the provider boundary instead of directly calling hardcoded deterministic generation, and persisted provider metadata alongside retrieval metadata. |
-| `apps/api/src/modules/knowledge/knowledge-retrieval.service.ts` | Updated retrieval output typing to use the shared `LlmRetrievedKnowledgeChunk` contract after moving the provider-facing type out of chat internals. |
-| `docs/ai-handoff/latest-implementation.md` | Updated this implementation handoff for Codex Chat 3 and Project Context & Docs. |
+| `apps/api/src/modules/chat/citation-builder.ts` | Added shared backend citation builder from provider retrieved chunks. |
+| `apps/api/src/modules/chat/assistant-reply.service.ts` | Reused the shared citation builder for deterministic citations to keep citation mapping consistent. |
+| `apps/api/src/modules/chat/openai-llm-provider.service.ts` | Changed OpenAI success path to build citations directly from `input.retrievedChunks` instead of relying on deterministic reply scoring. |
+| `apps/api/scripts/provider-behavior.test.ts` | Added mocked OpenAI success regression test for citation preservation when deterministic grounding would return `citations: null`. |
+| `docs/ai-handoff/latest-implementation.md` | Updated implementation handoff for this QA fix. |
 
 ## 3. Implementation Summary
 
-Introduced a small LLM provider boundary in `@platform/ai-core` and wired `apps/api` to use it. The existing `AssistantReplyService` remains the deterministic implementation, now implementing `LlmProvider`. `ChatService` resolves a provider through `LlmProviderResolverService`, awaits `generateReply`, and stores the same assistant content/citations as before.
+Added `buildBackendCitations`, a shared helper that maps `LlmRetrievedKnowledgeChunk[]` to backend `Citation[]`. The deterministic provider now uses this helper for its grounded citation mapping. The OpenAI success path now returns `buildBackendCitations(input.retrievedChunks)` whenever retrieved chunks are present, so citation preservation no longer depends on deterministic sentence scoring.
 
-No external provider integration was added. No API key is required. No Prisma schema, UI, tenant resolution, handoff, or customer-widget behavior was changed.
+Added a provider behavior test that proves the fix: a mocked OpenAI success response receives retrieved chunks whose content does not match the customer message terms, causing deterministic generation to return `citations: null`; the OpenAI success response still returns the retrieved chunk citation.
 
 ## 4. User-Visible Changes
 
-There should be no material user-visible change. Chat responses continue to use the existing deterministic fallback/retrieval behavior. Citations should still appear when matching knowledge chunks are retrieved, and fallback messages should remain deterministic when there is not enough matching evidence.
+In OpenAI mode, successful AI replies will now preserve backend-generated citations whenever retrieval found chunks, even if deterministic grounding would not have selected a sentence. Deterministic mode behavior should remain unchanged.
 
 ## 5. Technical Notes
 
-- `LlmProviderRequest` carries only tenant-scoped data selected by the existing API flow: tenant context, conversation id, agent config, latest customer message, and retrieved chunks.
-- `LlmProviderResponse` returns response content, citations, and provider metadata.
-- Deterministic metadata currently records:
-  - `providerName: "deterministic"`
-  - `mode: "deterministic"`
-  - `deterministic: true`
-  - `usedFallback`
-- Assistant message metadata now includes:
-  - existing `retrieval.usedFallback`, `retrievedChunkCount`, and `chunkIds`
-  - new `provider.name`, `provider.mode`, and `provider.deterministic`
-- Citation persistence is preserved because citations are still derived from retrieved knowledge chunks and written to `Message.citations`.
-- The resolver currently has no env/config switch. This avoids introducing inactive modes that could fail at runtime before real provider support exists.
-- `pnpm install --lockfile-only` was run after adding the workspace dependency; it produced no git diff in `pnpm-lock.yaml`, and the lockfile already contains the `@platform/ai-core` entry.
+- No external API behavior, frontend UI, Prisma schema, or request/response contract was changed.
+- Citations are still generated by backend code from retrieved chunks.
+- OpenAI still does not invent citations.
+- OpenAI fallback behavior remains deterministic and unchanged.
+- `docs/ai-handoff/latest-qa.md` had pre-existing external changes and was intentionally left untouched.
 
 ## 6. Verification Results
 
 | Command / Check | Result | Notes |
 | -- | -- | -- |
-| `Get-Content docs\skills\ai-chatbox-skill.md` | Passed | Read current chatbox/message flow guidance before code changes. |
-| `Get-Content docs\skills\backend-skill.md` | Passed | Read backend/provider boundary guidance before code changes. |
-| `Get-Content docs\skills\api-contract-skill.md` | Passed | Confirmed no API contract change was required. |
-| `pnpm --filter @platform/api typecheck` | Failed before verification | Global `pnpm` was not recognized in the shell. Retried with local `node_modules/.bin/pnpm.CMD`. Not caused by this task. |
-| `pnpm.cmd --filter @platform/api typecheck` | Failed before verification | Global `pnpm.cmd` was not recognized in the shell. Retried with local `node_modules/.bin/pnpm.CMD`. Not caused by this task. |
-| `.\node_modules\.bin\pnpm.CMD --filter @platform/api typecheck` through full PowerShell path | Passed after fix | First run exposed the old `RetrievedKnowledgeChunk` import in knowledge retrieval; fixed by importing `LlmRetrievedKnowledgeChunk` from `@platform/ai-core`. Final run passed. |
-| `.\node_modules\.bin\pnpm.CMD --filter @platform/ai-core typecheck` through full PowerShell path | Passed | TypeScript provider contract compiles. |
+| `Get-Content apps\api\src\modules\chat\openai-llm-provider.service.ts` | Passed | Inspected current OpenAI success citation path before editing. |
+| `Get-Content apps\api\scripts\provider-behavior.test.ts` | Passed | Inspected existing mocked provider tests before editing. |
+| `Get-Content apps\api\src\modules\chat\assistant-reply.service.ts` | Passed | Inspected deterministic citation/scoring behavior before editing. |
+| `.\node_modules\.bin\pnpm.CMD --filter @platform/api test` through full PowerShell path | Passed | Mocked OpenAI tests passed; expected timeout fallback warning still appears for the existing failure test. |
+| `.\node_modules\.bin\pnpm.CMD --filter @platform/api typecheck` through full PowerShell path | Passed | API typecheck passed. |
 | `.\node_modules\.bin\pnpm.CMD --filter @platform/api lint` through full PowerShell path | Passed | Current lint script is `tsc --noEmit`. |
-| `.\node_modules\.bin\pnpm.CMD --filter @platform/ai-core lint` through full PowerShell path | Passed | Current lint script is `tsc --noEmit`. |
-| `.\node_modules\.bin\pnpm.CMD --filter @platform/api test` through full PowerShell path | Passed | Placeholder test command: `No tests configured for api yet`. |
-| `.\node_modules\.bin\pnpm.CMD --filter @platform/ai-core test` through full PowerShell path | Passed | Placeholder test command: `No tests configured for ai-core yet`. |
-| `.\node_modules\.bin\pnpm.CMD --filter @platform/api build` through full PowerShell path | Passed | API TypeScript build passed. |
-| `.\node_modules\.bin\pnpm.CMD --filter @platform/ai-core build` through full PowerShell path | Passed | ai-core TypeScript build passed. |
-| `.\node_modules\.bin\pnpm.CMD install --lockfile-only` through full PowerShell path | Passed | No lockfile git diff resulted. |
-| `git diff` / `git status --short` | Passed | Reviewed changed files and confirmed scope. |
+| `.\node_modules\.bin\pnpm.CMD --filter @platform/api build` through full PowerShell path | Passed | API build passed. |
+| `git diff` / `git status --short --untracked-files=all` | Passed | Reviewed scope; noted pre-existing `docs/ai-handoff/latest-qa.md` change left untouched. |
 
 ## 7. Manual QA Suggestions
 
-- Send `POST /v1/chat/messages` with `x-tenant-slug` and a normal message; confirm customer and assistant messages are persisted.
-- Send a message that matches READY knowledge content; confirm deterministic grounded response and citations still appear.
-- Send a message that does not match knowledge content; confirm deterministic fallback still appears.
-- Confirm a `PENDING_HUMAN` conversation still rejects further AI replies.
-- Confirm no OpenAI/Anthropic/API key configuration is needed.
-- Confirm tenant slug scoping still prevents access to another tenant's conversation or knowledge data.
-- Inspect persisted assistant `metadata` to confirm `retrieval` remains present and `provider` metadata is added.
+- In `AI_PROVIDER=openai` mode with valid env, send a message that retrieves knowledge chunks but where the customer wording does not overlap strongly with the chunk sentence text; confirm citations still appear.
+- Confirm OpenAI success messages still persist provider metadata and retrieval metadata.
+- Confirm deterministic mode still behaves as before for knowledge hits and misses.
+- Confirm OpenAI fallback still returns deterministic content and citations according to deterministic fallback behavior.
 
 ## 8. Risks / Notes
 
-- This introduces a provider abstraction but no real external provider implementation.
-- Provider metadata is newly stored in assistant message metadata. This should be low risk because it is additive, but QA should confirm any metadata consumers tolerate the extra `provider` object.
-- There are no real unit tests yet for the chat provider boundary; current API and ai-core tests are placeholders.
-- The resolver always returns deterministic mode. Future provider modes should be added carefully with explicit config validation and no cross-tenant data access.
-- Some direct shell invocations produced Windows sandbox spawn errors. Verification succeeded by using the full PowerShell path and local `node_modules/.bin/pnpm.CMD`.
+- This fix intentionally changes only OpenAI success citation preservation; deterministic fallback still returns `citations: null` when deterministic grounding cannot find grounded points.
+- The new helper centralizes citation mapping for chat providers, but it does not change retrieval behavior or citation response shape.
+- Manual real OpenAI testing was not run here.
+- Existing uncommitted `docs/ai-handoff/latest-qa.md` changes are outside this fix and were not modified.
 
 ## 9. Docs Update Suggestions
 
-- `docs/skills/ai-chatbox-skill.md`: update the message flow to say ChatService now calls an LLM provider boundary, with deterministic provider as default.
-- `docs/skills/backend-skill.md`: record the new `@platform/ai-core` provider contract and `LlmProviderResolverService` in the Chat section.
-- `docs/skills/ai-data-skill.md`: note that retrieval chunks now use the shared provider-facing chunk contract.
-- `docs/skills/current-status.md`: record completion of the provider boundary task and verification summary.
-- `docs/skills/decision-log.md`: optionally record the architecture decision that real LLM providers will plug into `@platform/ai-core` contracts instead of ChatService directly.
+- `docs/skills/ai-data-skill.md`: note that OpenAI success citations are generated directly from retrieved chunks via a shared backend citation helper.
+- `docs/skills/ai-chatbox-skill.md`: clarify that OpenAI success preserves citations independently from deterministic grounded sentence scoring.
+- `docs/skills/qa-skill.md`: add the new regression scenario to provider QA notes.

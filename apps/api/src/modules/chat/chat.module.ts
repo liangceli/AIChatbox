@@ -4,10 +4,11 @@ import { ChatController } from "./chat.controller";
 import { AssistantReplyService } from "./assistant-reply.service";
 import { ChatService } from "./chat.service";
 import { LlmProviderResolverService } from "./llm-provider-resolver.service";
+import { OpenAiLlmProviderService } from "./openai-llm-provider.service";
 
 @Module({
   imports: [KnowledgeModule],
   controllers: [ChatController],
-  providers: [AssistantReplyService, LlmProviderResolverService, ChatService]
+  providers: [AssistantReplyService, OpenAiLlmProviderService, LlmProviderResolverService, ChatService]
 })
 export class ChatModule {}

@@ -44,6 +44,10 @@ export interface LlmProviderMetadata {
   mode: LlmProviderMode;
   deterministic: boolean;
   usedFallback: boolean;
+  model?: string;
+  fallbackReason?: string;
+  latencyMs?: number;
+  responseId?: string;
 }
 
 export interface LlmProviderResponse {
