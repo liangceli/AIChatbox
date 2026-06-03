@@ -43,6 +43,12 @@ Current server env keys:
 
 `AI_PROVIDER` defaults to `deterministic`. `AI_PROVIDER=openai` requires both `OPENAI_API_KEY` and `OPENAI_MODEL`; missing values fail config validation. `OPENAI_TIMEOUT_MS` defaults to `30000`.
 
+Do not commit real API keys or secrets. Use local `.env` files or deployment secret managers for `OPENAI_API_KEY`.
+
+## Dependency Reproducibility
+
+This is a pnpm monorepo and `pnpm-lock.yaml` should be tracked. The lockfile records the installed OpenAI SDK version and must not be ignored.
+
 ## Build Commands
 
 Use non-watch commands for CI/build verification:
@@ -52,6 +58,12 @@ Use non-watch commands for CI/build verification:
 - `pnpm build`
 - `pnpm test`
 - package-scoped variants such as `pnpm --filter @platform/api build`
+
+Manual OpenAI smoke test, only when a real key is available:
+
+- `AI_PROVIDER=openai OPENAI_API_KEY=... OPENAI_MODEL=... pnpm --filter @platform/api smoke:openai`
+
+Expected success: real assistant text, preserved backend citation, and provider metadata without secrets. Missing OpenAI env should fail clearly and should not print the API key.
 
 Do not treat `pnpm dev` or package `dev` scripts as blocking deployment verification because they are long-running watch servers.
 

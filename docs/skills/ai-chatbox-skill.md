@@ -1,5 +1,13 @@
 # AI Chatbox Skill
 
+## 2026-06-03 Stabilization Notes
+
+- Provider resolver defaults to deterministic and selects OpenAI only when `AI_PROVIDER=openai`.
+- OpenAI mode requires `OPENAI_API_KEY` and `OPENAI_MODEL`; normal deterministic local chat does not.
+- OpenAI success preserves backend citations directly from retrieved chunks.
+- Manual real-key smoke helper: `pnpm --filter @platform/api smoke:openai`.
+- Short keyword retrieval has been hardened with exact normalized token scoring to reduce weak substring matches.
+
 ## 范围
 
 本文件描述当前 customer chatbox/widget 的真实实现。当前回复由 API 中的 LLM provider boundary 生成；默认是 deterministic provider，可通过 env 切换到 OpenAI provider。

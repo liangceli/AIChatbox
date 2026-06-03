@@ -11,5 +11,4 @@ coverage
 .env.test.local
 .env.production.local
 infra/local-postgres/
-pnpm-lock.yaml
 *.tsbuildinfo

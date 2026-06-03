@@ -1,5 +1,13 @@
 # 当前状态
 
+## 2026-06-03 Stabilization Update
+
+- Dependency reproducibility policy updated: `pnpm-lock.yaml` should be tracked and is no longer ignored.
+- OpenAI real-key smoke helper added: `pnpm --filter @platform/api smoke:openai`; it is manual-only and not part of normal tests.
+- Short keyword retrieval now uses normalized exact-token scoring and stricter one-token thresholds to reduce weak substring matches.
+- API provider tests now cover retrieval short-query behavior, OpenAI citation preservation, safe provider metadata, fallback metadata, and `PENDING_HUMAN` blocking.
+- Real OpenAI smoke remains pending until a valid API key is available.
+
 ## 最新代码状态
 
 本次文档 intake 基于当前仓库源码，不修改业务逻辑。项目目前是一个 TypeScript monorepo，包含：

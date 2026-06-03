@@ -1,5 +1,15 @@
 # AI 与数据流 Skill
 
+## 2026-06-03 Stabilization Notes
+
+- OpenAI is an explicit provider mode only: `AI_PROVIDER=openai`.
+- Deterministic remains the default provider when `AI_PROVIDER` is missing or set to `deterministic`.
+- `AI_PROVIDER=openai` requires `OPENAI_API_KEY` and `OPENAI_MODEL`; local deterministic development does not.
+- OpenAI success citations are generated directly from retrieved chunks through the shared backend citation helper, not through deterministic sentence scoring.
+- Manual real-key smoke helper: `pnpm --filter @platform/api smoke:openai`. It is not part of normal automated tests.
+- Short-query retrieval now uses normalized exact-token scoring with simple plural/stem handling and a stronger threshold for one-token queries.
+- Short-query regression tests cover obvious keyword matches, substring false positives, exact phrase matches, deterministic citations, and OpenAI citation preservation.
+
 ## 当前 AI 状态
 
 当前系统是 RAG 数据流 scaffold，已支持可选 OpenAI provider，但 retrieval 仍是 deterministic keyword/phrase，不是 embeddings/vector RAG。

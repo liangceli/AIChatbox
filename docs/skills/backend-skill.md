@@ -1,5 +1,13 @@
 # 后端 Skill
 
+## 2026-06-03 Stabilization Notes
+
+- `pnpm-lock.yaml` should be tracked for dependency reproducibility; it records the OpenAI SDK dependency.
+- `LlmProviderResolverService` keeps deterministic as the default and selects OpenAI only when validated config sets `AI_PROVIDER=openai`.
+- `OpenAiLlmProviderService` has a manual real-key smoke helper exposed as `pnpm --filter @platform/api smoke:openai`.
+- Knowledge retrieval scoring now uses normalized exact-token matching and stricter one-token thresholds to reduce weak short-query false positives.
+- Provider/retrieval regression coverage lives in `apps/api/scripts/provider-behavior.test.ts`.
+
 ## 后端组成
 
 后端主应用是 `apps/api`，使用 NestJS。数据库和 Prisma client 在 `packages/database`，环境解析在 `packages/config`，共享 AI/LLM provider contracts 在 `packages/ai-core`。

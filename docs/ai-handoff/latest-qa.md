@@ -2,67 +2,63 @@
 
 ## 1. Overall Conclusion
 
-可以进入人工验收
+人工验收已通过
 
-The QA fix is accepted. OpenAI success citations are now generated directly from retrieved chunks through `buildBackendCitations(input.retrievedChunks)` instead of depending on deterministic reply sentence scoring.
+The QA fix is accepted. DB candidate lookup now uses raw terms plus normalized variants, while final scoring remains exact normalized-token based. Regression coverage now verifies `policies` / `warranties` raw plural candidate lookup and keeps the `case` vs `showcase` weak substring false-positive test.
 
-The previous P1 issue is resolved. QA also reran the shell-verifiable checks directly: API/config/ai-core test, typecheck, lint, and build passed. No new blocking issue was found in the QA fix.
+No blocking issue was found in this QA fix. User manual retrieval smoke checks passed for the available local Kasta knowledge base.
 
 ## 2. Scope Check
 
-The QA fix stayed within scope.
+The fix stayed within scope.
 
 Scope notes:
 
-- Added a shared backend citation builder for provider retrieved chunks.
-- Updated deterministic provider to reuse the shared citation builder without changing its fallback behavior.
-- Updated OpenAI success path to generate citations directly from retrieved chunks.
-- Added a mocked regression test proving OpenAI success keeps citations even when deterministic grounding returns `citations: null`.
-- Did not change frontend UI, Prisma schema, API request/response contract, retrieval scoring, OpenAI fallback behavior, or provider selection behavior.
+- `extractCandidateSearchTerms(question)` now returns raw query terms plus normalized variants.
+- Prisma candidate lookup uses candidate terms for `content contains` and `title contains`.
+- Final scoring still uses `extractSearchTerms(question)` and exact normalized token occurrences.
+- `policy` was removed from stop words so policy-related support queries can retrieve meaningful candidates.
+- Tests now mock the Prisma-style `where.OR` filtering instead of blindly returning candidates.
+- No UI, API contract, Prisma schema, OpenAI provider selection, handoff, or `PENDING_HUMAN` behavior was changed.
 
 ## 3. File-Level Diff Review
 
 | File | Reasonable? | Risk | Notes |
 | -- | -- | -- | -- |
-| `apps/api/src/modules/chat/citation-builder.ts` | Yes | Low | New helper maps `LlmRetrievedKnowledgeChunk[]` to backend `Citation[]`. This removes citation generation duplication and avoids coupling OpenAI success citations to deterministic sentence scoring. |
-| `apps/api/src/modules/chat/assistant-reply.service.ts` | Yes | Low | Deterministic provider now uses `buildBackendCitations`. It still returns fallback with `citations: null` when no grounded points are found, preserving deterministic behavior. |
-| `apps/api/src/modules/chat/openai-llm-provider.service.ts` | Yes | Low | OpenAI success path now returns `buildBackendCitations(input.retrievedChunks)` when chunks exist, otherwise `null`. This satisfies the QA fix request. |
-| `apps/api/scripts/provider-behavior.test.ts` | Yes | Low | Adds regression coverage where deterministic generation returns `citations: null`, while mocked OpenAI success still returns retrieved chunk citations. |
-| `docs/ai-handoff/latest-implementation.md` | Yes | Low | Accurately documents the QA fix, verification, remaining notes, and docs update suggestions. |
+| `apps/api/src/modules/knowledge/knowledge-retrieval.service.ts` | Yes | Low | Candidate lookup uses raw + normalized terms; final scoring still uses normalized exact token matching. This resolves the prior plural/stem candidate lookup gap. |
+| `apps/api/scripts/provider-behavior.test.ts` | Yes | Low | The retrieval test mock now respects Prisma-style `where.OR` terms and covers `policies`, `warranties`, `case` vs `showcase`, exact phrase matching, and deterministic citation preservation. |
+| `docs/ai-handoff/latest-implementation.md` | Yes | Low | Handoff accurately describes the QA fix and verification results. |
 | `docs/ai-handoff/latest-qa.md` | Yes | Low | Updated by QA for this review. |
 
 ## 4. Issues Found
 
 | Issue | Severity | Must Fix? | Suggested Handling |
 | -- | -- | -- | -- |
-| Untracked implementation files are still present | P1 should fix before commit | Yes before commit/stage | Ensure all new files are staged before commit, especially `citation-builder.ts`, OpenAI provider files, prompt helper, and provider tests. |
-| Real OpenAI manual QA was not run here | P2 nice to fix | No | Mocked tests passed and QA reran shell-verifiable checks. User confirmed no real OpenAI key is currently available, so real-key smoke test remains pending/non-blocking. |
-| `pnpm-lock.yaml` is ignored/untracked despite new dependency | P2 nice to fix | No | Existing repository state, but dependency reproducibility is weaker without a tracked lockfile. |
+| `pnpm-lock.yaml` remains untracked | P1 should fix before commit | Yes before commit/stage | Stage `pnpm-lock.yaml` with this change so dependency reproducibility is actually committed. |
+| `apps/api/scripts/openai-smoke.ts` remains untracked | P1 should fix before commit | Yes before commit/stage | Stage the smoke helper before commit because `apps/api/package.json` references it. |
+| Real OpenAI smoke was not run | P2 nice to fix | No | User currently has no key available. Missing-env smoke path and mocked provider tests passed; run real-key smoke later when a key is available. |
 
 ## 5. Regression Risks
 
-The previous OpenAI citation regression risk is resolved.
+The previous plural/stem candidate lookup risk is resolved.
 
-Remaining possible regression areas:
+Remaining risks:
 
-- OpenAI mode still needs real-key smoke testing outside mocked tests when a key is available.
-- Provider metadata persistence remains additive and should be tolerated by downstream metadata consumers.
-- Dependency reproducibility depends on repository policy because `pnpm-lock.yaml` is ignored/untracked.
-
-Default deterministic mode remains low risk. The deterministic provider still only returns citations when it produces a grounded answer, and OpenAI fallback still delegates to deterministic behavior.
+- Broader raw + normalized candidate lookup may return more candidates, but final scoring still filters by exact normalized token matches and the candidate list is capped.
+- Removing `policy` from stop words can increase policy-related retrieval, which is intended for a support platform.
+- Real OpenAI success remains unverified without a real key, but this is non-blocking for this fix.
 
 ## 6. Domain-Specific Check
 
-This task touches AI chatbox/provider citation behavior.
+This task touches deterministic retrieval quality.
 
 Findings:
 
-- OpenAI success citations are backend-generated from retrieved chunks.
-- OpenAI does not invent citation IDs.
-- Deterministic fallback behavior is unchanged.
-- Prompt assembly remains scoped to `LlmProviderRequest`.
-- `PENDING_HUMAN` behavior is not changed.
-- No tenant-specific or Kasta-specific behavior was introduced.
+- `policies` can retrieve raw `policies` content/title before normalized scoring.
+- `warranties` can retrieve raw `warranties` content/title before normalized scoring.
+- `case` inside `showcase` is still filtered out by final exact normalized scoring.
+- Exact phrase matches still work.
+- Deterministic knowledge-hit citations remain preserved.
 
 ## 7. Backend/API/Auth Check
 
@@ -70,68 +66,61 @@ Backend/API/Auth findings:
 
 - Request shape: unchanged.
 - Response shape: unchanged.
-- Validation: unchanged.
-- Auth/session behavior: unchanged.
-- Data persistence: unchanged except previously added safe provider metadata.
-- Security/privacy: no API keys, raw prompts, or raw provider errors are persisted by this fix.
-- Citation persistence: OpenAI success now reliably preserves citations from retrieved backend chunks.
+- Validation/auth/session behavior: unchanged.
+- Data persistence: unchanged.
+- Tenant scoping: unchanged; Prisma query still filters by `tenantId: tenant.id`.
+- Security/privacy: no secret-handling changes in this fix. Smoke helper still avoids printing key values.
 
 ## 8. Performance and Stability Check
 
-No new performance or stability issue was found.
+No significant performance issue was found.
 
-The new citation helper is synchronous and maps at most the already retrieved chunks. It does not add network calls, database queries, event listeners, timers, polling, rendering work, or large state changes.
+Notes:
+
+- Candidate OR terms now include raw + normalized variants, capped at 16 candidate terms.
+- Final candidate result still uses `take: 80`.
+- Exact normalized scoring remains in-memory over the returned candidates.
+- This is an acceptable tradeoff for deterministic retrieval hardening without embeddings/vector search.
 
 ## 9. Verification Status / Manual QA
 
 QA 本轮已直接执行的 shell 验证：
 
-- `@platform/api` test：通过，包含 mocked OpenAI citation regression test；timeout fallback warning 是测试预期行为。
-- `@platform/api` typecheck：通过。
-- `@platform/config` typecheck：通过。
-- `@platform/ai-core` typecheck：通过。
-- `@platform/api` lint：通过。
-- `@platform/config` lint：通过。
-- `@platform/ai-core` lint：通过。
-- `@platform/api` build：通过。
-- `@platform/config` build：通过。
-- `@platform/ai-core` build：通过。
-- `@platform/config` test：通过，但目前是 placeholder。
-- `@platform/ai-core` test：通过，但目前是 placeholder。
-- `git status --short --untracked-files=all`：通过，确认仍有新增未跟踪实现文件需要提交前 stage。
+- `@platform/api test`：通过。覆盖 mocked OpenAI provider tests、`policies` / `warranties` raw plural candidate lookup、`case` vs `showcase` false-positive prevention、exact phrase matching、deterministic citations、metadata safety、`PENDING_HUMAN`。
+- `@platform/api typecheck`：通过。
+- `@platform/api lint`：通过。
+- `@platform/api build`：通过。
+- `@platform/config typecheck`：通过。
+- `@platform/ai-core typecheck`：通过。
+- `@platform/config build`：通过。
+- `@platform/ai-core build`：通过。
+- `@platform/api smoke:openai` without OpenAI env：按预期失败，错误为 `OpenAI smoke test requires AI_PROVIDER=openai.`，未打印 secret。
+- `pnpm-lock.yaml` secret grep：未发现 `sk-`、`OPENAI_API_KEY`、`OPENAI_MODEL`、`apiKey`、`test-key` 等明显 secret。
+- `pnpm-lock.yaml` dependency grep：确认存在 `openai@6.41.0` 条目。
 
 人工验收结果：
 
-- `GET http://localhost:4000/v1/health`：通过。
-- deterministic mode knowledge hit：通过，assistant 正常回复并显示 citations。
-- deterministic mode miss/fallback：通过，返回 fallback，citations 按 deterministic fallback 行为空。
-- handoff request：通过。
-- `PENDING_HUMAN` 后继续发 customer message：通过，API 拒绝继续触发 AI 回复。
-- `AI_PROVIDER=openai` 且缺少 `OPENAI_API_KEY` / `OPENAI_MODEL`：通过，启动/config validation 清楚失败，未打印 key 值。
-- `AI_PROVIDER=deterministic` 且无 OpenAI key/model：通过，API 正常启动。
+- `policies` chat smoke：通过。Returned citations from policy/privacy-related chunks in the local Kasta knowledge base.
+- `warranties` chat smoke：通过。Returned warranty-related citations.
+- `case` chat smoke：通过 for the current data set. It returned citations because the local knowledge base contains real independent `Case Studies` titles/paths/content, not because of `showcase` substring-only matching.
+- OpenAI smoke without env：通过 expected-failure path, secret-free.
 
-未执行的人工项：
+仍建议后续环境验证：
 
-- 真实 OpenAI success smoke test：未执行，因为用户当前没有 OpenAI API key。该项为 non-blocking；在后续有 key 时建议补测。
-
-后续有 OpenAI key 时建议补测：
-
-- 在 `AI_PROVIDER=openai` 且 env 有效时，发送一个能 retrieve chunks 但用户问题和 chunk 文本不强重合的消息，确认 OpenAI 成功回复仍显示 citations。
-- 确认 OpenAI success messages 仍持久化 provider metadata 和 retrieval metadata。
+- 有真实 OpenAI key 时运行 `pnpm --filter @platform/api smoke:openai`。当前用户没有可用 key，因此 real-key OpenAI smoke remains pending/non-blocking.
 
 不建议把 `pnpm dev` 作为 blocking 验证命令；如需浏览器手动检查，再由人工启动本地 dev server。
 
 ## 10. Docs/Skills Update Needs
 
-After manual acceptance, Project Context & Docs should update:
+Project Context & Docs should reconcile after acceptance:
 
-- `docs/skills/ai-data-skill.md`: note that OpenAI success citations are generated directly from retrieved chunks via a shared backend citation helper.
-- `docs/skills/ai-chatbox-skill.md`: clarify that OpenAI success preserves citations independently from deterministic grounded sentence scoring.
-- `docs/skills/backend-skill.md`: document the citation helper and OpenAI provider citation behavior.
-- `docs/skills/qa-skill.md`: add the mocked OpenAI citation regression scenario and manual OpenAI citation QA check.
-- `docs/skills/current-status.md`: record the QA fix and verification summary.
+- `docs/skills/ai-data-skill.md`: candidate lookup uses raw + normalized terms, final scoring uses exact normalized tokens.
+- `docs/skills/qa-skill.md`: plural/stem candidate lookup regression coverage exists, not only scoring-after-candidates tests.
+- `docs/skills/current-status.md`: record that the retrieval candidate-query QA fix passed.
+- `docs/skills/backend-skill.md`: keep lockfile/smoke helper notes and final retrieval behavior.
 
-QA should not directly modify `docs/skills`; that remains owned by Project Context & Docs under the repository handoff workflow.
+QA should not directly modify `docs/skills`; that remains owned by Project Context & Docs unless the task explicitly asks Implementation to update them.
 
 ## 11. Handoff File Update
 
@@ -140,19 +129,18 @@ QA should not directly modify `docs/skills`; that remains owned by Project Conte
 This QA handoff used:
 
 - `docs/ai-handoff/latest-implementation.md`
-- `git status --short`
+- `git status --short --untracked-files=all`
 - `git diff --stat`
 - `git diff --name-only`
-- `git diff`
-- direct reads of `citation-builder.ts`, `openai-llm-provider.service.ts`, `provider-behavior.test.ts`, and `assistant-reply.service.ts`
+- focused `git diff` for retrieval/test/handoff files
+- direct reads of `openai-smoke.ts`, `knowledge-retrieval.service.ts`, and `provider-behavior.test.ts`
+- `pnpm-lock.yaml` grep checks
 
 ## 12. Fix Request for Implementation Chat
 
 No fix request required for Codex Chat 2.
 
-Before commit/staging, ensure all untracked implementation files are included:
+Before commit/staging, ensure untracked required files are included:
 
-- `apps/api/scripts/provider-behavior.test.ts`
-- `apps/api/src/modules/chat/citation-builder.ts`
-- `apps/api/src/modules/chat/openai-llm-provider.service.ts`
-- `apps/api/src/modules/chat/openai-prompt.ts`
+- `apps/api/scripts/openai-smoke.ts`
+- `pnpm-lock.yaml`

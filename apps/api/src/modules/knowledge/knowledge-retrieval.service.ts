@@ -17,7 +17,6 @@ const STOP_WORDS = new Set([
   "of",
   "on",
   "or",
-  "policy",
   "the",
   "to",
   "what",
@@ -48,9 +47,10 @@ export class KnowledgeRetrievalService {
     limit = 3
   ): Promise<LlmRetrievedKnowledgeChunk[]> {
     const tokens = this.extractSearchTerms(question);
+    const candidateTerms = this.extractCandidateSearchTerms(question);
     const phrases = this.extractSearchPhrases(question);
 
-    if (tokens.length === 0) {
+    if (tokens.length === 0 || candidateTerms.length === 0) {
       return [];
     }
 
@@ -61,13 +61,13 @@ export class KnowledgeRetrievalService {
           status: KnowledgeDocumentStatus.READY
         },
         OR: [
-          ...tokens.map((token) => ({
+          ...candidateTerms.map((token) => ({
             content: {
               contains: token,
               mode: "insensitive" as const
             }
           })),
-          ...tokens.map((token) => ({
+          ...candidateTerms.map((token) => ({
             knowledgeDocument: {
               title: {
                 contains: token,
@@ -89,9 +89,10 @@ export class KnowledgeRetrievalService {
       take: 80
     });
 
-    const normalizedQuestion = question.trim().toLowerCase();
+    const normalizedQuestion = this.extractNormalizedWords(question).join(" ");
 
     const minimumCoverage = tokens.length >= 4 ? 0.34 : 0.2;
+    const minimumScore = tokens.length === 1 ? 6 : 4;
     const scored = candidates
       .map((candidate) => {
         const score = this.scoreChunk(
@@ -119,7 +120,7 @@ export class KnowledgeRetrievalService {
       })
       .filter(
         (candidate: ScoredCandidate) =>
-          candidate.score >= 4 && candidate.coverage >= minimumCoverage
+          candidate.score >= minimumScore && candidate.coverage >= minimumCoverage
       )
       .sort(
         (left: ScoredCandidate, right: ScoredCandidate) =>
@@ -141,28 +142,26 @@ export class KnowledgeRetrievalService {
   }
 
   private extractSearchTerms(question: string): string[] {
-    const terms = question
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((term) => term.length >= 3 && !STOP_WORDS.has(term));
+    const terms = this.extractNormalizedWords(question).filter((term) => !STOP_WORDS.has(term));
 
     return Array.from(new Set(terms)).slice(0, 8);
   }
 
+  private extractCandidateSearchTerms(question: string): string[] {
+    const rawTerms = this.extractRawWords(question).filter((term) => !STOP_WORDS.has(this.normalizeTerm(term)));
+    const normalizedTerms = rawTerms.map((term) => this.normalizeTerm(term));
+
+    return Array.from(new Set([...rawTerms, ...normalizedTerms])).slice(0, 16);
+  }
+
   private extractSearchPhrases(question: string): string[] {
-    const normalized = question
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const words = this.extractNormalizedWords(question).filter((word) => !STOP_WORDS.has(word));
+    const normalized = words.join(" ");
 
     if (!normalized) {
       return [];
     }
 
-    const words = normalized
-      .split(" ")
-      .filter((word) => word.length >= 3 && !STOP_WORDS.has(word));
     const phrases: string[] = [];
 
     for (let index = 0; index < words.length - 1; index += 1) {
@@ -179,8 +178,9 @@ export class KnowledgeRetrievalService {
     tokens: string[],
     phrases: string[]
   ): { score: number; coverage: number } {
-    const normalizedContent = content.toLowerCase();
-    const normalizedTitle = title.toLowerCase();
+    const contentTerms = this.extractNormalizedWords(content);
+    const titleTerms = this.extractNormalizedWords(title);
+    const normalizedContent = contentTerms.join(" ");
     let score = 0;
     let matchedTokens = 0;
 
@@ -195,13 +195,20 @@ export class KnowledgeRetrievalService {
     }
 
     for (const token of tokens) {
-      if (normalizedContent.includes(token)) {
+      const contentOccurrences = this.countOccurrences(contentTerms, token);
+      const titleOccurrences = this.countOccurrences(titleTerms, token);
+
+      if (contentOccurrences > 0) {
         matchedTokens += 1;
-        score += 4 + Math.min(this.countOccurrences(normalizedContent, token), 4);
+        score += 4 + Math.min(contentOccurrences, 4);
       }
 
-      if (normalizedTitle.includes(token)) {
-        score += 2;
+      if (titleOccurrences > 0) {
+        if (contentOccurrences === 0) {
+          matchedTokens += 1;
+        }
+
+        score += 4;
       }
     }
 
@@ -214,15 +221,36 @@ export class KnowledgeRetrievalService {
     return { score, coverage };
   }
 
-  private countOccurrences(content: string, token: string): number {
-    let count = 0;
-    let offset = content.indexOf(token);
+  private extractNormalizedWords(content: string): string[] {
+    return this.extractRawWords(content)
+      .map((term) => this.normalizeTerm(term))
+      .filter((term) => term.length >= 3);
+  }
 
-    while (offset >= 0) {
-      count += 1;
-      offset = content.indexOf(token, offset + token.length);
+  private extractRawWords(content: string): string[] {
+    return content
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((term) => term.length >= 3);
+  }
+
+  private normalizeTerm(term: string): string {
+    if (term.length > 4 && term.endsWith("ies")) {
+      return `${term.slice(0, -3)}y`;
     }
 
-    return count;
+    if (term.length > 4 && /(ses|xes|zes|ches|shes)$/.test(term)) {
+      return term.slice(0, -2);
+    }
+
+    if (term.length > 3 && term.endsWith("s") && !term.endsWith("ss")) {
+      return term.slice(0, -1);
+    }
+
+    return term;
+  }
+
+  private countOccurrences(terms: string[], token: string): number {
+    return terms.filter((term) => term === token).length;
   }
 }

@@ -6,6 +6,7 @@ import { AssistantReplyService } from "../src/modules/chat/assistant-reply.servi
 import { ChatService } from "../src/modules/chat/chat.service";
 import { LlmProviderResolverService } from "../src/modules/chat/llm-provider-resolver.service";
 import { OpenAiLlmProviderService } from "../src/modules/chat/openai-llm-provider.service";
+import { KnowledgeRetrievalService } from "../src/modules/knowledge/knowledge-retrieval.service";
 
 const baseInput = {
   tenant: {
@@ -35,6 +36,18 @@ const baseInput = {
   ]
 };
 
+type RetrievalCandidate = {
+  id: string;
+  content: string;
+  chunkIndex: number;
+  sourceLocator?: unknown;
+  knowledgeDocument: {
+    id: string;
+    title: string;
+    sourceUri?: string | null;
+  };
+};
+
 function createOpenAiEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
   return loadServerEnv({
     AI_PROVIDER: "openai",
@@ -42,6 +55,46 @@ function createOpenAiEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
     OPENAI_MODEL: "gpt-test",
     ...overrides
   });
+}
+
+function createRetrievalService(candidates: RetrievalCandidate[]): KnowledgeRetrievalService {
+  return new KnowledgeRetrievalService({
+    client: {
+      knowledgeChunk: {
+        findMany: async (query: {
+          where?: {
+            OR?: Array<
+              | { content?: { contains?: string } }
+              | { knowledgeDocument?: { title?: { contains?: string } } }
+            >;
+          };
+        }) => {
+          const candidateTerms =
+            query.where?.OR?.flatMap((condition) => [
+              "content" in condition ? condition.content?.contains : undefined,
+              "knowledgeDocument" in condition
+                ? condition.knowledgeDocument?.title?.contains
+                : undefined
+            ]).filter((term): term is string => Boolean(term)) ?? [];
+
+          if (candidateTerms.length === 0) {
+            return candidates;
+          }
+
+          return candidates.filter((candidate) =>
+            candidateTerms.some((term) => {
+              const normalizedTerm = term.toLowerCase();
+
+              return (
+                candidate.content.toLowerCase().includes(normalizedTerm) ||
+                candidate.knowledgeDocument.title.toLowerCase().includes(normalizedTerm)
+              );
+            })
+          );
+        }
+      }
+    }
+  } as never);
 }
 
 async function testDefaultConfigUsesDeterministic() {
@@ -129,6 +182,7 @@ async function testOpenAiSuccessMapsResponse() {
   assert.equal(response.metadata.model, "gpt-test");
   assert.equal(response.metadata.responseId, "response-1");
   assert.equal(response.citations?.length, 1);
+  assert.equal(JSON.stringify(response.metadata).includes("test-key"), false);
 }
 
 async function testOpenAiSuccessPreservesCitationsWhenDeterministicWouldNotGround() {
@@ -190,7 +244,124 @@ async function testOpenAiFailureFallsBack() {
   assert.equal(response.metadata.usedFallback, true);
   assert.equal(response.metadata.deterministic, true);
   assert.equal(response.metadata.fallbackReason, "timeout");
+  assert.equal(JSON.stringify(response.metadata).includes("test-key"), false);
   assert.match(response.content, /support knowledge base/i);
+}
+
+async function testShortKeywordMatchesRelevantChunk() {
+  const retrievalService = createRetrievalService([
+    {
+      id: "chunk-warranty",
+      content: "Warranty coverage lasts 12 months for eligible purchases.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-warranty",
+        title: "Warranty",
+        sourceUri: "https://example.test/warranty"
+      }
+    }
+  ]);
+
+  const chunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "warranty");
+
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0]?.chunkId, "chunk-warranty");
+}
+
+async function testUnrelatedShortQueryAvoidsWeakSubstringMatch() {
+  const retrievalService = createRetrievalService([
+    {
+      id: "chunk-showcase",
+      content: "The showcase article explains how customers compare support options.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-showcase",
+        title: "Customer Stories",
+        sourceUri: "https://example.test/stories"
+      }
+    }
+  ]);
+
+  const chunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "case");
+
+  assert.equal(chunks.length, 0);
+}
+
+async function testRawPluralCandidateLookupWithNormalizedScoring() {
+  const retrievalService = createRetrievalService([
+    {
+      id: "chunk-policy",
+      content: "Eligible policies include clear escalation and refund terms.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-policy",
+        title: "Support Policies",
+        sourceUri: "https://example.test/policies"
+      }
+    },
+    {
+      id: "chunk-warranty",
+      content: "Extended warranties cover replacement parts for eligible purchases.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-warranty",
+        title: "Product Warranties",
+        sourceUri: "https://example.test/warranties"
+      }
+    }
+  ]);
+
+  const policyChunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "policies");
+  const warrantyChunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "warranties");
+
+  assert.equal(policyChunks.length, 1);
+  assert.equal(policyChunks[0]?.chunkId, "chunk-policy");
+  assert.equal(warrantyChunks.length, 1);
+  assert.equal(warrantyChunks[0]?.chunkId, "chunk-warranty");
+}
+
+async function testExactPhraseStrongMatchStillWorks() {
+  const retrievalService = createRetrievalService([
+    {
+      id: "chunk-return",
+      content: "The return window is 30 days from the original purchase date.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-return",
+        title: "Returns",
+        sourceUri: "https://example.test/returns"
+      }
+    }
+  ]);
+
+  const chunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "return window");
+
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0]?.chunkId, "chunk-return");
+}
+
+async function testRetrievalChangesPreserveDeterministicCitations() {
+  const retrievalService = createRetrievalService([
+    {
+      id: "chunk-warranty",
+      content: "Warranty coverage lasts 12 months for eligible purchases.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-warranty",
+        title: "Warranty",
+        sourceUri: "https://example.test/warranty"
+      }
+    }
+  ]);
+  const chunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "warranty");
+  const response = new AssistantReplyService().generateReply({
+    ...baseInput,
+    latestCustomerMessage: "warranty",
+    retrievedChunks: chunks
+  });
+
+  assert.equal(response.citations?.length, 1);
+  assert.equal(response.citations?.[0]?.chunkId, "chunk-warranty");
 }
 
 async function testPendingHumanGuardPreventsProviderCall() {
@@ -249,6 +420,11 @@ async function run() {
   await testOpenAiSuccessMapsResponse();
   await testOpenAiSuccessPreservesCitationsWhenDeterministicWouldNotGround();
   await testOpenAiFailureFallsBack();
+  await testShortKeywordMatchesRelevantChunk();
+  await testUnrelatedShortQueryAvoidsWeakSubstringMatch();
+  await testRawPluralCandidateLookupWithNormalizedScoring();
+  await testExactPhraseStrongMatchStillWorks();
+  await testRetrievalChangesPreserveDeterministicCitations();
   await testPendingHumanGuardPreventsProviderCall();
 }
 

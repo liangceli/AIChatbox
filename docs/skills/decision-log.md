@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-06-03 - Stabilize OpenAI readiness and deterministic retrieval
+
+Decision: Track `pnpm-lock.yaml`, add a manual OpenAI real-key smoke helper, and harden deterministic short-query retrieval with normalized exact-token scoring.
+
+Reason: The OpenAI SDK dependency must be reproducible for future developers/CI, real provider success needs a safe manual verification path, and short keyword-style questions should avoid weak substring-only retrieval matches.
+
+Trade-off: Retrieval remains deterministic keyword scoring rather than semantic search. The OpenAI smoke helper requires a real API key and is intentionally excluded from normal automated tests.
+
+Affected areas: `.gitignore`, `pnpm-lock.yaml`, `apps/api/scripts`, `apps/api/src/modules/knowledge`, QA/deployment/AI documentation.
+
 ## 2026-06-03 - OpenAI provider added behind deterministic fallback
 
 Decision: Add `OpenAiLlmProviderService` behind the existing LLM provider resolver, controlled by `AI_PROVIDER=openai`, while keeping deterministic as the default provider.

@@ -13,6 +13,8 @@ Use from repository root.
 - Lint workspace: `pnpm lint`
 - Build workspace: `pnpm build`
 - Workspace tests: `pnpm test`
+- API provider/retrieval tests: `pnpm --filter @platform/api test`
+- Manual OpenAI real-key smoke helper: `pnpm --filter @platform/api smoke:openai`
 
 Current scripts are still lightweight. API now has provider behavior tests, while some other packages still use placeholders.
 
@@ -47,6 +49,8 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Knowledge-hit messages still produce deterministic grounded responses and citations.
 - Knowledge-miss messages still produce deterministic fallback.
 - OpenAI success preserves backend-generated citations from retrieved chunks even when deterministic grounded sentence scoring would return `citations: null`.
+- Short keyword retrieval matches obvious title/content evidence and avoids substring-only weak matches.
+- OpenAI smoke helper is not part of normal tests and requires explicit OpenAI env.
 - OpenAI provider failure falls back to deterministic content/citations behavior and records fallback metadata.
 - Handoff rejects mismatched visitorId.
 - Assign/reply rejects users without current tenant Role.
@@ -57,7 +61,6 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Known Test Gaps
 
-- No dedicated unit tests for retrieval scoring.
 - No real OpenAI success smoke test has run yet because no OpenAI API key is currently available.
 - No service tests for tenant isolation.
 - No API e2e tests for chat, knowledge, handoff, realtime.
@@ -68,11 +71,13 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 - Manual QA for `fb3ca66 Add LLM provider boundary with deterministic fallback` passed.
 - QA for `355e5f6 Add OpenAI provider with deterministic fallback` passed shell-verifiable checks and accepted the citation preservation fix.
-- Short keyword-style questions can still produce weak deterministic retrieval matches; this is a known retrieval-quality limitation, not a provider-boundary regression.
-- `pnpm-lock.yaml` is currently ignored/untracked despite an OpenAI dependency; confirm repository dependency reproducibility policy.
+- Short keyword-style retrieval now uses normalized exact-token scoring and targeted regression tests, but it is still deterministic keyword retrieval rather than semantic search.
+- `pnpm-lock.yaml` should be tracked for dependency reproducibility in this pnpm monorepo.
 
 ## OpenAI Provider QA Notes
 
 - Mocked OpenAI provider tests live in `apps/api/scripts/provider-behavior.test.ts`.
 - Regression scenario: retrieved chunks exist, deterministic grounding would produce `citations: null`, mocked OpenAI success still returns retrieved chunk citations.
+- Manual real-key smoke helper lives in `apps/api/scripts/openai-smoke.ts` and runs with `pnpm --filter @platform/api smoke:openai`.
+- Smoke helper requires `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; missing env fails clearly without printing API keys.
 - Manual real-key smoke test remains pending until an OpenAI API key is available.
