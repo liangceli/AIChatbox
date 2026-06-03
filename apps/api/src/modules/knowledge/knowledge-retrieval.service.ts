@@ -1,8 +1,8 @@
+import type { LlmRetrievedKnowledgeChunk } from "@platform/ai-core";
 import { KnowledgeDocumentStatus } from "@platform/database";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
-import type { RetrievedKnowledgeChunk } from "../chat/assistant-reply.service";
 
 const STOP_WORDS = new Set([
   "a",
@@ -33,7 +33,7 @@ const STOP_WORDS = new Set([
 interface ScoredCandidate {
   score: number;
   coverage: number;
-  chunk: RetrievedKnowledgeChunk;
+  chunk: LlmRetrievedKnowledgeChunk;
 }
 
 @Injectable()
@@ -46,7 +46,7 @@ export class KnowledgeRetrievalService {
     tenant: ResolvedTenant,
     question: string,
     limit = 3
-  ): Promise<RetrievedKnowledgeChunk[]> {
+  ): Promise<LlmRetrievedKnowledgeChunk[]> {
     const tokens = this.extractSearchTerms(question);
     const phrases = this.extractSearchPhrases(question);
 

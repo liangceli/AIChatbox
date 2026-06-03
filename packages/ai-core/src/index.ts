@@ -1,6 +1,62 @@
 import type { Citation, MessageAuthorType } from "@platform/types";
 import type { TenantRuntimeConfig } from "@platform/tenant-core";
 
+export type LlmProviderMode = "deterministic" | "disabled" | "openai";
+
+export interface LlmTenantContext {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface LlmAgentContext {
+  displayName: string;
+  welcomeMessage?: string | null;
+  fallbackMessage?: string | null;
+  handoffEnabled?: boolean;
+}
+
+export interface LlmConversationContext {
+  id: string;
+}
+
+export interface LlmRetrievedKnowledgeChunk {
+  knowledgeDocumentId: string;
+  chunkId: string;
+  title: string;
+  chunkIndex: number;
+  sourceUri?: string | null;
+  sourceLocator?: unknown;
+  relevanceScore?: number;
+  content: string;
+}
+
+export interface LlmProviderRequest {
+  tenant: LlmTenantContext;
+  conversation: LlmConversationContext;
+  agent: LlmAgentContext;
+  latestCustomerMessage: string;
+  retrievedChunks: LlmRetrievedKnowledgeChunk[];
+}
+
+export interface LlmProviderMetadata {
+  providerName: string;
+  mode: LlmProviderMode;
+  deterministic: boolean;
+  usedFallback: boolean;
+}
+
+export interface LlmProviderResponse {
+  content: string;
+  citations: Citation[] | null;
+  metadata: LlmProviderMetadata;
+}
+
+export interface LlmProvider {
+  name: string;
+  generateReply(input: LlmProviderRequest): Promise<LlmProviderResponse> | LlmProviderResponse;
+}
+
 export interface ChatTurn {
   author: MessageAuthorType;
   content: string;

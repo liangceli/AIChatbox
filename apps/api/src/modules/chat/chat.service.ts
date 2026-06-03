@@ -13,7 +13,7 @@ import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { KnowledgeRetrievalService } from "../knowledge/knowledge-retrieval.service";
 import type { SendChatMessageDto } from "./dto/send-chat-message.dto";
 import { toChatMessageRecord, toConversationSummary } from "./chat.presenter";
-import { AssistantReplyService } from "./assistant-reply.service";
+import { LlmProviderResolverService } from "./llm-provider-resolver.service";
 
 @Injectable()
 export class ChatService {
@@ -23,8 +23,8 @@ export class ChatService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeRetrievalService)
     private readonly knowledgeRetrievalService: KnowledgeRetrievalService,
-    @Inject(AssistantReplyService)
-    private readonly assistantReplyService: AssistantReplyService
+    @Inject(LlmProviderResolverService)
+    private readonly llmProviderResolver: LlmProviderResolverService
   ) {}
 
   async sendMessage(tenant: ResolvedTenant, input: SendChatMessageDto): Promise<SendChatMessageResponse> {
@@ -114,12 +114,23 @@ export class ChatService {
         }
       });
 
-      const assistantReply = this.assistantReplyService.generateReply({
-        displayName: agentConfig?.displayName ?? `${tenant.name} Assistant`,
-        welcomeMessage: agentConfig?.welcomeMessage,
-        fallbackMessage: agentConfig?.fallbackMessage,
-        handoffEnabled: agentConfig?.handoffEnabled ?? false,
-        userMessage: customerMessage.content,
+      const llmProvider = this.llmProviderResolver.resolveProvider();
+      const assistantReply = await llmProvider.generateReply({
+        tenant: {
+          id: tenant.id,
+          slug: tenant.slug,
+          name: tenant.name
+        },
+        conversation: {
+          id: conversation.id
+        },
+        agent: {
+          displayName: agentConfig?.displayName ?? `${tenant.name} Assistant`,
+          welcomeMessage: agentConfig?.welcomeMessage,
+          fallbackMessage: agentConfig?.fallbackMessage,
+          handoffEnabled: agentConfig?.handoffEnabled ?? false
+        },
+        latestCustomerMessage: customerMessage.content,
         retrievedChunks
       });
 
@@ -135,16 +146,21 @@ export class ChatService {
             : undefined,
           metadata: {
             retrieval: {
-              usedFallback: assistantReply.usedFallback,
+              usedFallback: assistantReply.metadata.usedFallback,
               retrievedChunkCount: retrievedChunks.length,
               chunkIds: retrievedChunks.map((chunk) => chunk.chunkId)
+            },
+            provider: {
+              name: assistantReply.metadata.providerName,
+              mode: assistantReply.metadata.mode,
+              deterministic: assistantReply.metadata.deterministic
             }
           }
         }
       });
 
       this.logger.debug(
-        `Assistant reply for tenant ${tenant.slug} conversation ${conversation.id}: fallback=${assistantReply.usedFallback}, chunks=${retrievedChunks.length}`
+        `Assistant reply for tenant ${tenant.slug} conversation ${conversation.id}: provider=${assistantReply.metadata.providerName}, fallback=${assistantReply.metadata.usedFallback}, chunks=${retrievedChunks.length}`
       );
 
       const updatedConversation = await tx.conversation.update({

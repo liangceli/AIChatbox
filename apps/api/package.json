@@ -12,6 +12,7 @@
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@platform/ai-core": "workspace:*",
     "@platform/database": "workspace:*",
     "@platform/config": "workspace:*",
     "@platform/types": "workspace:*",

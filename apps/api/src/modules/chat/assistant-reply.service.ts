@@ -1,31 +1,10 @@
-import type { Citation } from "@platform/types";
+import type {
+  LlmProvider,
+  LlmProviderRequest,
+  LlmProviderResponse,
+  LlmRetrievedKnowledgeChunk
+} from "@platform/ai-core";
 import { Injectable } from "@nestjs/common";
-
-export interface RetrievedKnowledgeChunk {
-  knowledgeDocumentId: string;
-  chunkId: string;
-  title: string;
-  chunkIndex: number;
-  sourceUri?: string | null;
-  sourceLocator?: unknown;
-  relevanceScore?: number;
-  content: string;
-}
-
-interface ReplyInput {
-  displayName: string;
-  welcomeMessage?: string | null;
-  fallbackMessage?: string | null;
-  handoffEnabled?: boolean;
-  userMessage: string;
-  retrievedChunks: RetrievedKnowledgeChunk[];
-}
-
-interface ReplyOutput {
-  content: string;
-  citations: Citation[] | null;
-  usedFallback: boolean;
-}
 
 function createExcerpt(content: string, maxLength = 220): string {
   const normalized = content.replace(/\s+/g, " ").trim();
@@ -38,15 +17,17 @@ function createExcerpt(content: string, maxLength = 220): string {
 }
 
 @Injectable()
-export class AssistantReplyService {
-  generateReply(input: ReplyInput): ReplyOutput {
-    const normalizedMessage = input.userMessage.trim();
+export class AssistantReplyService implements LlmProvider {
+  readonly name = "deterministic";
+
+  generateReply(input: LlmProviderRequest): LlmProviderResponse {
+    const normalizedMessage = input.latestCustomerMessage.trim();
 
     if (!normalizedMessage) {
       return {
-        content: input.fallbackMessage ?? "I can help once you send a message.",
+        content: input.agent.fallbackMessage ?? "I can help once you send a message.",
         citations: null,
-        usedFallback: true
+        metadata: this.createMetadata(true)
       };
     }
 
@@ -75,29 +56,30 @@ export class AssistantReplyService {
           .filter(Boolean)
           .join(" "),
         citations,
-        usedFallback: false
+        metadata: this.createMetadata(false)
       };
     }
 
     return this.createFallback(input, normalizedMessage);
   }
 
-  private createFallback(input: ReplyInput, normalizedMessage: string): ReplyOutput {
-    const fallbackLead = input.fallbackMessage ?? input.welcomeMessage ?? `I am ${input.displayName}.`;
-    const handoffHint = input.handoffEnabled
+  private createFallback(input: LlmProviderRequest, normalizedMessage: string): LlmProviderResponse {
+    const fallbackLead =
+      input.agent.fallbackMessage ?? input.agent.welcomeMessage ?? `I am ${input.agent.displayName}.`;
+    const handoffHint = input.agent.handoffEnabled
       ? " If you need a person to take over, request human support in the chat."
       : "";
 
     return {
       content: `${fallbackLead} I do not have enough matching knowledge-base evidence to answer "${normalizedMessage}" confidently.${handoffHint}`,
       citations: null,
-      usedFallback: true
+      metadata: this.createMetadata(true)
     };
   }
 
   private selectGroundedSentences(
     question: string,
-    chunks: RetrievedKnowledgeChunk[],
+    chunks: LlmRetrievedKnowledgeChunk[],
     limit = 3
   ): string[] {
     const terms = this.extractTerms(question);
@@ -144,5 +126,14 @@ export class AssistantReplyService {
     const matchedTerms = terms.filter((term) => normalized.includes(term)).length;
 
     return matchedTerms * 10 + Math.min(chunkScore, 20);
+  }
+
+  private createMetadata(usedFallback: boolean): LlmProviderResponse["metadata"] {
+    return {
+      providerName: this.name,
+      mode: "deterministic",
+      deterministic: true,
+      usedFallback
+    };
   }
 }
