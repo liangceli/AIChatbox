@@ -41,6 +41,10 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Tenant-scoped reads/writes never expose another tenant's records.
 - `POST /chat/messages` refuses empty messages and max-length violations.
 - Existing `PENDING_HUMAN` conversation cannot receive another AI reply.
+- Chat provider resolution returns deterministic provider by default and does not require external API keys.
+- Assistant messages preserve retrieval metadata and add internal provider metadata.
+- Knowledge-hit messages still produce deterministic grounded responses and citations.
+- Knowledge-miss messages still produce deterministic fallback.
 - Handoff rejects mismatched visitorId.
 - Assign/reply rejects users without current tenant Role.
 - Knowledge document archive removes chunks and excludes the document from retrieval.
@@ -51,7 +55,13 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 ## Known Test Gaps
 
 - No dedicated unit tests for retrieval scoring.
+- No automated behavioral tests for the LLM provider boundary or deterministic provider metadata persistence.
 - No service tests for tenant isolation.
 - No API e2e tests for chat, knowledge, handoff, realtime.
 - No frontend component tests.
 - No browser automation for admin/agent/widget flows.
+
+## Known QA Observations
+
+- Manual QA for `fb3ca66 Add LLM provider boundary with deterministic fallback` passed.
+- Short keyword-style questions can still produce weak deterministic retrieval matches; this is a known retrieval-quality limitation, not a provider-boundary regression.

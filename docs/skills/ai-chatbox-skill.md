@@ -2,7 +2,7 @@
 
 ## 范围
 
-本文件描述当前 customer chatbox/widget 的真实实现。它不是完整 LLM chat product；当前回复由 API 中的 deterministic retrieval + deterministic assistant reply 生成。
+本文件描述当前 customer chatbox/widget 的真实实现。它不是完整 external-LLM chat product；当前回复仍由 API 中的 deterministic retrieval + deterministic LLM provider 生成。
 
 ## 前端入口
 
@@ -34,10 +34,11 @@
 4. 请求 body 包含 `message`、可选 `conversationId`、可选 `visitorId`。
 5. API 保存 customer message。
 6. API 检索 tenant-scoped READY knowledge chunks。
-7. `AssistantReplyService` 生成 deterministic assistant reply。
-8. API 保存 assistant message、citations、retrieval metadata。
-9. API 返回完整 messages 数组。
-10. Widget 更新 conversation state 并持久化 visitorId。
+7. `ChatService` 通过 `LlmProviderResolverService` 解析 LLM provider。
+8. 当前 resolver 只返回 deterministic provider，即实现了 `LlmProvider` contract 的 `AssistantReplyService`。
+9. API 保存 assistant message、citations、retrieval metadata 和内部 provider metadata。
+10. API 返回完整 messages 数组。
+11. Widget 更新 conversation state 并持久化 visitorId。
 
 ## Handoff Flow
 
@@ -61,8 +62,12 @@
 
 - 当前没有真实 prompt assembly。
 - 当前没有 OpenAI 或其他 LLM provider 调用。
+- `@platform/ai-core` 已定义共享 LLM provider boundary，包括 provider request/response、provider metadata、tenant/agent/conversation context、retrieved chunk contract 和 `LlmProvider` interface。
+- API 已通过 `apps/api/src/modules/chat/llm-provider-resolver.service.ts` 解析 provider。
+- 当前 resolver 没有 env/config switch，只返回 deterministic provider，避免未配置外部 provider 导致运行时失败。
 - `AgentConfig.systemPrompt` 已存在于数据模型，但当前 deterministic reply 没有真正使用它生成模型 prompt。
 - `AgentConfig.fallbackMessage`、`welcomeMessage`、`handoffEnabled` 会影响 fallback 文案。
+- Assistant message 内部 metadata 现在包含 `retrieval` 和 `provider` 两部分；`ChatMessageRecord` API response shape 不暴露 metadata。
 
 ## Conversation History
 
@@ -74,5 +79,5 @@
 
 - Tenant isolation 必须由 API Prisma 查询中的 `tenantId` 保证，不交给前端或模型判断。
 - Citation 必须来自 retrieved KnowledgeChunk，不能由模型发明。
+- 未来 external LLM provider 只能接收 tenant-scoped backend 已选择的数据，不能绕过 tenant isolation。
 - 生产化前需要加入认证、权限、PII handling、日志脱敏策略。
-

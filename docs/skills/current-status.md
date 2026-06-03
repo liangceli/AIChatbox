@@ -22,27 +22,29 @@
 
 ## 最新已接受任务
 
-- 最新提交：`f63aaa2 Apply New Workflow`。
-- 已接受任务：为新 repository-based workflow 建立并提交 handoff 与 skills 文档。
-- Implementation handoff：`docs/ai-handoff/latest-implementation.md` 已创建，说明本轮 implementation 只创建 handoff 文件，没有修改应用运行逻辑。
-- QA handoff：`docs/ai-handoff/latest-qa.md` 已更新，结论为“人工验收已通过”。
-- QA 发现：`docs/ai-handoff/director-update.md` 仍写着 `latest-implementation.md` 和 `latest-qa.md` 不存在，已确认为过期内容，需要由 Project Context & Docs 修正。
-- 当前同步结果：`director-update.md` 已更新为基于 latest implementation、latest QA 和 `f63aaa2` 的当前 Director handoff。
+- 最新提交：`fb3ca66 Add LLM provider boundary with deterministic fallback`。
+- 已接受任务：增加 LLM provider boundary，同时保留 deterministic assistant fallback。
+- 主要变更：`@platform/ai-core` 新增共享 LLM provider contracts；API 新增 `LlmProviderResolverService`；`AssistantReplyService` 成为 deterministic `LlmProvider` implementation；`ChatService` 改为通过 provider boundary 生成回复。
+- 保持不变：没有外部 LLM API 调用，没有 API key 需求，没有 Prisma schema/UI/API response shape 变化；tenant scoping、citations、retrieval metadata、message persistence、`PENDING_HUMAN` guard 保持。
+- QA 结果：人工验收已通过。
+- 验证摘要：`@platform/api` 和 `@platform/ai-core` 的 typecheck、lint、build 通过；test 命令通过但目前仍是 placeholder。
 
 ## 已实现能力
 
 - Tenant 通过 `x-tenant-slug` header 解析；SSE/EventSource 支持 query `tenantSlug`。
 - Tenant-scoped chat message 保存、conversation 创建/续接、匿名 visitorId 持久化。
-- Deterministic knowledge retrieval + deterministic assistant reply。
-- Assistant message citations 和 retrieval metadata 会持久化到 `Message`。
+- Deterministic knowledge retrieval + deterministic LLM provider reply。
+- Assistant message citations、retrieval metadata 和 provider metadata 会持久化到 `Message`。
+- `@platform/ai-core` 提供 LLM provider boundary，API 当前通过 resolver 固定使用 deterministic provider。
 - Knowledge base 支持创建、手动文本、文件文本、单 URL/批量 URL 导入、chunking、reprocess、archive、delete。
 - Handoff 支持 customer 请求人工、support user 分配、agent reply。
 - Realtime 当前是 2 秒一次的 SSE snapshot，不是 websocket 协作层。
 
 ## 当前限制
 
-- 尚未接入真实 LLM provider；`AssistantReplyService` 是模板/规则回复。
+- 尚未接入真实外部 LLM provider；`AssistantReplyService` 是 deterministic provider，仍是模板/规则回复。
 - 尚未实现 embeddings、vector database、reranker。
+- 短 keyword-style 问题仍可能产生弱相关 deterministic retrieval matches。
 - `apps/ai-worker` 还没有队列、异步 ingestion 或后台 job。
 - 没有完整 auth/RBAC；`Role` 只是 tenant-scoped membership。
 - `lint`/`test` 多数仍是 TypeScript sanity check 或 placeholder。
@@ -58,8 +60,8 @@
 
 ## 推荐下一步
 
-1. 明确真实 LLM provider boundary，保持 deterministic fallback。
-2. 为 API 增加最小 auth/RBAC 方案，至少保护 tenant management 和 admin/agent actions。
-3. 将 knowledge ingestion 从同步 API 请求逐步迁移到 worker/queue。
-4. 增加 API service 层测试，覆盖 tenant isolation、handoff、knowledge import/reprocess。
-5. 建立正式 lint/format 规则，替换当前 placeholder/sanity check。
+1. 为 deterministic provider boundary 增加 API/service unit tests，覆盖 fallback、citations、provider metadata persistence 和 `PENDING_HUMAN` guard。
+2. 改善 deterministic retrieval 对短 keyword-style questions 的弱匹配问题，或在真实 LLM/embedding 工作前增加更严格阈值。
+3. 为 API 增加最小 auth/RBAC 方案，至少保护 tenant management 和 admin/agent actions。
+4. 在现有 `@platform/ai-core` contract 下规划真实 OpenAI provider，并保留 deterministic fallback。
+5. 将 knowledge ingestion 从同步 API 请求逐步迁移到 worker/queue。

@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-06-03 - LLM provider boundary added in `@platform/ai-core`
+
+Decision: Define the reusable LLM provider boundary in `packages/ai-core` and have the API call providers through `LlmProviderResolverService` instead of wiring provider logic directly into `ChatService`.
+
+Reason: Future real LLM providers need a stable tenant-aware contract while preserving current deterministic assistant behavior and avoiding premature external API integration.
+
+Trade-off: The architecture now has an extra provider abstraction before any external provider exists. This is intentional so future OpenAI or other providers can be added behind explicit config validation while deterministic fallback remains default.
+
+Affected areas: `packages/ai-core`, `apps/api/src/modules/chat`, `apps/api/src/modules/knowledge`, assistant message metadata, AI/chat documentation.
+
 ## 2026-06-03 - Repository-based AI handoff workflow adopted
 
 Decision: Use repository files under `docs/ai-handoff/` as the normal handoff mechanism between Implementation, QA, Project Context & Docs, and ChatGPT Project Director.

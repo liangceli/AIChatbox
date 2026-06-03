@@ -2,7 +2,7 @@
 
 ## 后端组成
 
-后端主应用是 `apps/api`，使用 NestJS。数据库和 Prisma client 在 `packages/database`，环境解析在 `packages/config`。
+后端主应用是 `apps/api`，使用 NestJS。数据库和 Prisma client 在 `packages/database`，环境解析在 `packages/config`，共享 AI/LLM provider contracts 在 `packages/ai-core`。
 
 API 启动入口：
 
@@ -69,16 +69,21 @@ API 启动入口：
 - 查找或创建 Conversation。
 - 写入 customer Message。
 - 读取 tenant AgentConfig。
-- 调用 `AssistantReplyService.generateReply`。
-- 写入 assistant Message、citations、retrieval metadata。
+- 通过 `LlmProviderResolverService.resolveProvider()` 解析 provider。
+- 当前 resolver 返回 deterministic provider：实现 `LlmProvider` 的 `AssistantReplyService`。
+- 调用 `llmProvider.generateReply(...)`。
+- 写入 assistant Message、citations、retrieval metadata 和 provider metadata。
 - 更新 Conversation status/lastMessageAt。
 - 返回 conversation、customerMessage、assistantMessage、messages。
 
 注意：
 
 - 如果 conversation 已经 `PENDING_HUMAN`，客户不能继续让 AI 回复。
-- 当前 assistant reply 是 deterministic/template，不是真 LLM。
-- ChatService 应保持编排层，不应承载 raw prompt 或 provider HTTP 逻辑。
+- 当前 active provider 是 deterministic/template，不会调用外部 LLM API。
+- `ChatService` 应保持编排层，不应承载 raw prompt、provider HTTP 逻辑或 provider selection 细节。
+- `@platform/ai-core` 中的 LLM provider contract 是未来真实 provider 的共享边界。
+- `LlmProviderResolverService` 当前没有 env/config switch；后续增加真实 provider 时必须显式校验配置并保留 deterministic fallback。
+- Assistant message metadata 中的 `provider` 是内部持久化元数据，不改变 `ChatMessageRecord` response shape。
 
 ### Knowledge
 
@@ -176,5 +181,5 @@ API 启动入口：
 - DTO 使用 class-validator，API 启用了 whitelist。
 - presenter 负责 Prisma shape -> shared type shape。
 - 新共享类型放 `packages/types`。
-- 新 AI provider boundary 优先放 `packages/ai-core` 或 API 内独立 provider/service，不散落在 ChatService。
+- 新 AI provider contract 放 `packages/ai-core`；API 内 provider resolver/provider implementation 应保持独立，不散落在 ChatService。
 - 后端变化后同步更新本 skill。

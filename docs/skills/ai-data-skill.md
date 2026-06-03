@@ -7,9 +7,12 @@
 现状：
 
 - Retrieval: deterministic keyword/phrase retrieval。
-- Generation: `AssistantReplyService` deterministic/template response。
+- Generation: `ChatService` 通过 LLM provider boundary 调用 deterministic provider。
+- Provider boundary: `@platform/ai-core` 已定义 `LlmProvider`、`LlmProviderRequest`、`LlmProviderResponse`、`LlmRetrievedKnowledgeChunk` 和 provider metadata。
+- Provider resolver: API 当前通过 `LlmProviderResolverService` 解析 provider，默认且唯一 active provider 是 deterministic `AssistantReplyService`。
 - Citations: 后端根据 retrieved chunks 生成。
-- Persistence: assistant message 内容、citations、retrieval metadata 都写入 Message。
+- Persistence: assistant message 内容、citations、retrieval metadata 和 provider metadata 都写入 Message。
+- External LLM: 当前没有调用 OpenAI、Anthropic 或其他外部 LLM API。
 
 ## Knowledge Retrieval
 
@@ -27,12 +30,14 @@
 - 过滤低分或低 coverage 候选。
 - 按 score、coverage、title、chunkIndex 排序。
 - 默认返回前 3 个 chunks。
+- 返回类型使用 `@platform/ai-core` 的 provider-facing `LlmRetrievedKnowledgeChunk` contract。
 
 关键限制：
 
 - 没有 embeddings。
 - 没有 vector DB。
 - 没有 reranker。
+- 短 keyword-style 问题仍可能产生弱相关 deterministic retrieval matches，例如短词触发 FAQ/warranty/case-study 之类不够语义相关的内容。
 - tenant scope 由 Prisma query 的 `tenantId: tenant.id` 保证。
 
 ## Assistant Reply
@@ -40,21 +45,25 @@
 文件：
 
 - `apps/api/src/modules/chat/assistant-reply.service.ts`
+- `apps/api/src/modules/chat/llm-provider-resolver.service.ts`
+- `packages/ai-core/src/index.ts`
 
 当前输入：
 
-- displayName
-- welcomeMessage
-- fallbackMessage
-- handoffEnabled
-- userMessage
+- tenant context
+- conversation id
+- agent displayName/welcomeMessage/fallbackMessage/handoffEnabled
+- latestCustomerMessage
 - retrievedChunks
 
 当前输出：
 
 - content
 - citations
-- usedFallback
+- metadata.providerName
+- metadata.mode
+- metadata.deterministic
+- metadata.usedFallback
 
 当前行为：
 
@@ -63,6 +72,7 @@
 - 如果没有可用 grounded sentence，走 fallback。
 - 有可用 grounded sentence 时，拼接 support knowledge base 风格回答。
 - citations 从 retrieved chunks 直接构造，不要求模型生成。
+- provider metadata 当前为 deterministic mode，并由 ChatService 持久化到 assistant message metadata。
 
 ## Citations
 
@@ -112,13 +122,21 @@ Prisma 模型：
 - 不要把 prompt 写死为 Kasta。
 - 后续真实 LLM prompt 应使用 AgentConfig 作为输入之一。
 
-## 推荐的 LLM 增量方向
+## LLM Provider Boundary
+
+已完成：
+
+- 共享 provider contract 位于 `packages/ai-core`。
+- API 通过 `LlmProviderResolverService` 解析 provider。
+- 当前 resolver 只返回 deterministic provider。
+- deterministic fallback remains default。
+- 没有外部 LLM API 调用，没有 API key 需求，没有 env/config provider switch。
 
 下一步实现真实 LLM 回复时，应保持小步、可回退：
 
-- 增加 LLM provider boundary，例如 `generateGroundedReply(input): Promise<GeneratedAssistantReply>`。
-- 输入包含 tenant 信息、user message、AgentConfig、retrieved chunks、轻量 conversation context、provider/model config。
-- 输出包含 content、metadata、是否 fallback；citations 仍由后端生成。
+- 在现有 `LlmProvider` contract 下增加 provider implementation，而不是把 provider HTTP 逻辑写进 ChatService。
+- 输入只包含 tenant-scoped backend 已选择的数据，例如 tenant、AgentConfig、retrieved chunks、latest customer message 和必要 conversation context。
+- 输出包含 content、citations/null、metadata；citations 仍应由后端基于 retrieved chunks 控制，不能让模型发明 citation id。
 - 首个 provider 可用 OpenAI。
 - `OPENAI_API_KEY` 缺失时继续使用 deterministic fallback。
 - 增加 `OPENAI_MODEL` 到 config 和 `.env.example`。

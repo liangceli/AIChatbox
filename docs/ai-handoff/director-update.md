@@ -2,46 +2,46 @@
 
 ## 1. Completed Task
 
-Completed and QA-accepted the repository-based AI handoff workflow setup.
+Completed and QA-accepted the LLM provider boundary implementation with deterministic fallback preserved.
 
-Latest commit reviewed: `f63aaa2 Apply New Workflow`.
+Latest commit reviewed: `fb3ca66 Add LLM provider boundary with deterministic fallback`.
 
 ## 2. Accepted Changes
 
-- `docs/ai-handoff/latest-implementation.md` now exists and records the Implementation handoff for the workflow-update round.
-- `docs/ai-handoff/latest-qa.md` now exists and records QA review for the workflow-update round.
-- `docs/skills` records the Project Context & Docs role, repository handoff workflow, and required handoff update behavior.
-- Base skill coverage now includes auth, deployment, UI/UX, API contract, data model, QA, frontend, backend, AI chatbox, AI data, current status, project summary, and decision log.
-- QA guidance explicitly keeps long-running dev/watch commands out of blocking verification.
+- `packages/ai-core` now defines shared LLM provider contracts, including request/response, tenant/agent/conversation context, retrieved chunk type, provider metadata, and `LlmProvider`.
+- `apps/api` now depends on `@platform/ai-core` and calls the provider boundary from `ChatService`.
+- `AssistantReplyService` now implements the deterministic `LlmProvider` and remains the default active provider.
+- `LlmProviderResolverService` was added and currently resolves only the deterministic provider.
+- Assistant message metadata now preserves existing retrieval metadata and adds internal provider metadata.
+- No external LLM API is called, no API key is required, and deterministic fallback remains default.
+- No Prisma schema, UI, API request shape, or API response shape change was introduced.
 
 ## 3. Verification Summary
 
 - Latest QA result: 人工验收已通过。
-- QA confirmed `docs/ai-handoff/latest-implementation.md` is present and usable.
-- QA confirmed `docs/ai-handoff/latest-qa.md` was updated for the new workflow.
-- QA found no runtime regression risk from the latest Implementation task because it only created the implementation handoff file.
-- No build/lint/typecheck/test was required for the implementation handoff creation itself; QA recommended optional non-watch checks before broader commit/release: `pnpm lint`, `pnpm typecheck`, `pnpm test`, and optionally `pnpm build`.
+- Automated verification recorded by Implementation: `@platform/api` typecheck/lint/build passed; `@platform/ai-core` typecheck/lint/build passed.
+- Test commands for `@platform/api` and `@platform/ai-core` passed, but both are currently placeholder tests.
+- Manual QA confirmed normal chat persistence, knowledge-hit deterministic responses with citations, knowledge-miss deterministic fallback, and expected `PENDING_HUMAN` blocking behavior.
+- Manual QA confirmed no OpenAI, Anthropic, or other external LLM API key/config is needed.
 
 ## 4. Remaining Risks
 
-- QA noted the previous `director-update.md` was stale because it still said `latest-implementation.md` and `latest-qa.md` were not present. This file has now been corrected.
-- The latest workflow commit includes comment-only edits in `apps/api/src/main.ts` and `apps/api/src/common/tenant/tenant-resolution.middleware.ts`; QA judged them low risk and behavior-neutral.
-- The workflow/documentation round does not validate product behavior beyond confirming no application logic changed in the latest Implementation task.
+- No automated behavioral tests yet cover the LLM provider boundary, deterministic provider output, or provider metadata persistence.
+- Short keyword-style questions can still produce weak deterministic retrieval matches; QA judged this a known retrieval-quality limitation, not a regression from the provider boundary.
+- Future non-deterministic providers must validate config explicitly and must not receive cross-tenant data or unrelated raw conversation history.
 
 ## 5. Updated Docs
 
-- `docs/skills/current-status.md`: updated with latest accepted workflow task, QA result, commit reference, and stale director-update fix.
-- `docs/ai-handoff/director-update.md`: refreshed to reflect that latest implementation and QA handoff files now exist and QA accepted the round.
-
-Previously committed workflow docs remain relevant:
-
-- `docs/skills/README.md`: repository handoff workflow and skill index.
-- `docs/skills/qa-skill.md`: non-watch verification rule.
-- `docs/skills/decision-log.md`: repository-based AI handoff workflow decision.
-- `docs/skills/auth-skill.md`, `deployment-skill.md`, `ui-ux-skill.md`: base project-memory coverage.
+- `docs/skills/ai-chatbox-skill.md`: updated chat flow and provider status.
+- `docs/skills/backend-skill.md`: documented `@platform/ai-core`, `LlmProviderResolverService`, deterministic provider, and provider metadata persistence.
+- `docs/skills/ai-data-skill.md`: documented provider boundary, shared retrieved chunk contract, deterministic provider default, and short-query retrieval limitation.
+- `docs/skills/current-status.md`: recorded the accepted LLM provider boundary task, verification summary, and updated next tasks.
+- `docs/skills/qa-skill.md`: added provider-boundary regression checks and QA observation about weak short-query retrieval matches.
+- `docs/skills/decision-log.md`: recorded the architecture decision to put LLM provider contracts in `@platform/ai-core`.
+- `docs/ai-handoff/director-update.md`: refreshed for this latest accepted implementation and QA result.
 
 ## 6. Recommended Next Tasks
 
-1. Use this repository handoff flow for the next accepted implementation: Implementation updates `latest-implementation.md`, QA updates `latest-qa.md`, then Project Context & Docs updates skills and `director-update.md`.
-2. Plan minimal auth/RBAC before productionizing admin and agent workflows.
-3. Design the real LLM provider boundary while preserving deterministic fallback and tenant isolation.
+1. Add targeted automated tests for deterministic provider behavior, provider metadata persistence, citations, fallback, and `PENDING_HUMAN` guard.
+2. Improve deterministic retrieval quality for short keyword-style questions or tighten retrieval thresholds before real embeddings/LLM retrieval work.
+3. Plan the first real provider implementation, likely OpenAI, behind explicit config validation and deterministic fallback.
