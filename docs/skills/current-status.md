@@ -20,6 +20,15 @@
 - Chat 1 更新时应读取 handoff 文件、`git log -1`、`git show HEAD`，必要时读取相关源码和既有 skill 文件。
 - 每次 handoff 文档同步后，需要创建或更新 `docs/ai-handoff/director-update.md`，作为给 ChatGPT Project Director 的交接输入。
 
+## 最新已接受任务
+
+- 最新提交：`f63aaa2 Apply New Workflow`。
+- 已接受任务：为新 repository-based workflow 建立并提交 handoff 与 skills 文档。
+- Implementation handoff：`docs/ai-handoff/latest-implementation.md` 已创建，说明本轮 implementation 只创建 handoff 文件，没有修改应用运行逻辑。
+- QA handoff：`docs/ai-handoff/latest-qa.md` 已更新，结论为“人工验收已通过”。
+- QA 发现：`docs/ai-handoff/director-update.md` 仍写着 `latest-implementation.md` 和 `latest-qa.md` 不存在，已确认为过期内容，需要由 Project Context & Docs 修正。
+- 当前同步结果：`director-update.md` 已更新为基于 latest implementation、latest QA 和 `f63aaa2` 的当前 Director handoff。
+
 ## 已实现能力
 
 - Tenant 通过 `x-tenant-slug` header 解析；SSE/EventSource 支持 query `tenantSlug`。
@@ -42,7 +51,7 @@
 
 ## 已观察风险
 
-- `apps/api/src/common/tenant/tenant-resolution.middleware.ts` 和 `apps/api/src/main.ts` 有中文注释在当前 shell 输出中显示为乱码；这不影响运行，但会降低代码可读性。未修改源码。
+- 最新 workflow 提交包含 `apps/api/src/common/tenant/tenant-resolution.middleware.ts` 和 `apps/api/src/main.ts` 的注释型源码变更；QA 判定为可接受、低风险、无行为变化。
 - Tenant list/create 目前是 platform-level API，没有认证或管理员校验；生产化前需要补齐权限边界。
 - Customer widget 使用 `/images/logo.png` 作为头像路径；作为独立 embeddable 包接入外部站点时需要确认静态资源策略。
 - Realtime snapshot 每 2 秒拉取 conversation list 和 active conversation detail；数据量扩大后需要评估负载。
