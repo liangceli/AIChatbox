@@ -2,46 +2,49 @@
 
 ## 1. Completed Task
 
-Completed and QA-accepted the LLM provider boundary implementation with deterministic fallback preserved.
+Completed OpenAI provider integration with deterministic fallback and accepted the QA fix for OpenAI success citation preservation.
 
-Latest commit reviewed: `fb3ca66 Add LLM provider boundary with deterministic fallback`.
+Latest commit reviewed: `355e5f6 Add OpenAI provider with deterministic fallback`.
 
 ## 2. Accepted Changes
 
-- `packages/ai-core` now defines shared LLM provider contracts, including request/response, tenant/agent/conversation context, retrieved chunk type, provider metadata, and `LlmProvider`.
-- `apps/api` now depends on `@platform/ai-core` and calls the provider boundary from `ChatService`.
-- `AssistantReplyService` now implements the deterministic `LlmProvider` and remains the default active provider.
-- `LlmProviderResolverService` was added and currently resolves only the deterministic provider.
-- Assistant message metadata now preserves existing retrieval metadata and adds internal provider metadata.
-- No external LLM API is called, no API key is required, and deterministic fallback remains default.
-- No Prisma schema, UI, API request shape, or API response shape change was introduced.
+- `OpenAiLlmProviderService` was added behind the existing LLM provider boundary.
+- `LlmProviderResolverService` now selects deterministic by default and OpenAI when `AI_PROVIDER=openai`.
+- `packages/config` now validates OpenAI mode: `OPENAI_API_KEY` and `OPENAI_MODEL` are required when `AI_PROVIDER=openai`.
+- `openai-prompt.ts` builds the OpenAI prompt from `LlmProviderRequest` support rules, retrieved knowledge context, and latest customer message.
+- `citation-builder.ts` centralizes backend citation mapping from retrieved chunks.
+- OpenAI success responses now preserve backend-generated citations from retrieved chunks, independent of deterministic sentence scoring.
+- OpenAI provider failure/empty response/error paths fall back to deterministic behavior.
+- API request/response contracts, Prisma schema, UI, tenant scoping, `PENDING_HUMAN`, and deterministic fallback behavior are unchanged.
 
 ## 3. Verification Summary
 
-- Latest QA result: 人工验收已通过。
-- Automated verification recorded by Implementation: `@platform/api` typecheck/lint/build passed; `@platform/ai-core` typecheck/lint/build passed.
-- Test commands for `@platform/api` and `@platform/ai-core` passed, but both are currently placeholder tests.
-- Manual QA confirmed normal chat persistence, knowledge-hit deterministic responses with citations, knowledge-miss deterministic fallback, and expected `PENDING_HUMAN` blocking behavior.
-- Manual QA confirmed no OpenAI, Anthropic, or other external LLM API key/config is needed.
+- Latest QA result: 可以进入人工验收; no blocking issue found.
+- QA reran shell-verifiable checks: `@platform/api` test/typecheck/lint/build passed; `@platform/config` typecheck/lint/build passed; `@platform/ai-core` typecheck/lint/build passed.
+- `@platform/api` test now includes mocked provider behavior tests, including OpenAI success citation preservation when deterministic grounding would return `citations: null`.
+- Manual checks recorded by QA passed for health, deterministic knowledge hit/miss, handoff, `PENDING_HUMAN`, deterministic startup without OpenAI env, and OpenAI config validation failure when key/model are missing.
+- Real OpenAI success smoke test was not run because no OpenAI API key is currently available.
 
 ## 4. Remaining Risks
 
-- No automated behavioral tests yet cover the LLM provider boundary, deterministic provider output, or provider metadata persistence.
-- Short keyword-style questions can still produce weak deterministic retrieval matches; QA judged this a known retrieval-quality limitation, not a regression from the provider boundary.
-- Future non-deterministic providers must validate config explicitly and must not receive cross-tenant data or unrelated raw conversation history.
+- Real OpenAI success smoke testing remains pending until a valid OpenAI API key is available.
+- `pnpm-lock.yaml` is ignored/untracked despite the new OpenAI dependency; confirm dependency reproducibility policy.
+- Short keyword-style questions can still produce weak deterministic retrieval matches.
+- Provider metadata remains additive and should continue to be tolerated by downstream metadata consumers.
 
 ## 5. Updated Docs
 
-- `docs/skills/ai-chatbox-skill.md`: updated chat flow and provider status.
-- `docs/skills/backend-skill.md`: documented `@platform/ai-core`, `LlmProviderResolverService`, deterministic provider, and provider metadata persistence.
-- `docs/skills/ai-data-skill.md`: documented provider boundary, shared retrieved chunk contract, deterministic provider default, and short-query retrieval limitation.
-- `docs/skills/current-status.md`: recorded the accepted LLM provider boundary task, verification summary, and updated next tasks.
-- `docs/skills/qa-skill.md`: added provider-boundary regression checks and QA observation about weak short-query retrieval matches.
-- `docs/skills/decision-log.md`: recorded the architecture decision to put LLM provider contracts in `@platform/ai-core`.
-- `docs/ai-handoff/director-update.md`: refreshed for this latest accepted implementation and QA result.
+- `docs/skills/ai-chatbox-skill.md`: updated provider status, OpenAI mode, env requirements, prompt/citation behavior.
+- `docs/skills/backend-skill.md`: documented OpenAI provider selection, env validation, citation helper, and fallback behavior.
+- `docs/skills/ai-data-skill.md`: documented OpenAI provider behavior, shared citation helper, metadata, and citation preservation.
+- `docs/skills/current-status.md`: recorded latest OpenAI provider/citation fix task, verification summary, risks, and next tasks.
+- `docs/skills/qa-skill.md`: added OpenAI provider regression checks, mocked test location, and real-key smoke test gap.
+- `docs/skills/deployment-skill.md`: updated runtime env docs for `AI_PROVIDER`, OpenAI key/model/tokens/timeout.
+- `docs/skills/decision-log.md`: recorded OpenAI provider and OpenAI success citation decisions.
+- `docs/ai-handoff/director-update.md`: refreshed for latest commit and QA handoff.
 
 ## 6. Recommended Next Tasks
 
-1. Add targeted automated tests for deterministic provider behavior, provider metadata persistence, citations, fallback, and `PENDING_HUMAN` guard.
-2. Improve deterministic retrieval quality for short keyword-style questions or tighten retrieval thresholds before real embeddings/LLM retrieval work.
-3. Plan the first real provider implementation, likely OpenAI, behind explicit config validation and deterministic fallback.
+1. When an OpenAI API key is available, run a real OpenAI success smoke test for retrieved chunks, citations, provider metadata, and retrieval metadata.
+2. Confirm repository policy for `pnpm-lock.yaml` because ignored/untracked lockfile weakens dependency reproducibility with the new OpenAI dependency.
+3. Improve deterministic retrieval quality for short keyword-style questions or tighten retrieval thresholds before embedding/vector work.

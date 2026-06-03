@@ -1,5 +1,25 @@
 # Decision Log
 
+## 2026-06-03 - OpenAI provider added behind deterministic fallback
+
+Decision: Add `OpenAiLlmProviderService` behind the existing LLM provider resolver, controlled by `AI_PROVIDER=openai`, while keeping deterministic as the default provider.
+
+Reason: The platform now needs a real provider path without changing chat API contracts, tenant scoping, citation persistence, or deterministic fallback behavior.
+
+Trade-off: The API now depends on the `openai` package and requires stricter env validation when OpenAI mode is selected. Real-key smoke testing remains pending until a valid OpenAI key is available.
+
+Affected areas: `apps/api/src/modules/chat`, `packages/config`, `packages/ai-core`, provider behavior tests, AI/chat documentation.
+
+## 2026-06-03 - OpenAI success citations generated from backend retrieved chunks
+
+Decision: OpenAI success responses build citations directly from `input.retrievedChunks` via shared backend helper `buildBackendCitations`, instead of reusing deterministic reply citations.
+
+Reason: Deterministic sentence scoring can return `citations: null` even when retrieval found chunks. OpenAI success should preserve backend evidence whenever retrieval provided chunks.
+
+Trade-off: OpenAI success now includes citations for all retrieved chunks even if deterministic grounded sentence scoring would not choose a grounded sentence. This keeps citation IDs backend-controlled and avoids model-invented citations.
+
+Affected areas: OpenAI provider success path, deterministic provider citation mapping, provider tests, AI/chat documentation.
+
 ## 2026-06-03 - LLM provider boundary added in `@platform/ai-core`
 
 Decision: Define the reusable LLM provider boundary in `packages/ai-core` and have the API call providers through `LlmProviderResolverService` instead of wiring provider logic directly into `ChatService`.

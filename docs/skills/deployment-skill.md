@@ -35,9 +35,13 @@ Current server env keys:
 - `NEXT_PUBLIC_API_BASE_URL`
 - `NEXT_PUBLIC_DEFAULT_TENANT_SLUG`
 - `WIDGET_DEFAULT_TENANT_SLUG`
+- `AI_PROVIDER`
 - `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `OPENAI_MAX_OUTPUT_TOKENS`
+- `OPENAI_TIMEOUT_MS`
 
-`OPENAI_API_KEY` exists in config but no real LLM provider is implemented yet.
+`AI_PROVIDER` defaults to `deterministic`. `AI_PROVIDER=openai` requires both `OPENAI_API_KEY` and `OPENAI_MODEL`; missing values fail config validation. `OPENAI_TIMEOUT_MS` defaults to `30000`.
 
 ## Build Commands
 
@@ -59,4 +63,3 @@ Do not treat `pnpm dev` or package `dev` scripts as blocking deployment verifica
 - No production secrets strategy documented.
 - No migration release process documented beyond Prisma commands.
 - No Redis-backed worker/job deployment yet.
-

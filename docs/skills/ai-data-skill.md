@@ -2,17 +2,17 @@
 
 ## 当前 AI 状态
 
-当前系统是 RAG 数据流 scaffold，不是真正 LLM-powered RAG。
+当前系统是 RAG 数据流 scaffold，已支持可选 OpenAI provider，但 retrieval 仍是 deterministic keyword/phrase，不是 embeddings/vector RAG。
 
 现状：
 
 - Retrieval: deterministic keyword/phrase retrieval。
-- Generation: `ChatService` 通过 LLM provider boundary 调用 deterministic provider。
+- Generation: `ChatService` 通过 LLM provider boundary 调用 deterministic 或 OpenAI provider。
 - Provider boundary: `@platform/ai-core` 已定义 `LlmProvider`、`LlmProviderRequest`、`LlmProviderResponse`、`LlmRetrievedKnowledgeChunk` 和 provider metadata。
-- Provider resolver: API 当前通过 `LlmProviderResolverService` 解析 provider，默认且唯一 active provider 是 deterministic `AssistantReplyService`。
-- Citations: 后端根据 retrieved chunks 生成。
+- Provider resolver: API 当前通过 `LlmProviderResolverService` 解析 provider，默认 active provider 是 deterministic `AssistantReplyService`；`AI_PROVIDER=openai` 且 env 有效时使用 `OpenAiLlmProviderService`。
+- Citations: 后端根据 retrieved chunks 生成，OpenAI 不发明 citation id。
 - Persistence: assistant message 内容、citations、retrieval metadata 和 provider metadata 都写入 Message。
-- External LLM: 当前没有调用 OpenAI、Anthropic 或其他外部 LLM API。
+- External LLM: OpenAI provider 已实现但默认关闭；没有配置 `AI_PROVIDER=openai` 时不会调用外部 LLM API。
 
 ## Knowledge Retrieval
 
@@ -46,6 +46,9 @@
 
 - `apps/api/src/modules/chat/assistant-reply.service.ts`
 - `apps/api/src/modules/chat/llm-provider-resolver.service.ts`
+- `apps/api/src/modules/chat/openai-llm-provider.service.ts`
+- `apps/api/src/modules/chat/openai-prompt.ts`
+- `apps/api/src/modules/chat/citation-builder.ts`
 - `packages/ai-core/src/index.ts`
 
 当前输入：
@@ -64,6 +67,10 @@
 - metadata.mode
 - metadata.deterministic
 - metadata.usedFallback
+- metadata.model
+- metadata.fallbackReason
+- metadata.latencyMs
+- metadata.responseId
 
 当前行为：
 
@@ -71,8 +78,17 @@
 - 有 retrieved chunks 时，根据问题 term 在 chunks 中选择 grounded sentences。
 - 如果没有可用 grounded sentence，走 fallback。
 - 有可用 grounded sentence 时，拼接 support knowledge base 风格回答。
-- citations 从 retrieved chunks 直接构造，不要求模型生成。
+- deterministic grounded citations 通过 shared backend citation helper 从 retrieved chunks 构造。
 - provider metadata 当前为 deterministic mode，并由 ChatService 持久化到 assistant message metadata。
+
+OpenAI 行为：
+
+- `AI_PROVIDER=openai` 时，resolver 返回 `OpenAiLlmProviderService`。
+- `OPENAI_API_KEY` 和 `OPENAI_MODEL` 必填；缺失时 config validation 明确失败。
+- OpenAI prompt 只包含 provider request 中的 support rules、knowledge context 和 customer message。
+- OpenAI success content 来自 OpenAI Responses API。
+- OpenAI success citations 通过 `buildBackendCitations(input.retrievedChunks)` 直接从 retrieved chunks 生成，独立于 deterministic grounded sentence scoring。
+- OpenAI 空响应、timeout、rate limit、auth/config 或 provider error 会 fallback 到 deterministic provider。
 
 ## Citations
 
@@ -97,6 +113,8 @@
 - LLM 不应该发明 citation id。
 - `Message.citations` 是 Json 字段。
 - 前端 admin/widget 都会展示 citations。
+- `buildBackendCitations` 是 chat providers 的 shared citation helper。
+- OpenAI success 有 retrieved chunks 时应保留 citations，即使 deterministic scoring 不会产生 grounded sentence。
 
 ## AgentConfig
 
@@ -128,18 +146,18 @@ Prisma 模型：
 
 - 共享 provider contract 位于 `packages/ai-core`。
 - API 通过 `LlmProviderResolverService` 解析 provider。
-- 当前 resolver 只返回 deterministic provider。
+- resolver 支持 deterministic 和 OpenAI。
 - deterministic fallback remains default。
-- 没有外部 LLM API 调用，没有 API key 需求，没有 env/config provider switch。
+- 默认没有外部 LLM API 调用；只有 `AI_PROVIDER=openai` 且 env 有效时会调用 OpenAI。
+- `packages/config` 校验 `AI_PROVIDER`、`OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_MAX_OUTPUT_TOKENS`、`OPENAI_TIMEOUT_MS`。
 
 下一步实现真实 LLM 回复时，应保持小步、可回退：
 
 - 在现有 `LlmProvider` contract 下增加 provider implementation，而不是把 provider HTTP 逻辑写进 ChatService。
 - 输入只包含 tenant-scoped backend 已选择的数据，例如 tenant、AgentConfig、retrieved chunks、latest customer message 和必要 conversation context。
 - 输出包含 content、citations/null、metadata；citations 仍应由后端基于 retrieved chunks 控制，不能让模型发明 citation id。
-- 首个 provider 可用 OpenAI。
-- `OPENAI_API_KEY` 缺失时继续使用 deterministic fallback。
-- 增加 `OPENAI_MODEL` 到 config 和 `.env.example`。
+- 首个 provider 已使用 OpenAI。
+- 后续需要真实 OpenAI key 时再做 real-key smoke test。
 - 不引入 LangGraph。
 - 不引入 multi-agent orchestration。
 - 不引入 embeddings/vector search，除非后续明确要求。

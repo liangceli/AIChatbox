@@ -22,27 +22,29 @@
 
 ## 最新已接受任务
 
-- 最新提交：`fb3ca66 Add LLM provider boundary with deterministic fallback`。
-- 已接受任务：增加 LLM provider boundary，同时保留 deterministic assistant fallback。
-- 主要变更：`@platform/ai-core` 新增共享 LLM provider contracts；API 新增 `LlmProviderResolverService`；`AssistantReplyService` 成为 deterministic `LlmProvider` implementation；`ChatService` 改为通过 provider boundary 生成回复。
-- 保持不变：没有外部 LLM API 调用，没有 API key 需求，没有 Prisma schema/UI/API response shape 变化；tenant scoping、citations、retrieval metadata、message persistence、`PENDING_HUMAN` guard 保持。
-- QA 结果：人工验收已通过。
-- 验证摘要：`@platform/api` 和 `@platform/ai-core` 的 typecheck、lint、build 通过；test 命令通过但目前仍是 placeholder。
+- 最新提交：`355e5f6 Add OpenAI provider with deterministic fallback`。
+- 已接受任务：增加 OpenAI provider，并修复 OpenAI success citation preservation，使 successful OpenAI replies 直接从 retrieved chunks 生成 backend citations。
+- 主要变更：`OpenAiLlmProviderService`、OpenAI prompt helper、shared `buildBackendCitations`、provider behavior tests、OpenAI env validation 和 provider resolver selection。
+- 保持不变：没有 Prisma schema/UI/API request/response contract 变化；tenant scoping、retrieval、deterministic fallback、`PENDING_HUMAN` guard 保持。
+- QA 结果：可以进入人工验收；QA fix 已接受，无 blocking issue。QA handoff 同时记录多项人工验收通过，真实 OpenAI success smoke test 因无 OpenAI key 未执行。
+- 验证摘要：`@platform/api` test/typecheck/lint/build 通过；`@platform/config` 和 `@platform/ai-core` typecheck/lint/build 通过；config/ai-core tests 通过但仍是 placeholder。
 
 ## 已实现能力
 
 - Tenant 通过 `x-tenant-slug` header 解析；SSE/EventSource 支持 query `tenantSlug`。
 - Tenant-scoped chat message 保存、conversation 创建/续接、匿名 visitorId 持久化。
-- Deterministic knowledge retrieval + deterministic LLM provider reply。
+- Deterministic knowledge retrieval + deterministic/OpenAI LLM provider reply。
 - Assistant message citations、retrieval metadata 和 provider metadata 会持久化到 `Message`。
-- `@platform/ai-core` 提供 LLM provider boundary，API 当前通过 resolver 固定使用 deterministic provider。
+- `@platform/ai-core` 提供 LLM provider boundary，API 当前通过 resolver 支持 deterministic 和 OpenAI provider。
+- `AI_PROVIDER=deterministic` 是默认值；`AI_PROVIDER=openai` 要求 `OPENAI_API_KEY` 和 `OPENAI_MODEL`。
+- OpenAI success citations 通过 shared backend citation helper 从 retrieved chunks 生成，不依赖 deterministic grounded sentence scoring。
 - Knowledge base 支持创建、手动文本、文件文本、单 URL/批量 URL 导入、chunking、reprocess、archive、delete。
 - Handoff 支持 customer 请求人工、support user 分配、agent reply。
 - Realtime 当前是 2 秒一次的 SSE snapshot，不是 websocket 协作层。
 
 ## 当前限制
 
-- 尚未接入真实外部 LLM provider；`AssistantReplyService` 是 deterministic provider，仍是模板/规则回复。
+- OpenAI provider 已实现但真实 OpenAI success smoke test 尚未执行，因为当前没有 OpenAI API key。
 - 尚未实现 embeddings、vector database、reranker。
 - 短 keyword-style 问题仍可能产生弱相关 deterministic retrieval matches。
 - `apps/ai-worker` 还没有队列、异步 ingestion 或后台 job。
@@ -53,15 +55,17 @@
 
 ## 已观察风险
 
-- 最新 workflow 提交包含 `apps/api/src/common/tenant/tenant-resolution.middleware.ts` 和 `apps/api/src/main.ts` 的注释型源码变更；QA 判定为可接受、低风险、无行为变化。
+- 真实 OpenAI success smoke test 尚未执行；有 key 后需要补测 OpenAI success citations、provider metadata 和 retrieval metadata。
+- `pnpm-lock.yaml` 当前 ignored/untracked，但最新提交引入了 `openai` dependency；需要确认依赖可复现策略。
+- 短 keyword-style questions 仍可能产生弱相关 deterministic retrieval matches。
 - Tenant list/create 目前是 platform-level API，没有认证或管理员校验；生产化前需要补齐权限边界。
 - Customer widget 使用 `/images/logo.png` 作为头像路径；作为独立 embeddable 包接入外部站点时需要确认静态资源策略。
 - Realtime snapshot 每 2 秒拉取 conversation list 和 active conversation detail；数据量扩大后需要评估负载。
 
 ## 推荐下一步
 
-1. 为 deterministic provider boundary 增加 API/service unit tests，覆盖 fallback、citations、provider metadata persistence 和 `PENDING_HUMAN` guard。
-2. 改善 deterministic retrieval 对短 keyword-style questions 的弱匹配问题，或在真实 LLM/embedding 工作前增加更严格阈值。
-3. 为 API 增加最小 auth/RBAC 方案，至少保护 tenant management 和 admin/agent actions。
-4. 在现有 `@platform/ai-core` contract 下规划真实 OpenAI provider，并保留 deterministic fallback。
+1. 有 OpenAI key 后执行 real-key smoke test，重点验证 OpenAI success citations、provider metadata、retrieval metadata。
+2. 确认 `pnpm-lock.yaml` 策略；当前 QA 记录 lockfile ignored/untracked 会削弱 dependency reproducibility。
+3. 改善 deterministic retrieval 对短 keyword-style questions 的弱匹配问题，或在真实 embedding work 前增加更严格阈值。
+4. 为 API 增加最小 auth/RBAC 方案，至少保护 tenant management 和 admin/agent actions。
 5. 将 knowledge ingestion 从同步 API 请求逐步迁移到 worker/queue。

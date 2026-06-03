@@ -70,7 +70,8 @@ API 启动入口：
 - 写入 customer Message。
 - 读取 tenant AgentConfig。
 - 通过 `LlmProviderResolverService.resolveProvider()` 解析 provider。
-- 当前 resolver 返回 deterministic provider：实现 `LlmProvider` 的 `AssistantReplyService`。
+- 默认 resolver 返回 deterministic provider：实现 `LlmProvider` 的 `AssistantReplyService`。
+- 当 `AI_PROVIDER=openai` 且 `OPENAI_API_KEY` / `OPENAI_MODEL` 有效时，resolver 返回 `OpenAiLlmProviderService`。
 - 调用 `llmProvider.generateReply(...)`。
 - 写入 assistant Message、citations、retrieval metadata 和 provider metadata。
 - 更新 Conversation status/lastMessageAt。
@@ -79,11 +80,15 @@ API 启动入口：
 注意：
 
 - 如果 conversation 已经 `PENDING_HUMAN`，客户不能继续让 AI 回复。
-- 当前 active provider 是 deterministic/template，不会调用外部 LLM API。
+- 默认 active provider 是 deterministic/template，不会调用外部 LLM API。
+- OpenAI provider 已实现，使用 OpenAI Responses API；仅在 `AI_PROVIDER=openai` 且 env validation 通过时启用。
 - `ChatService` 应保持编排层，不应承载 raw prompt、provider HTTP 逻辑或 provider selection 细节。
 - `@platform/ai-core` 中的 LLM provider contract 是未来真实 provider 的共享边界。
-- `LlmProviderResolverService` 当前没有 env/config switch；后续增加真实 provider 时必须显式校验配置并保留 deterministic fallback。
+- `LlmProviderResolverService` 根据 `AI_PROVIDER` 选择 deterministic/openai；OpenAI config 缺失会由 `packages/config` validation 明确失败。
 - Assistant message metadata 中的 `provider` 是内部持久化元数据，不改变 `ChatMessageRecord` response shape。
+- `apps/api/src/modules/chat/citation-builder.ts` 是 shared backend citation helper，OpenAI success 和 deterministic grounded replies 都从 retrieved chunks 构造 backend citations。
+- OpenAI success citations 不依赖 deterministic sentence scoring；只要 retrieval 有 chunks，OpenAI success path 会返回 backend-generated citations。
+- OpenAI fallback 仍委托 deterministic provider，deterministic fallback behavior 不变。
 
 ### Knowledge
 
