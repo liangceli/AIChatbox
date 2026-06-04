@@ -39,6 +39,13 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Regression Checklist
 
+- Protected tenant/knowledge/admin-agent endpoints reject missing admin token with 401.
+- Protected tenant/knowledge/admin-agent endpoints reject invalid admin token with 403.
+- Protected tenant/knowledge/admin-agent endpoints accept `x-admin-api-token` or bearer token when valid.
+- Customer chat and customer handoff remain public but tenant-scoped.
+- Conversation detail/read endpoints remain reachable without admin token under the current alpha contract.
+- Realtime SSE remains reachable without admin token under the current alpha contract and emits tenant-scoped snapshots with conversation list, `pendingHumanCount`, and `activeConversation`; this is a public alpha limitation that must be narrowed or protected before production.
+- Admin-web local alpha testing must not expose `ADMIN_API_TOKEN` in browser code. Use explicit dev disable mode for local browser-only testing, or test protected API calls directly with a server/client that can keep the token private.
 - Tenant-scoped endpoints reject missing `x-tenant-slug`.
 - Tenant-scoped reads/writes never expose another tenant's records.
 - `POST /chat/messages` refuses empty messages and max-length violations.

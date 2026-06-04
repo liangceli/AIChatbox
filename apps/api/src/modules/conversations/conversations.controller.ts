@@ -5,7 +5,8 @@ import type {
   ConversationSummary,
   SupportUserRecord
 } from "@platform/types";
-import { Body, Controller, Delete, Get, Inject, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { AdminApiGuard } from "../../common/admin-protection/admin-api.guard";
 import { CurrentTenant } from "../../common/tenant/current-tenant.decorator";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { AssignConversationDto } from "./dto/assign-conversation.dto";
@@ -21,6 +22,7 @@ export class ConversationsController {
   ) {}
 
   @Get()
+  @UseGuards(AdminApiGuard)
   async listConversations(
     @CurrentTenant() tenant: ResolvedTenant,
     @Query() query: ListConversationsQueryDto
@@ -29,6 +31,7 @@ export class ConversationsController {
   }
 
   @Get("support-users")
+  @UseGuards(AdminApiGuard)
   async listSupportUsers(@CurrentTenant() tenant: ResolvedTenant): Promise<SupportUserRecord[]> {
     return this.conversationsService.listSupportUsers(tenant);
   }
@@ -72,6 +75,7 @@ export class ConversationsController {
   }
 
   @Post(":conversationId/assign")
+  @UseGuards(AdminApiGuard)
   async assignConversation(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
@@ -81,6 +85,7 @@ export class ConversationsController {
   }
 
   @Post(":conversationId/agent-replies")
+  @UseGuards(AdminApiGuard)
   async sendAgentReply(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
@@ -95,6 +100,7 @@ export class ConversationsController {
   }
 
   @Delete(":conversationId/messages")
+  @UseGuards(AdminApiGuard)
   async clearMessageHistory(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string
@@ -103,6 +109,7 @@ export class ConversationsController {
   }
 
   @Delete(":conversationId")
+  @UseGuards(AdminApiGuard)
   async deleteConversation(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string

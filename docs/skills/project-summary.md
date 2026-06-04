@@ -1,5 +1,9 @@
 # 项目汇总 Skill
 
+## 2026-06-04 Product Direction Note
+
+The long-term priority is the user's personal/commercial Level 3 AI customer support + lead capture product. Current Haneco/Kasta references are seed/demo/reference or company-only context and must not define reusable platform core. The repo is not split yet; split-readiness docs under `docs/split-readiness/` define when the user should create a new repo.
+
 ## 项目定位
 
 HanecoAIPilot 是一个可复用、白标、多租户 AI 客服平台。它不是 Kasta 专用项目；Kasta 只是当前 seed/demo tenant。平台核心必须保持 tenant-agnostic，任何客户特定的品牌、prompt、升级规则、知识库内容、集成逻辑都应通过 tenant-scoped 数据、配置或隔离模块表达。

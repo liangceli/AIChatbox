@@ -19,14 +19,16 @@ export const serverEnvSchema = z
     OPENAI_API_KEY: z.string().optional(),
     OPENAI_MODEL: z.string().optional(),
     OPENAI_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().optional(),
-    OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(30000)
+    OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+    ADMIN_API_PROTECTION_MODE: z.enum(["token", "disabled"]).default("token"),
+    ADMIN_API_TOKEN: z.string().optional(),
+    ALLOW_UNPROTECTED_ADMIN_API_IN_DEV: z.preprocess(
+      (value) => value === true || value === "true",
+      z.boolean()
+    ).default(false)
   })
   .superRefine((env, context) => {
-    if (env.AI_PROVIDER !== "openai") {
-      return;
-    }
-
-    if (!env.OPENAI_API_KEY?.trim()) {
+    if (env.AI_PROVIDER === "openai" && !env.OPENAI_API_KEY?.trim()) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["OPENAI_API_KEY"],
@@ -34,12 +36,31 @@ export const serverEnvSchema = z
       });
     }
 
-    if (!env.OPENAI_MODEL?.trim()) {
+    if (env.AI_PROVIDER === "openai" && !env.OPENAI_MODEL?.trim()) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["OPENAI_MODEL"],
         message: "OPENAI_MODEL is required when AI_PROVIDER=openai."
       });
+    }
+
+    if (env.ADMIN_API_PROTECTION_MODE === "disabled") {
+      if (env.NODE_ENV === "production") {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ADMIN_API_PROTECTION_MODE"],
+          message: "ADMIN_API_PROTECTION_MODE=disabled is not allowed in production."
+        });
+      }
+
+      if (!env.ALLOW_UNPROTECTED_ADMIN_API_IN_DEV) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ALLOW_UNPROTECTED_ADMIN_API_IN_DEV"],
+          message:
+            "ALLOW_UNPROTECTED_ADMIN_API_IN_DEV=true is required when ADMIN_API_PROTECTION_MODE=disabled."
+        });
+      }
     }
   });
 

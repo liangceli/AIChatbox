@@ -1,5 +1,20 @@
 # API Contract Skill
 
+## 2026-06-04 Admin Protection Header
+
+Protected admin/agent/platform endpoints require one of:
+
+- `x-admin-api-token: <ADMIN_API_TOKEN>`
+- `Authorization: Bearer <ADMIN_API_TOKEN>`
+
+Missing protection returns 401. Invalid protection returns 403. Customer chat/widget endpoints remain public but tenant-scoped.
+
+Route map smoke expectation:
+
+- Protected admin/platform endpoints, including tenants, knowledge management, admin conversation list/support-users, assignment, agent replies, message clearing, and conversation deletion, must reject missing tokens with 401, reject invalid tokens with 403, and accept a valid admin token.
+- Public alpha customer/widget endpoints, including customer chat, customer handoff, conversation detail/read, and realtime SSE, must remain reachable without an admin token under the current alpha contract.
+- `GET /v1/realtime/conversations` is currently public alpha behavior. It returns tenant-scoped conversation snapshots containing the conversation list, `pendingHumanCount`, and `activeConversation` detail. This endpoint must be narrowed or protected before production.
+
 ## 基础规则
 
 - API base: `http://localhost:4000/v1`
@@ -141,9 +156,10 @@ Reprocess body:
 
 SSE endpoint. Emits event type `conversation_snapshot` every 2 seconds.
 
+Current protection status: public alpha behavior. It is tenant-scoped through `tenantSlug`, but does not require the admin API token because current browser/widget realtime flows depend on direct `EventSource` access. Before production, narrow this endpoint to the minimum widget-safe payload or protect/admin-split it with a server-side auth/proxy model.
+
 Data shape:
 
 - `conversations`: `ConversationListItem[]`
 - `pendingHumanCount`: number
 - `activeConversation`: `ConversationDetail | null`
-

@@ -5,7 +5,8 @@ import type {
   KnowledgeDocumentRecord,
   ImportUrlKnowledgeDocumentResult
 } from "@platform/types";
-import { Body, Controller, Delete, Get, Inject, Param, Post } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
+import { AdminApiGuard } from "../../common/admin-protection/admin-api.guard";
 import { CurrentTenant } from "../../common/tenant/current-tenant.decorator";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { CreateKnowledgeBaseDto } from "./dto/create-knowledge-base.dto";
@@ -16,6 +17,7 @@ import { ReprocessKnowledgeDocumentDto } from "./dto/reprocess-knowledge-documen
 import { KnowledgeService } from "./knowledge.service";
 
 @Controller("knowledge-bases")
+@UseGuards(AdminApiGuard)
 export class KnowledgeController {
   constructor(@Inject(KnowledgeService) private readonly knowledgeService: KnowledgeService) {}
 

@@ -1,7 +1,14 @@
 import { ConversationStatus } from "@platform/database";
 import { loadServerEnv, type ServerEnv } from "@platform/config";
 import assert from "node:assert/strict";
-import { BadRequestException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+  type ExecutionContext
+} from "@nestjs/common";
+import { AdminApiGuard } from "../src/common/admin-protection/admin-api.guard";
+import { createTenantResolutionMiddleware } from "../src/common/tenant/tenant-resolution.middleware";
 import { AssistantReplyService } from "../src/modules/chat/assistant-reply.service";
 import { ChatService } from "../src/modules/chat/chat.service";
 import { LlmProviderResolverService } from "../src/modules/chat/llm-provider-resolver.service";
@@ -97,6 +104,16 @@ function createRetrievalService(candidates: RetrievalCandidate[]): KnowledgeRetr
   } as never);
 }
 
+function createGuardContext(headers: Record<string, string | undefined>): ExecutionContext {
+  return {
+    switchToHttp: () => ({
+      getRequest: () => ({
+        headers
+      })
+    })
+  } as never;
+}
+
 async function testDefaultConfigUsesDeterministic() {
   const env = loadServerEnv({});
 
@@ -130,6 +147,96 @@ async function testOpenAiConfigRequiresKeyAndModel() {
       }),
     /OPENAI_MODEL/
   );
+}
+
+async function testAdminProtectionConfigRequiresExplicitDevDisable() {
+  assert.throws(
+    () =>
+      loadServerEnv({
+        ADMIN_API_PROTECTION_MODE: "disabled"
+      }),
+    /ALLOW_UNPROTECTED_ADMIN_API_IN_DEV/
+  );
+
+  const env = loadServerEnv({
+    ADMIN_API_PROTECTION_MODE: "disabled",
+    ALLOW_UNPROTECTED_ADMIN_API_IN_DEV: "true"
+  });
+
+  assert.equal(env.ADMIN_API_PROTECTION_MODE, "disabled");
+}
+
+async function testAdminProtectionGuardRejectsMissingAndInvalidTokens() {
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_TOKEN: "test-admin-token"
+    })
+  );
+
+  assert.throws(
+    () => guard.canActivate(createGuardContext({})),
+    UnauthorizedException
+  );
+  assert.throws(
+    () => guard.canActivate(createGuardContext({ "x-admin-api-token": "wrong-token" })),
+    ForbiddenException
+  );
+}
+
+async function testAdminProtectionGuardAcceptsValidTokens() {
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_TOKEN: "test-admin-token"
+    })
+  );
+  const bearerGuard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_TOKEN: "bearer-token"
+    })
+  );
+
+  assert.equal(
+    guard.canActivate(createGuardContext({ "x-admin-api-token": "test-admin-token" })),
+    true
+  );
+  assert.equal(
+    bearerGuard.canActivate(createGuardContext({ authorization: "Bearer bearer-token" })),
+    true
+  );
+}
+
+async function testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed() {
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "disabled",
+      ALLOW_UNPROTECTED_ADMIN_API_IN_DEV: "true"
+    })
+  );
+
+  assert.equal(guard.canActivate(createGuardContext({})), true);
+}
+
+async function testTenantResolutionStillRequiresTenantSlug() {
+  const middleware = createTenantResolutionMiddleware({
+    tenant: {
+      findFirst: async () => null
+    }
+  } as never);
+  let capturedError: unknown;
+
+  await middleware(
+    {
+      method: "GET",
+      headers: {},
+      query: {}
+    } as never,
+    {} as never,
+    (error?: unknown) => {
+      capturedError = error;
+    }
+  );
+
+  assert.ok(capturedError instanceof BadRequestException);
 }
 
 async function testResolverSelection() {
@@ -416,6 +523,11 @@ async function run() {
   await testDefaultConfigUsesDeterministic();
   await testDeterministicConfigDoesNotNeedOpenAi();
   await testOpenAiConfigRequiresKeyAndModel();
+  await testAdminProtectionConfigRequiresExplicitDevDisable();
+  await testAdminProtectionGuardRejectsMissingAndInvalidTokens();
+  await testAdminProtectionGuardAcceptsValidTokens();
+  await testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed();
+  await testTenantResolutionStillRequiresTenantSlug();
   await testResolverSelection();
   await testOpenAiSuccessMapsResponse();
   await testOpenAiSuccessPreservesCitationsWhenDeterministicWouldNotGround();

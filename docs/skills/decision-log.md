@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-06-04 - Prepare split readiness and minimal admin protection
+
+Decision: Add split-readiness documentation for the future personal Level 3 AI customer support + lead capture product and protect admin/agent/platform operations with a minimal token guard.
+
+Reason: The repo needs a clear boundary between reusable personal product core and company-specific Haneco/Kasta deployment work before further alpha deployment, and admin/agent/platform APIs should not remain unprotected.
+
+Trade-off: The guard is not full auth/RBAC. It is an alpha protection boundary and should be replaced by real authenticated identity and tenant-aware authorization before production.
+
+Affected areas: `docs/split-readiness`, `apps/api/src/common/admin-protection`, tenant/knowledge/conversation controllers, config, auth/backend/API/QA/deployment docs.
+
 ## 2026-06-03 - Stabilize OpenAI readiness and deterministic retrieval
 
 Decision: Track `pnpm-lock.yaml`, add a manual OpenAI real-key smoke helper, and harden deterministic short-query retrieval with normalized exact-token scoring.

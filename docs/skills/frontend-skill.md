@@ -20,6 +20,12 @@
 
 ## Admin Console
 
+Admin protection limitation:
+
+- The backend `AdminApiGuard` protects admin/platform API endpoints, but `apps/admin-web` is currently browser-only and has no safe token/session/proxy path.
+- Do not expose `ADMIN_API_TOKEN` through `NEXT_PUBLIC_*`, bundled client code, local storage, or direct browser requests.
+- Local alpha admin-web usage with protected endpoints either needs explicit `ADMIN_API_PROTECTION_MODE=disabled` and `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV=true`, or a future server-side auth/proxy implementation that keeps the admin token off the browser.
+
 核心组件：
 
 - `app/components/admin-console.tsx`
@@ -50,6 +56,8 @@
   - 用于本地验证客户聊天闭环。
 
 ## Customer Widget
+
+Current alpha realtime note: `GET /v1/realtime/conversations` remains public and tenant-scoped for widget/admin browser flows. It returns conversation snapshots including the conversation list, `pendingHumanCount`, and active conversation detail, so it must be narrowed or protected before production.
 
 核心文件：
 

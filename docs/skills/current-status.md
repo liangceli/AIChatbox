@@ -8,6 +8,17 @@
 - API provider tests now cover retrieval short-query behavior, OpenAI citation preservation, safe provider metadata, fallback metadata, and `PENDING_HUMAN` blocking.
 - Real OpenAI smoke remains pending until a valid API key is available.
 
+## 2026-06-04 Split Readiness And Admin Protection Update
+
+- Split-readiness documentation now exists under `docs/split-readiness/`.
+- Long-term direction is the user's personal/commercial Level 3 AI support + lead capture product.
+- Haneco/Kasta/company-specific work must remain seed/demo/company-only and must not drive platform core.
+- Minimal admin API token guard now protects tenant management, knowledge management, and key admin/agent conversation operations.
+- Customer chat/widget, customer handoff, conversation detail/read, and realtime SSE remain public but tenant-scoped under the current alpha contract.
+- `GET /v1/realtime/conversations` currently returns public alpha tenant-scoped snapshots with conversation list, `pendingHumanCount`, and active conversation detail; this must be narrowed or protected before production.
+- `apps/admin-web` is still browser-only and has no safe admin token/session/proxy path. Do not expose `ADMIN_API_TOKEN` to the browser; local alpha usage requires explicit dev disable mode or a future server-side auth/proxy.
+- The repo is prepared for another short cycle, but should split when documented triggers are reached.
+
 ## 最新代码状态
 
 本次文档 intake 基于当前仓库源码，不修改业务逻辑。项目目前是一个 TypeScript monorepo，包含：

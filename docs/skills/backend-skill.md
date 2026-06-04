@@ -10,6 +10,16 @@
 - `policies` / `warranties` raw plural lookup and `case` / `showcase` false-positive regression checks passed.
 - Provider/retrieval regression coverage lives in `apps/api/scripts/provider-behavior.test.ts`.
 
+## 2026-06-04 Admin Protection And Split Readiness Notes
+
+- Minimal admin API guard lives in `apps/api/src/common/admin-protection/admin-api.guard.ts`.
+- Protected categories: tenant management, knowledge management, conversation list/support-users, assignment, agent replies, message clearing, and conversation deletion.
+- Intentionally public alpha categories: customer chat, customer handoff, conversation detail/read endpoints, and `GET /v1/realtime/conversations` because current widget/realtime flows may depend on them.
+- `GET /v1/realtime/conversations` returns tenant-scoped conversation snapshots, including conversation list, `pendingHumanCount`, and active conversation detail. This is an alpha privacy limitation and must be narrowed or protected before production.
+- Guard is token-based and configured through `ADMIN_API_PROTECTION_MODE`, `ADMIN_API_TOKEN`, and `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV`.
+- Split-readiness docs live in `docs/split-readiness/`.
+- Long-term product priority is the user's personal Level 3 AI customer support + lead capture product; Haneco/Kasta-specific work must remain seed/demo/company-only.
+
 ## 后端组成
 
 后端主应用是 `apps/api`，使用 NestJS。数据库和 Prisma client 在 `packages/database`，环境解析在 `packages/config`，共享 AI/LLM provider contracts 在 `packages/ai-core`。
