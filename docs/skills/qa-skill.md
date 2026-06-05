@@ -82,6 +82,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Known QA Observations
 
+- QA for `8ddc85d Add secure admin access and customer-scoped realtime` accepted the P1 fixes for admin access open-redirect sanitization and required public handoff `visitorId`; no required follow-up fixes remain.
 - Manual QA for `fb3ca66 Add LLM provider boundary with deterministic fallback` passed.
 - QA for `355e5f6 Add OpenAI provider with deterministic fallback` passed shell-verifiable checks and accepted the citation preservation fix.
 - Retrieval candidate lookup now uses raw + normalized terms, while final scoring uses exact normalized tokens.

@@ -2,7 +2,7 @@
 
 ## 2026-06-04 Split Readiness And Admin Protection Update
 
-- Latest implementation state includes the alpha-safe admin-web proxy/realtime narrowing follow-up.
+- Latest commit reviewed: `8ddc85d Add secure admin access and customer-scoped realtime`.
 - Split-readiness documentation now exists under `docs/split-readiness/`.
 - Long-term direction is the user's personal/commercial Level 3 AI support + lead capture product.
 - Haneco/Kasta/company-specific work must remain seed/demo/company-only and must not drive platform core.
@@ -14,6 +14,7 @@
 - `GET /v1/realtime/conversations` is admin-protected and no longer broadly public alpha.
 - Product-specific runtime URL import user-agent was replaced by product-neutral/configurable `KNOWLEDGE_IMPORT_USER_AGENT`.
 - Split gate: the repo is conditionally ready for a personal product repo split if the next work starts Level 3 lead capture, public personal branding, or company-specific integrations.
+- Manual QA acceptance: latest QA found the admin access open-redirect fix and required-visitorId handoff fix acceptable, with no required follow-up fixes.
 
 ## 2026-06-03 Stabilization Update
 
@@ -47,14 +48,14 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Latest Accepted Task
 
-- Latest commit: `10229ff Add admin protection boundary and split-readiness docs`.
-- Accepted task: prepared split-readiness documentation and added alpha admin protection; latest implementation adds admin-web server-side access, protected admin realtime, customer-scoped realtime/read, and product-neutral URL import user-agent.
+- Latest commit: `8ddc85d Add secure admin access and customer-scoped realtime`.
+- Accepted task: added secure admin-web server-side access/proxy, protected tenant-wide realtime/conversation reads, added customer-scoped realtime/read endpoints, required `visitorId` for public handoff, and replaced the runtime knowledge import user-agent with a product-neutral configurable value.
 - Main changes: tenant management, all knowledge management, admin/agent conversation list/support-users/detail/messages/assign/reply/clear/delete, and admin realtime routes are protected by `AdminApiGuard`.
 - Public customer map: customer chat, customer handoff, customer detail/messages with visitorId, and customer realtime for one visitor/conversation remain reachable without admin token.
 - Admin-web access: `apps/admin-web` uses `/admin/access` and `/api/admin/...`; backend `ADMIN_API_TOKEN` is injected only server-side.
 - Split-readiness: `docs/split-readiness/` records personal product boundary, company-only boundary, core extraction map, and repo split checklist. Haneco/Kasta/company-specific behavior is classified as seed/demo/company-only and must not define reusable platform core.
-- QA result: accepted QA found no required fixes after the docs follow-up. Route-map expectations now cover protected 401/403/valid-token behavior and public alpha customer/widget/realtime reachability.
-- Verification summary: API/config/ai-core typecheck/lint/build checks passed where applicable; API tests covered admin guard/config behavior, tenant slug regression, provider/retrieval regressions, and `PENDING_HUMAN`.
+- QA result: manual QA acceptance passed after the P1 follow-up for admin access redirect sanitization and required handoff `visitorId`.
+- Verification summary: `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` passed. Focused API/admin-web tests covered admin access next-path sanitization, protected admin realtime, customer-scoped conversation read/realtime, required handoff `visitorId`, wrong-visitor rejection, provider/retrieval regressions, and `PENDING_HUMAN`.
 
 ## Implemented Capabilities
 
