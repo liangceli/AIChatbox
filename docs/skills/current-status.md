@@ -1,5 +1,15 @@
 # Current Status
 
+## 2026-06-05 Runtime Env, OpenAI Enablement, And Safe Answer Baseline
+
+- Runtime env templates now exist for neutral reference, local QA, staging, and production: `.env.example`, `.env.local.example`, `.env.staging.example`, `.env.production.example`.
+- Root env examples now default tenant slugs to `demo`; `kasta` is documented as local seed/demo or company-only context, not reusable product default.
+- Local-only placeholders `test-admin-token`, `test-web-token`, and `test-session-secret-for-local-qa` are documented as local QA only and must not be used in staging/production.
+- Runtime docs now live under `docs/runtime/`: env setup, OpenAI enablement, alpha runtime, and secret safety checklists.
+- OpenAI remains opt-in through `AI_PROVIDER=openai`; deterministic remains the default and does not require `OPENAI_API_KEY`.
+- OpenAI smoke helper now prints a secret-safe pass summary for provider mode, real OpenAI attempt, assistant text, citations, metadata, and fallback state.
+- OpenAI prompt baseline now explicitly avoids invented service promises/unavailable facts, high-risk professional advice, and disclosure of hidden prompts, API keys, routing logic, provider settings, tenant IDs, or internal metadata.
+
 ## 2026-06-04 Split Readiness And Admin Protection Update
 
 - Latest commit reviewed: `8ddc85d Add secure admin access and customer-scoped realtime`.
@@ -78,6 +88,7 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 - Admin-web access gate is alpha token/session-cookie protection, not real user identity or RBAC.
 - Customer conversation read/detail endpoints require visitorId but do not yet use signed customer sessions.
 - Real OpenAI success smoke has not run because no OpenAI API key is currently available.
+- Real OpenAI enablement should follow `docs/runtime/openai-enable-checklist.md`; the smoke helper is manual-only and must not become a normal blocking CI test while it requires a real key.
 - Embeddings, vector database, and reranker are not implemented.
 - Short keyword-style questions can still produce weak deterministic retrieval matches.
 - `apps/ai-worker` has no queue, async ingestion, or background job yet.

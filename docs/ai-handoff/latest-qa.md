@@ -4,81 +4,57 @@
 
 可以进入人工验收
 
-本轮 QA fix 准确覆盖了 `latest-qa.md` 中两个 P1：admin access open redirect 和 public handoff missing visitorId。修复范围集中，没有发现新的 scope creep。
+本轮 P1 fix 已准确修复：`docs/runtime/secret-safety-checklist.md` 的 secret scan 指南现在排除真实 env 文件，并且示例输出只包含 `Path`、`LineNumber`、`Rule`，不会打印匹配行内容或 secret 值。真实 env 文件改为单独 boolean shape check，也不会输出值。
 
 ## 2. Scope 检查
 
 | 检查项 | 结果 | 说明 |
 | --- | -- | -- |
-| admin access open redirect 是否修复 | 通过 | 新增 `sanitizeAdminNextPath`，拒绝 protocol-relative、absolute URL、反斜杠路径和非 `/` 开头路径。 |
-| public handoff missing visitorId 是否修复 | 通过 | DTO 将 `visitorId` 改为 required + non-empty；service 对 blank/missing visitorId 抛 `BadRequestException`。 |
-| wrong visitorId 是否仍被拒绝 | 通过 | `requestHandoff` 现在用 normalized visitorId 强制比对 conversation customer visitorId，错误 visitor 抛 `ForbiddenException`。 |
-| 正常 widget/local demo handoff 是否保持 | 通过 | 现有 widget/local demo 已传 `visitorId`，收紧后正常路径不应被破坏。 |
-| 是否新增无关功能 | 通过 | 仅新增 sanitizer、测试、handoff visitorId required、相关 docs/handoff 更新。 |
+| 是否修复 secret scan 扫描真实 env 的问题 | 通过 | repository scan 排除 `.env`、`.env.local`、`.env.development`、`.env.test`、`.env.staging`、`.env.production`、`.env.*.local`。 |
+| 是否避免打印匹配 secret 值 | 通过 | repository scan 输出 `[pscustomobject]`，仅包含 `Path`、`LineNumber`、`Rule`。 |
+| 是否提供真实 env 安全检查方式 | 通过 | 真实 env 文件使用 boolean shape check：`HasOpenAiKeyShape`、`HasNextPublicSecret`、`HasLocalAdminPlaceholders`。 |
+| 是否同步 QA skill | 通过 | `docs/skills/qa-skill.md` 已记录排除真实 env 和不打印完整匹配行的标准。 |
+| 是否有 scope creep | 通过 | 本轮只改 secret-safety docs、QA skill 和 implementation handoff；没有运行时代码改动。 |
 
 ## 3. 文件级 Diff Review
 
 | 文件 | 改动是否合理 | 风险等级 | 说明 |
 | -- | ------ | ---- | -- |
-| `apps/admin-web/app/lib/admin-next-path.cjs` | 合理 | Low | Sanitizer 默认回 `/admin`，只允许 safe same-origin relative path。 |
-| `apps/admin-web/app/admin/access/page.tsx` | 合理 | Low | `next` 参数改用 sanitizer，不再直接 `startsWith("/")`。 |
-| `apps/admin-web/scripts/admin-access.test.cjs` | 合理 | Low | 覆盖 `/admin`、`/agent`、`//external`、absolute URL、反斜杠路径和非 slash 路径。 |
-| `apps/admin-web/package.json` | 合理 | Low | `test` 脚本从 placeholder 改为 sanitizer regression test。 |
-| `apps/api/src/modules/conversations/dto/request-handoff.dto.ts` | 合理 | Low | `visitorId` required + `IsNotEmpty`，符合 public handoff scope 收紧。 |
-| `apps/api/src/modules/conversations/conversations.service.ts` | 合理 | Low | service 层也强制 visitorId，并校验 customer visitor 归属。 |
-| `apps/api/scripts/provider-behavior.test.ts` | 合理 | Low | 增加 handoff missing/blank/wrong/correct visitorId 回归覆盖。 |
-| `docs/ai-handoff/latest-implementation.md` / `docs/skills/*` | 合理 | Low | 已同步 final route behavior、admin next sanitizer、handoff visitorId required。 |
+| `docs/runtime/secret-safety-checklist.md` | 合理 | Low | P1 已修复：安全扫描不会扫真实 env，不会输出匹配行内容；真实 env 使用 boolean/masked-style 检查。 |
+| `docs/skills/qa-skill.md` | 合理 | Low | QA 标准同步到 skill，后续 review 可复用。 |
+| `docs/ai-handoff/latest-implementation.md` | 合理 | Low | 已记录 P1 follow-up、验证结果和剩余风险。 |
 
 ## 4. 发现的问题
 
 | 问题 | 严重程度 | 是否必须修 | 建议处理方式 |
 | -- | ---- | ----- | ------ |
-| 无必须修问题 | P2 nice to fix | 否 | 两个 P1 已按要求修复。 |
+| 无必须修问题 | P2 nice to fix | 否 | P1 已修复。 |
 
 ## 5. Regression 风险
 
-风险较低：
-
-- `/admin/access?next=...` 非安全路径会 fallback 到 `/admin`，不会跳外站。
-- Public handoff 现在要求 `visitorId`，任何旧客户端如果没传会收到 400；当前 widget/local demo 已传，符合预期。
+本轮是文档和 QA 标准修复，不改变运行时行为。主要效果是降低人工 secret scan 时误打印真实 secret 的风险。
 
 ## 6. AI Chatbox 专项检查
 
-本轮只收紧 handoff scope，不改变 AI 回复生成、prompt、provider、retrieval、citations、conversation history 或 `PENDING_HUMAN` AI blocking。
-
-检查结果：
-
-- customer message send 未改。
-- customer handoff with correct `visitorId` 仍可成功。
-- missing/blank `visitorId` 被拒绝。
-- wrong `visitorId` 被拒绝。
-- 未发现 admin/API secret 暴露新增风险。
+本轮不涉及 AI chatbox 运行时。OpenAI prompt、provider、retrieval、citations、handoff、conversation history 均未在此 P1 fix 中改动。
 
 ## 7. 验证建议
 
 QA 已执行：
 
-- `pnpm --filter @platform/admin-web test`：通过。
-- `pnpm --filter @platform/api test`：通过。
-- `pnpm --filter @platform/admin-web typecheck`：通过。
-- `pnpm --filter @platform/api typecheck`：通过。
-- `pnpm --filter @platform/admin-web build`：通过。
+- 阅读 `docs/runtime/secret-safety-checklist.md`：确认 repository scan 排除真实 env 文件且只输出 `Path`、`LineNumber`、`Rule`。
+- 阅读 `docs/skills/qa-skill.md`：确认 QA 标准同步。
+- 实际运行安全扫描形状检查：通过，输出 `ResultCount=36`、`ContainsRealEnv=False`、`Columns=LineNumber,Path,Rule`，未打印匹配行内容。
+- 实际运行真实 `.env` boolean shape check：通过，只输出布尔字段，未打印 env 值。
 
 人工验收建议：
 
-- 访问 `/admin/access?next=//example.com`，输入正确 token 后确认不跳外站。
-- customer handoff 不传 `visitorId` 应 400。
-- customer handoff 传错 `visitorId` 应被拒绝。
-- widget 正常点击 Human 应仍成功进入 handoff。
+- 打开 `docs/runtime/secret-safety-checklist.md`，确认命令里有真实 env 排除规则。
+- 确认文档明确写着不要对真实 env 运行 raw `Select-String` 输出。
 
 ## 8. 是否需要更新 docs/skills
 
-不需要额外更新。本轮 diff 已同步：
-
-- `docs/skills/api-contract-skill.md`
-- `docs/skills/frontend-skill.md`
-- `docs/skills/qa-skill.md`
-- `docs/ai-handoff/latest-implementation.md`
+不需要额外更新。`docs/skills/qa-skill.md` 已同步本轮 P1 fix。
 
 ## 9. 给 Implementation Chat 的修复请求
 

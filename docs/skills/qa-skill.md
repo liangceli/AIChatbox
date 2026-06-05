@@ -54,6 +54,11 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Existing `PENDING_HUMAN` conversation cannot receive another AI reply.
 - Chat provider resolution returns deterministic provider by default and does not require external API keys.
 - `AI_PROVIDER=openai` requires `OPENAI_API_KEY` and `OPENAI_MODEL`; config validation should fail clearly when missing.
+- OpenAI enablement follows `docs/runtime/openai-enable-checklist.md`; smoke output must not print API keys, auth headers, or raw env dumps.
+- Env templates must keep `demo` as reusable default slug; `kasta` is allowed only for local seed/demo or company-only context.
+- Local placeholder tokens (`test-admin-token`, `test-web-token`, `test-session-secret-for-local-qa`) must not appear in staging/production templates except as documented "do not use" warnings.
+- Secret grep should inspect hits for `sk-`, `OPENAI_API_KEY=`, `NEXT_PUBLIC_.*TOKEN`, `NEXT_PUBLIC_OPENAI`, admin tokens, and admin-web session secrets while excluding dependency/build/temp folders and real env files such as `.env`, `.env.local`, and `.env.*.local`.
+- Secret grep guidance must output only path, line number, and rule/category. Do not print full matching lines or raw env values. Use boolean shape checks or masked output for real env files.
 - Assistant messages preserve retrieval metadata and add internal provider metadata.
 - Knowledge-hit messages still produce deterministic grounded responses and citations.
 - Knowledge-miss messages still produce deterministic fallback.
@@ -96,4 +101,5 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Regression scenario: retrieved chunks exist, deterministic grounding would produce `citations: null`, mocked OpenAI success still returns retrieved chunk citations.
 - Manual real-key smoke helper lives in `apps/api/scripts/openai-smoke.ts` and runs with `pnpm --filter @platform/api smoke:openai`.
 - Smoke helper requires `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; missing env fails clearly without printing API keys.
+- Smoke helper success summary reports provider mode, real OpenAI attempt, assistant text, citations, provider metadata presence, and fallback state.
 - Manual real-key smoke test remains pending until an OpenAI API key is available.

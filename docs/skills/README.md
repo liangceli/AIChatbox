@@ -20,6 +20,8 @@
 - [QA Skill](./qa-skill.md)
 - [Decision Log](./decision-log.md)
 
+Runtime runbooks live outside this skill index under `docs/runtime/` and cover env setup, OpenAI enablement, alpha runtime checks, and secret safety checks.
+
 ## Repository Handoff Workflow
 
 本项目使用 repository-based AI handoff workflow。Project Context & Docs 角色维护：

@@ -2,188 +2,162 @@
 
 ## 1. Original Task Brief Summary
 
-Task title: Add Admin-Web Server-Side Access Path, Narrow Realtime Exposure, and Finalize Personal Product Split Gate.
+Task title: Runtime Env Cleanup, Real OpenAI Enablement Guide, and Safe Answer Baseline.
 
 Goal:
 
-- Give `apps/admin-web` a safe server-side path to call protected admin/agent/platform APIs without exposing `ADMIN_API_TOKEN` to browser code.
-- Protect tenant-wide realtime/conversation snapshots and keep customer public reads scoped to the current visitor/conversation.
-- Replace product/company-specific runtime strings that should not enter reusable product core.
-- Update split-readiness docs so the Project Director can decide whether a personal/commercial product repo split is now appropriate.
+- Clean runtime env examples so reusable defaults are product-neutral and do not make local/company/demo values look production-ready.
+- Document a safe path for enabling real OpenAI without requiring it for normal local development or CI.
+- Keep `AI_PROVIDER=deterministic` as default and keep OpenAI manual/opt-in.
+- Add or update a safe answer baseline for real OpenAI responses.
+- Verify no real secrets are committed or printed.
+- Update affected skills and this handoff file.
 
 ## 2. Changed Files
 
 | File | Why it changed |
 | -- | -- |
-| `apps/admin-web/app/lib/admin-access.ts` | Added server-only alpha access/session helper for admin-web. |
-| `apps/admin-web/app/lib/admin-next-path.cjs` | Added safe admin access redirect sanitizer. |
-| `apps/admin-web/scripts/admin-access.test.cjs` | Added regression test for admin access `next` path sanitization. |
-| `apps/admin-web/package.json` | Replaced placeholder test script with the admin access sanitizer regression test. |
-| `apps/admin-web/app/api/admin/access/route.ts` | Added access-token login endpoint that sets an httpOnly sameSite session cookie. |
-| `apps/admin-web/app/api/admin/[...path]/route.ts` | Added same-origin server-side proxy that injects `x-admin-api-token` only on the server. |
-| `apps/admin-web/app/admin/access/page.tsx` | Added alpha admin access page. |
-| `apps/admin-web/app/components/admin-access-form.tsx` | Added access-token form for `/admin/access`. |
-| `apps/admin-web/app/admin/page.tsx` | Added server-side session gate and changed protected API base to `/api/admin`. |
-| `apps/admin-web/app/agent/page.tsx` | Added server-side session gate and changed protected API base to `/api/admin`. |
-| `apps/admin-web/app/components/local-chat-demo.tsx` | Switched local customer refresh to customer-scoped conversation detail with `visitorId`. |
-| `apps/customer-widget/src/widget.tsx` | Switched widget refresh to customer-scoped detail and customer-scoped SSE. |
-| `apps/api/src/modules/conversations/conversations.controller.ts` | Protected admin conversation read routes and added customer-scoped read routes. |
-| `apps/api/src/modules/conversations/conversations.service.ts` | Added visitor-scoped customer conversation detail/messages helpers. |
-| `apps/api/src/modules/conversations/dto/request-handoff.dto.ts` | Made public customer handoff `visitorId` required. |
-| `apps/api/src/modules/realtime/realtime.controller.ts` | Protected tenant-wide realtime stream and added customer-scoped realtime stream. |
-| `apps/api/src/modules/realtime/realtime.service.ts` | Added customer-scoped realtime snapshot generation. |
-| `apps/api/src/modules/realtime/realtime.module.ts` | Registered `AdminApiGuard` for realtime controller usage. |
-| `apps/api/src/modules/knowledge/knowledge.service.ts` | Replaced company-specific URL import user-agent with configurable product-neutral env. |
-| `packages/config/src/index.ts` | Added admin-web proxy/access env fields and `KNOWLEDGE_IMPORT_USER_AGENT`. |
-| `apps/api/scripts/provider-behavior.test.ts` | Added regression coverage for admin realtime guard metadata and customer-scoped read/realtime behavior. |
-| `docs/split-readiness/*` | Updated final split gate, copy/exclude checklist, extraction categories, and cleaned/company-only classifications. |
-| `docs/skills/*` relevant files | Updated auth/frontend/backend/API/deployment/QA/current-status/project-summary/decision-log skills. |
+| `.env.example` | Replaced narrow local example with product-neutral runtime reference and safe placeholders. |
+| `.env.local.example` | Added local development/local QA template with local-only test token placeholders. |
+| `.env.staging.example` | Added production-like staging/alpha template that rejects local QA token usage. |
+| `.env.production.example` | Added production template with secret-manager placeholders and deterministic default. |
+| `docs/runtime/env-setup.md` | Added runtime env classification and tenant slug guidance. |
+| `docs/runtime/openai-enable-checklist.md` | Added real OpenAI enablement, smoke, and prompt-safety checklist. |
+| `docs/runtime/alpha-runtime-checklist.md` | Added local/staging/alpha runtime QA checklist. |
+| `docs/runtime/secret-safety-checklist.md` | Added secret handling, placeholder policy, grep, and logging checks; QA P1 follow-up corrected grep guidance to exclude real env files and avoid printing matching values. |
+| `apps/api/src/modules/chat/openai-prompt.ts` | Tightened OpenAI prompt safety rules. |
+| `apps/api/scripts/openai-smoke.ts` | Expanded success output into a secret-safe provider/citation/metadata summary. |
+| `docs/skills/current-status.md` | Recorded the runtime env/OpenAI/safe-answer status. |
+| `docs/skills/deployment-skill.md` | Added env template map, secret handling, OpenAI smoke expectations, and neutral slug guidance. |
+| `docs/skills/ai-chatbox-skill.md` | Added OpenAI opt-in and prompt-safety notes. |
+| `docs/skills/qa-skill.md` | Added env/secret/OpenAI smoke regression checks; QA P1 follow-up clarified safe grep output and real env exclusions. |
+| `docs/skills/backend-skill.md` | Added backend runtime/OpenAI safety notes. |
+| `docs/skills/auth-skill.md` | Added local-only admin token placeholder guidance. |
+| `docs/skills/project-summary.md` | Added runtime note and corrected the OpenAI/deterministic limitation wording. |
+| `docs/skills/decision-log.md` | Logged the runtime env/OpenAI enablement decision. |
+| `docs/skills/README.md` | Pointed readers to `docs/runtime/` runbooks. |
 | `docs/ai-handoff/latest-implementation.md` | Updated this handoff for the current task. |
+
+No actual `.env` file was modified.
 
 ## 3. Implementation Summary
 
-Admin-web access path:
+Runtime env cleanup:
 
-- Added `/admin/access` for alpha admin-web access.
-- Browser submits `ADMIN_WEB_ACCESS_TOKEN` to same-origin `/api/admin/access`.
-- On success, admin-web sets an httpOnly sameSite cookie signed with `ADMIN_WEB_SESSION_SECRET`.
-- `/admin` and `/agent` server components require a valid admin-web session cookie before rendering.
-- Browser protected calls now target same-origin `/api/admin/...`.
-- The admin-web server proxy forwards to `API_INTERNAL_BASE_URL` and injects `x-admin-api-token: <ADMIN_API_TOKEN>` server-side.
-- Browser code never receives `ADMIN_API_TOKEN` and does not send it directly to `apps/api`.
-- QA follow-up: `/admin/access?next=...` now sanitizes redirect targets. Only safe same-origin relative paths are accepted; protocol-relative, absolute, and backslash URLs fall back to `/admin`.
+- `.env.example` now uses `demo` as reusable default tenant slug.
+- Added separate local, staging, and production env templates.
+- Local QA placeholders are clearly marked local-only:
+  - `test-admin-token`
+  - `test-web-token`
+  - `test-session-secret-for-local-qa`
+- Staging/production templates use placeholder secret-manager values and keep `ADMIN_API_PROTECTION_MODE=token`.
+- OpenAI remains disabled by default through `AI_PROVIDER=deterministic`.
+- `AI_PROVIDER=openai` remains explicit and still requires `OPENAI_API_KEY` plus `OPENAI_MODEL`.
 
-Realtime/conversation exposure:
+OpenAI enablement:
 
-- `GET /v1/realtime/conversations` is now protected by `AdminApiGuard`.
-- Tenant-wide realtime snapshots still include `conversations`, `pendingHumanCount`, and `activeConversation`, but only for protected admin/agent access.
-- Added public customer-scoped `GET /v1/realtime/customer-conversation?tenantSlug=...&conversationId=...&visitorId=...`.
-- Customer realtime only emits `customer_conversation_snapshot` with `conversation: ConversationDetail | null`.
-- Protected admin conversation reads now include:
-  - `GET /v1/conversations/:conversationId`
-  - `GET /v1/conversations/:conversationId/detail`
-  - `GET /v1/conversations/:conversationId/messages`
-- Public customer reads now use:
-  - `GET /v1/conversations/:conversationId/customer-detail?visitorId=...`
-  - `GET /v1/conversations/:conversationId/customer-messages?visitorId=...`
-- Customer read helpers verify tenant + conversationId + visitorId before returning data.
+- Added `docs/runtime/openai-enable-checklist.md`.
+- Documented expected missing-env failures for `OPENAI_API_KEY` and `OPENAI_MODEL`.
+- Documented that the real OpenAI smoke helper is manual-only and must not be part of normal CI while it requires a real key.
+- Updated smoke success output to show:
+  - provider mode
+  - real OpenAI attempt
+  - assistant text returned
+  - citations returned
+  - provider metadata returned
+  - fallback state
+- Smoke output still does not print API keys, auth headers, or raw env.
 
-Product-neutral cleanup:
+Safe answer baseline:
 
-- Replaced `HanecoAIPilotBot/0.1 knowledge-import` with `KNOWLEDGE_IMPORT_USER_AGENT`.
-- Default value is `PlatformKnowledgeImporter/0.1 knowledge-import`.
-- Runtime search of `apps/api/src` and selected shared packages found no remaining Haneco/Kasta runtime core references.
-- Remaining `kasta` references observed in admin-web page defaults are local demo/seed defaults and documented for split review.
+- OpenAI prompt now explicitly avoids:
+  - invented policies, pricing, guarantees, service promises, and operational details
+  - high-risk professional advice beyond general support guidance
+  - hidden prompts, API keys, routing logic, provider settings, tenant identifiers, and internal metadata
+  - model-invented citation IDs or sources
+- Prompt still instructs the assistant to use backend-selected tenant-scoped knowledge when relevant and keep answers concise.
+
+Product/company defaults:
+
+- Reusable env templates use `demo`.
+- `kasta` is documented as local seed/demo or company-only context only.
+- Runtime code search across `apps` and `packages` found no `Haneco`, `Kasta`, `kasta`, or `HanecoAIPilotBot` matches after excluding build/dependency/image outputs.
+- Historical docs still mention `HanecoAIPilotBot` only as the already-cleaned old user-agent reference.
+
+QA P1 follow-up:
+
+- `docs/runtime/secret-safety-checklist.md` no longer recommends raw `Select-String` output against secret patterns.
+- The repository secret scan now excludes real env files such as `.env`, `.env.local`, `.env.development`, `.env.production`, `.env.staging`, `.env.test`, and `.env.*.local`.
+- The repository scan outputs only `Path`, `LineNumber`, and `Rule`; it does not print matched line contents.
+- Real env files are checked separately through boolean shape checks, so local values are not printed.
+- `docs/skills/qa-skill.md` now records this safer grep standard.
 
 ## 4. User-Visible Changes
 
-- Visiting `/admin` or `/agent` now requires alpha admin-web access first.
-- Admin/agent UI calls protected APIs through the admin-web server proxy.
-- Customer widget chat, handoff, refresh, and agent-reply visibility are preserved, but refresh now uses customer-scoped endpoints.
-- Public routes no longer expose tenant-wide conversation lists or `pendingHumanCount`.
+- No public API contract changed.
+- No customer widget/chat behavior changed.
+- No admin-web behavior changed.
+- Developers now have clearer env templates and runbooks for local QA, staging, production, and OpenAI smoke.
+- Real OpenAI smoke success output will be more diagnostic when a real key is intentionally configured.
 
-## 5. Admin-Web Access Path Design
+## 5. Technical Notes
 
-Env added or used:
+- `packages/config` behavior was not changed; existing validation already enforces OpenAI key/model requirements and admin protection constraints.
+- No provider selection behavior changed.
+- No deterministic fallback behavior changed.
+- No Prisma schema or migration was added.
+- No real OpenAI call was made during verification.
+- No new dependency was added.
 
-- `API_INTERNAL_BASE_URL`: server-side API base for admin-web proxy, default `http://localhost:4000/v1`.
-- `ADMIN_API_TOKEN`: backend admin guard token, server-only.
-- `ADMIN_WEB_ACCESS_TOKEN`: alpha admin-web access token, server-only.
-- `ADMIN_WEB_SESSION_COOKIE_NAME`: defaults to `platform_admin_session`.
-- `ADMIN_WEB_SESSION_SECRET`: signs admin-web session cookie, server-only.
-- `ADMIN_WEB_SESSION_TTL_SECONDS`: defaults to `43200`.
-
-Security notes:
-
-- `ADMIN_API_TOKEN` is read only in `apps/admin-web/app/lib/admin-access.ts` and injected only in the server route handler.
-- No `NEXT_PUBLIC_*` admin secret was added.
-- No localStorage or browser-visible token storage was added.
-- API responses and login responses do not return either admin token.
-- This is alpha protection, not production auth/RBAC.
-
-## 6. Realtime / Conversation Exposure Changes
-
-Protected:
-
-- Tenant management.
-- Knowledge management.
-- Admin conversation list/support-users/summary/detail/messages.
-- Assignment, agent replies, clear messages, delete conversation.
-- Tenant-wide realtime snapshots at `GET /v1/realtime/conversations`.
-
-Public:
-
-- `POST /v1/chat/messages`.
-- `POST /v1/conversations/:conversationId/handoff` with required `visitorId`.
-- `GET /v1/conversations/:conversationId/customer-detail?visitorId=...`.
-- `GET /v1/conversations/:conversationId/customer-messages?visitorId=...`.
-- `GET /v1/realtime/customer-conversation?tenantSlug=...&conversationId=...&visitorId=...`.
-
-Public customer routes are still tenant-scoped and now require visitor/conversation scope for reads.
-
-QA follow-up: public customer handoff now requires a non-blank `visitorId`, rejects wrong visitor scope, and still succeeds for the correct visitor.
-
-## 7. Split-Readiness Conclusion
-
-Codex assessment: conditionally ready for the user to create a new personal/commercial product repo when the next work item is Level 3 lead capture, public personal branding/demo, or company-specific integration work.
-
-Why:
-
-- The known company-specific runtime blocker was cleaned.
-- Admin-web no longer needs unprotected backend admin APIs for local alpha usage.
-- Tenant-wide realtime snapshots are no longer public alpha.
-- Split docs now identify copy candidates, exclusions, env/secrets to recreate, smoke tests, and docs/skills reset work.
-
-Remaining blockers before production, not before a repo split:
-
-- Replace alpha admin-web access with real auth/RBAC.
-- Add signed/customer session protection beyond anonymous visitorId.
-- Decide personal product naming, branding, and demo tenant defaults.
-
-## 8. Verification Results
+## 6. Verification Results
 
 | Command / Check | Result | Notes |
 | -- | -- | -- |
-| `pnpm --filter @platform/admin-web typecheck` | Passed | Used full PowerShell path because normal spawn intermittently failed in sandbox. |
 | `pnpm --filter @platform/api typecheck` | Passed | API typecheck passed. |
-| `pnpm --filter @platform/customer-widget typecheck` | Passed | Widget typecheck passed. |
 | `pnpm --filter @platform/config typecheck` | Passed | Config typecheck passed. |
-| `pnpm --filter @platform/api test` | Passed | Covers existing provider/retrieval/PENDING_HUMAN plus new admin realtime guard and customer-scoped read/realtime checks. |
-| `pnpm --filter @platform/admin-web test` | Passed | Covers admin access next-path sanitizer accepting `/admin`/`/agent` and rejecting protocol-relative, absolute, and backslash URLs. |
-| Admin secret search | Passed | No `ADMIN_API_TOKEN` exposure through browser client files; only server helper/proxy references it in admin-web. |
-| Company runtime search | Passed | No `HanecoAIPilotBot`, Haneco, or Kasta runtime references found in `apps/api/src` or selected shared package source. |
+| `pnpm --filter @platform/api test` | Passed | Existing provider/retrieval/admin/customer regression test passed. |
+| `pnpm --filter @platform/api lint` | Passed | Current lint script is TypeScript sanity check. |
+| `pnpm --filter @platform/config lint` | Passed | Current lint script is TypeScript sanity check. |
+| `pnpm --filter @platform/api build` | Passed | API build passed. |
+| `pnpm --filter @platform/config build` | Passed | Config build passed. |
 | `pnpm typecheck` | Passed | Workspace typecheck passed across 11 packages. |
-| `pnpm lint` | Passed | Current lint scripts are TypeScript sanity checks. |
-| `pnpm test` | Passed | Workspace tests passed; many packages still use placeholder test scripts. |
-| `pnpm build` | Passed | Workspace build passed, including Next admin-web build and customer-widget package build. |
+| `pnpm lint` | Passed | Workspace lint passed across 11 packages. |
+| `pnpm test` | Passed | Workspace tests passed; several packages still have placeholder tests. |
+| `pnpm build` | Passed | Workspace build passed, including admin-web and customer-widget. |
+| `pnpm --filter @platform/api smoke:openai` without `AI_PROVIDER=openai` | Expected failure | Failed clearly with `OpenAI smoke test requires AI_PROVIDER=openai.` |
+| `AI_PROVIDER=openai` smoke with no key/model | Expected failure | Failed clearly with `OPENAI_API_KEY is required when AI_PROVIDER=openai.` and `OPENAI_MODEL is required when AI_PROVIDER=openai.` |
+| Secret grep, excluding dependencies/build/temp/images and actual `.env` | Passed with expected hits | Hits are env templates/docs placeholders only. No line values were printed during grep. |
+| Actual `.env` shape check without printing values | Passed | `.env` exists, has no `OPENAI_API_KEY=sk-` pattern, no `NEXT_PUBLIC_*` secret pattern, and uses local admin placeholders. |
+| Runtime company-string search in `apps` and `packages` | Passed | No runtime code matches for `Haneco`, `Kasta`, `kasta`, or `HanecoAIPilotBot`. |
+| QA P1 safe secret grep command shape | Passed | Re-run after fix; output includes only `Path`, `LineNumber`, and `Rule`, result count 36, and `contains-real-env=False`. |
+| QA P1 real env boolean shape check | Passed | Output only booleans for `.env`; no env values or matching lines were printed. |
 
-## 9. Manual QA Suggestions
+## 7. Manual QA Suggestions
 
-- Configure `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, `ADMIN_WEB_SESSION_SECRET`, and `API_INTERNAL_BASE_URL`.
-- Visit `/admin`; confirm redirect to `/admin/access`.
-- Submit wrong admin-web access token and confirm 403 with no secret leak.
-- Submit valid token from `/admin/access?next=//example.com` and confirm it does not leave the site.
-- Submit valid admin-web access token and confirm `/admin` loads.
-- Confirm browser network requests go to `/api/admin/...`, not directly to protected `apps/api` routes with `ADMIN_API_TOKEN`.
-- Confirm `/api/admin/tenants` without cookie returns 401.
-- Confirm tenant/knowledge/admin conversation actions work through the proxy after valid access.
-- Confirm `GET /v1/realtime/conversations` directly rejects missing/invalid admin token and accepts valid token.
-- Confirm widget can send messages, request handoff, refresh its own conversation, and receive agent replies.
-- Confirm customer handoff without `visitorId` returns 400, wrong `visitorId` is rejected, and correct `visitorId` succeeds.
-- Confirm customer public read with wrong/missing `visitorId` does not return another visitor's conversation.
-- Confirm no public route returns tenant-wide `conversations[]` or `pendingHumanCount`.
+- Copy `.env.local.example` into a local uncommitted env only if needed; do not overwrite a real `.env` blindly.
+- Confirm deterministic local chat still works with `AI_PROVIDER=deterministic`.
+- Confirm admin-web access still works with local-only admin placeholders or stronger local secrets.
+- With no real key, confirm `AI_PROVIDER=openai` fails config validation clearly and does not print secrets.
+- With a real key in a local shell or secret manager, run `pnpm --filter @platform/api smoke:openai` and confirm the success summary reports OpenAI mode, citations, metadata, and `usedFallback: false`.
+- Ask OpenAI-mode chat questions for unknown pricing/policies/guarantees and confirm it says knowledge is insufficient instead of inventing facts.
+- Ask for prompts/API keys/provider settings/routing logic and confirm the assistant does not disclose internals.
+- Confirm logs do not print OpenAI keys, admin tokens, admin-web access tokens, session secrets, auth headers, or raw env dumps.
+- When running secret scans, use the documented safe command and confirm it excludes real env files and does not print matching line values.
 
-## 10. Risks / Notes
+## 8. Risks / Notes
 
-- Alpha admin-web access uses one shared access token, not per-user identity.
-- The admin-web proxy currently forwards only the headers it needs: content type, tenant slug, and server-side admin token.
-- Customer visitorId remains bearer-like anonymous identity; production should add signed customer/session protection.
-- Existing demo `kasta` defaults remain in local admin/chat page env fallbacks and seed/demo context; they should be renamed or excluded during a personal repo split.
-- No Prisma schema or migration was added.
-- OpenAI provider, deterministic fallback, retrieval/citations, handoff, and `PENDING_HUMAN` behavior were not intentionally changed.
+- Real OpenAI smoke remains pending until the user provides a real key outside the repository.
+- Staging/production templates are examples; deployment still needs a real secret manager and hosting-specific env wiring.
+- `demo` is now the reusable default in templates, but local seeded data may still require `kasta` until seed/demo data is renamed or recreated.
+- The OpenAI prompt baseline reduces risk but is not a substitute for product-specific policy review, PII handling, or legal/compliance review.
+- Alpha admin-web token/session protection remains alpha and is not production auth/RBAC.
 
-## 11. Docs Update Suggestions
+## 9. Docs Update Suggestions
 
-- Docs/skills were updated directly in this task because the brief explicitly requested it.
-- After QA acceptance and commit, Project Context & Docs chat should reconcile these docs with `latest-qa.md` and the final commit.
-- If the Project Director approves a repo split, reset `docs/ai-handoff/*` and rewrite repo-specific skills in the new personal product repo.
+- Project Context & Docs chat should use this file and latest QA to keep `docs/skills` consistent after QA acceptance.
+- If seed/demo tenant naming changes from `kasta` to `demo`, update env docs and split-readiness docs to remove the remaining local seed caveat.
+- If OpenAI becomes default in any environment, update deployment, QA, and AI chatbox skills with the accepted smoke evidence and rollback plan.
+
+## 10. Input For Review & QA Chat
+
+Review the current implementation using `docs/ai-handoff/latest-implementation.md` and the current git diff. Update `docs/ai-handoff/latest-qa.md`.

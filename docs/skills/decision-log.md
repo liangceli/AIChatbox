@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-06-05 - Add runtime env templates and OpenAI enablement baseline
+
+Decision: Add product-neutral env templates for local/staging/production, document local-only test tokens and seed/demo tenant slug handling, add runtime checklists, tighten OpenAI prompt safety rules, and make the OpenAI smoke helper print a clearer secret-safe summary.
+
+Reason: The project needs a practical path from deterministic local QA to optional real OpenAI testing without leaking secrets, making company/demo defaults look like reusable product defaults, or requiring OpenAI for normal development.
+
+Trade-off: OpenAI remains manual/opt-in and is still not a normal CI dependency. This task documents runtime safety and baseline answer behavior rather than adding production auth, signed customer identity, or a new provider architecture.
+
+Affected areas: env examples, runtime docs, OpenAI prompt assembly, OpenAI smoke helper, deployment/AI/backend/auth/QA/current-status docs.
+
 ## 2026-06-04 - Add alpha-safe admin-web proxy and protect realtime snapshots
 
 Decision: Add an admin-web server-side access gate and same-origin proxy for protected admin APIs, protect tenant-wide realtime snapshots with `AdminApiGuard`, add customer-scoped realtime/read routes, and replace the company-specific URL import user-agent with a product-neutral configurable value.

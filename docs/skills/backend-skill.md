@@ -1,5 +1,13 @@
 # 后端 Skill
 
+## 2026-06-05 Runtime Env And OpenAI Safety Notes
+
+- Env templates are split into neutral reference, local QA, staging, and production examples.
+- Reusable env examples default tenant slugs to `demo`; `kasta` remains seed/demo/company-only context.
+- OpenAI stays opt-in through `AI_PROVIDER=openai`; deterministic remains default.
+- OpenAI prompt rules now explicitly avoid invented service promises/unavailable facts, high-risk professional advice, hidden prompts, API keys, routing logic, provider settings, tenant IDs, and internal metadata.
+- `apps/api/scripts/openai-smoke.ts` prints a secret-safe provider/citation/metadata/fallback summary and must remain manual-only while it requires a real OpenAI key.
+
 ## 2026-06-03 Stabilization Notes
 
 - `pnpm-lock.yaml` should be tracked for dependency reproducibility; it records the OpenAI SDK dependency.

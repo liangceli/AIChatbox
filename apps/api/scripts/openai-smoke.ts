@@ -52,7 +52,15 @@ async function run() {
     assert.equal(metadataJson.includes(apiKey), false, "Provider metadata must not include API keys.");
   }
 
-  console.log("OpenAI smoke test passed: real assistant text, preserved citation, safe metadata.");
+  console.log("OpenAI smoke test passed.");
+  console.log(`- providerMode: ${response.metadata.mode}`);
+  console.log(
+    `- attemptedRealOpenAI: ${response.metadata.providerName === "openai" && !response.metadata.deterministic}`
+  );
+  console.log(`- assistantTextReturned: ${response.content.trim().length > 0}`);
+  console.log(`- citationsReturned: ${(response.citations?.length ?? 0) > 0}`);
+  console.log(`- providerMetadataReturned: ${Boolean(response.metadata.providerName && response.metadata.mode)}`);
+  console.log(`- usedFallback: ${response.metadata.usedFallback}`);
 }
 
 run().catch((error: unknown) => {

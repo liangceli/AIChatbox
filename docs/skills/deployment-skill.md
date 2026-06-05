@@ -26,6 +26,17 @@ docker compose -f infra/docker-compose.yml up -d
 
 Runtime env parsing lives in `packages/config/src/index.ts`.
 
+Environment templates and runtime checklists:
+
+- `.env.example`: product-neutral reference.
+- `.env.local.example`: local development/local QA. `test-admin-token`, `test-web-token`, and `test-session-secret-for-local-qa` are local-only placeholders.
+- `.env.staging.example`: production-like staging/alpha. Do not use local QA tokens.
+- `.env.production.example`: production reference. Store real secrets in the deployment secret manager.
+- `docs/runtime/env-setup.md`
+- `docs/runtime/openai-enable-checklist.md`
+- `docs/runtime/alpha-runtime-checklist.md`
+- `docs/runtime/secret-safety-checklist.md`
+
 Current server env keys:
 
 - `NODE_ENV`
@@ -52,7 +63,9 @@ Current server env keys:
 
 `AI_PROVIDER` defaults to `deterministic`. `AI_PROVIDER=openai` requires both `OPENAI_API_KEY` and `OPENAI_MODEL`; missing values fail config validation. `OPENAI_TIMEOUT_MS` defaults to `30000`.
 
-Do not commit real API keys or secrets. Use local `.env` files or deployment secret managers for `OPENAI_API_KEY`.
+Do not commit real API keys or secrets. Use local uncommitted `.env` files or deployment secret managers for `OPENAI_API_KEY`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, and `ADMIN_WEB_SESSION_SECRET`.
+
+New neutral env examples should use `NEXT_PUBLIC_DEFAULT_TENANT_SLUG=demo` and `WIDGET_DEFAULT_TENANT_SLUG=demo`. The seeded `kasta` slug is local demo/company-only context and should not become the reusable product default.
 
 `ADMIN_API_PROTECTION_MODE` defaults to `token`. Protected admin/agent/platform requests need `ADMIN_API_TOKEN` through `x-admin-api-token` or `Authorization: Bearer`. `ADMIN_API_PROTECTION_MODE=disabled` is allowed only outside production and requires `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV=true`.
 
@@ -78,7 +91,7 @@ Manual OpenAI smoke test, only when a real key is available. This helper is manu
 
 - `AI_PROVIDER=openai OPENAI_API_KEY=... OPENAI_MODEL=... pnpm --filter @platform/api smoke:openai`
 
-Expected success: real assistant text, preserved backend citation, and provider metadata without secrets. Missing OpenAI env should fail clearly and should not print the API key. Real-key smoke remains pending/non-blocking until a valid key is available.
+Expected success: real assistant text, preserved backend citation, provider mode summary, fallback state, and provider metadata without secrets. Missing OpenAI env should fail clearly and should not print the API key. Real-key smoke remains pending/non-blocking until a valid key is available.
 
 Do not treat `pnpm dev` or package `dev` scripts as blocking deployment verification because they are long-running watch servers.
 

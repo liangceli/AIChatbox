@@ -1,5 +1,13 @@
 # AI Chatbox Skill
 
+## 2026-06-05 Runtime And OpenAI Safety Notes
+
+- OpenAI remains opt-in; `AI_PROVIDER=deterministic` is still the safe default.
+- OpenAI enablement steps live in `docs/runtime/openai-enable-checklist.md`.
+- OpenAI smoke output is secret-safe and reports provider mode, real OpenAI attempt, assistant text, citations, metadata, and fallback state.
+- OpenAI prompt rules explicitly prohibit invented policies/pricing/guarantees/service promises, high-risk professional advice, hidden prompt/API key/routing/provider disclosure, and model-invented citations.
+- Env examples use `demo` as the reusable default tenant slug. `kasta` may be used only for local seed/demo or company-only context.
+
 ## 2026-06-03 Stabilization Notes
 
 - Provider resolver defaults to deterministic and selects OpenAI only when `AI_PROVIDER=openai`.
