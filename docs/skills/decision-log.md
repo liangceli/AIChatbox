@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-06-04 - Add alpha-safe admin-web proxy and protect realtime snapshots
+
+Decision: Add an admin-web server-side access gate and same-origin proxy for protected admin APIs, protect tenant-wide realtime snapshots with `AdminApiGuard`, add customer-scoped realtime/read routes, and replace the company-specific URL import user-agent with a product-neutral configurable value.
+
+Reason: Admin/browser code needed a safe way to use protected APIs without exposing `ADMIN_API_TOKEN`, tenant-wide conversation snapshots should not remain public alpha, and runtime product-specific strings should not enter the future personal product core.
+
+Trade-off: This remains alpha access protection, not production identity/RBAC. Admin-web uses a shared access token and httpOnly cookie rather than user accounts, roles, SSO, or per-user sessions.
+
+Affected areas: `apps/admin-web`, API realtime/conversation routes, `packages/config`, knowledge URL import config, provider behavior tests, split-readiness docs, auth/frontend/backend/API/QA/deployment docs.
+
 ## 2026-06-04 - Prepare split readiness and minimal admin protection
 
 Decision: Add split-readiness documentation for the future personal Level 3 AI customer support + lead capture product and protect admin/agent/platform operations with a minimal token guard.

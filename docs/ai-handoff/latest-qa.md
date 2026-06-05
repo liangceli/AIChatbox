@@ -4,87 +4,81 @@
 
 可以进入人工验收
 
-本轮 QA follow-up 覆盖了上一版 QA 指出的三个文档缺口：`GET /v1/realtime/conversations` public alpha 分类、`apps/admin-web` browser-only/token 限制、以及 route-map smoke note。改动集中在 handoff 和 docs/skills，没有新增实现逻辑、没有重构 auth 架构，也没有改 customer chat/widget 行为。
+本轮 QA fix 准确覆盖了 `latest-qa.md` 中两个 P1：admin access open redirect 和 public handoff missing visitorId。修复范围集中，没有发现新的 scope creep。
 
 ## 2. Scope 检查
 
 | 检查项 | 结果 | 说明 |
 | --- | -- | -- |
-| 是否只处理 realtime public alpha 文档缺口 | 通过 | `latest-implementation.md`、`api-contract-skill.md`、`auth-skill.md`、`backend-skill.md`、`frontend-skill.md`、`qa-skill.md`、`current-status.md` 均明确写入 realtime snapshot 当前公开 alpha 状态。 |
-| 是否只处理 admin-web token 限制文档缺口 | 通过 | 明确说明 admin-web 仍是 browser-only，不能把 `ADMIN_API_TOKEN` 暴露给浏览器，local alpha 需 dev disable 或未来 server-side auth/proxy。 |
-| 是否补充 route-map smoke note | 通过 | 已记录 protected endpoints 401/403/valid-token、public customer/chat/handoff/detail/read/realtime 可达的 smoke 期望。 |
-| 是否有 scope creep | 通过 | 未看到新增架构、auth 实现、frontend token 传递或 customer widget 改动。 |
-| 是否有不相关文件改动 | 基本通过 | 本轮新增/修改的 docs/skills 与 QA follow-up 相关；实现文件仍是上一轮 admin guard diff 的一部分，不是本次文档 follow-up 额外扩张。 |
+| admin access open redirect 是否修复 | 通过 | 新增 `sanitizeAdminNextPath`，拒绝 protocol-relative、absolute URL、反斜杠路径和非 `/` 开头路径。 |
+| public handoff missing visitorId 是否修复 | 通过 | DTO 将 `visitorId` 改为 required + non-empty；service 对 blank/missing visitorId 抛 `BadRequestException`。 |
+| wrong visitorId 是否仍被拒绝 | 通过 | `requestHandoff` 现在用 normalized visitorId 强制比对 conversation customer visitorId，错误 visitor 抛 `ForbiddenException`。 |
+| 正常 widget/local demo handoff 是否保持 | 通过 | 现有 widget/local demo 已传 `visitorId`，收紧后正常路径不应被破坏。 |
+| 是否新增无关功能 | 通过 | 仅新增 sanitizer、测试、handoff visitorId required、相关 docs/handoff 更新。 |
 
 ## 3. 文件级 Diff Review
 
 | 文件 | 改动是否合理 | 风险等级 | 说明 |
 | -- | ------ | ---- | -- |
-| `docs/ai-handoff/latest-implementation.md` | 合理 | Low | 已把 realtime snapshots 明确列入 intentionally public，并说明 admin-web 没有安全 token/session/proxy path。 |
-| `docs/skills/api-contract-skill.md` | 合理 | Low | 增加 admin protection header、route-map smoke expectation、realtime SSE public alpha payload 和 production hardening note。 |
-| `docs/skills/auth-skill.md` | 合理 | Low | 明确 minimal guard 不是 production auth/RBAC，且 `ADMIN_API_TOKEN` 不应进入 browser code。 |
-| `docs/skills/backend-skill.md` | 合理 | Low | 将 protected categories 与 public alpha categories 分开记录，包含 realtime snapshot 风险。 |
-| `docs/skills/frontend-skill.md` | 合理 | Low | 记录 admin-web browser-only limitation 和 widget/realtime alpha note。 |
-| `docs/skills/qa-skill.md` | 合理 | Low | 增加 route-map smoke checklist，适合后续 QA 复用。 |
-| `docs/skills/current-status.md` | 合理 | Low | 当前 alpha 状态、split readiness、admin protection 残余风险记录到位。 |
-| `docs/skills/decision-log.md` / `deployment-skill.md` / `project-summary.md` | 合理 | Low | 属于相关文档同步，未发现偏离。 |
+| `apps/admin-web/app/lib/admin-next-path.cjs` | 合理 | Low | Sanitizer 默认回 `/admin`，只允许 safe same-origin relative path。 |
+| `apps/admin-web/app/admin/access/page.tsx` | 合理 | Low | `next` 参数改用 sanitizer，不再直接 `startsWith("/")`。 |
+| `apps/admin-web/scripts/admin-access.test.cjs` | 合理 | Low | 覆盖 `/admin`、`/agent`、`//external`、absolute URL、反斜杠路径和非 slash 路径。 |
+| `apps/admin-web/package.json` | 合理 | Low | `test` 脚本从 placeholder 改为 sanitizer regression test。 |
+| `apps/api/src/modules/conversations/dto/request-handoff.dto.ts` | 合理 | Low | `visitorId` required + `IsNotEmpty`，符合 public handoff scope 收紧。 |
+| `apps/api/src/modules/conversations/conversations.service.ts` | 合理 | Low | service 层也强制 visitorId，并校验 customer visitor 归属。 |
+| `apps/api/scripts/provider-behavior.test.ts` | 合理 | Low | 增加 handoff missing/blank/wrong/correct visitorId 回归覆盖。 |
+| `docs/ai-handoff/latest-implementation.md` / `docs/skills/*` | 合理 | Low | 已同步 final route behavior、admin next sanitizer、handoff visitorId required。 |
 
 ## 4. 发现的问题
 
 | 问题 | 严重程度 | 是否必须修 | 建议处理方式 |
 | -- | ---- | ----- | ------ |
-| 无必须修问题 | P2 nice to fix | 否 | 当前 follow-up 已覆盖 QA 指定文档缺口。 |
+| 无必须修问题 | P2 nice to fix | 否 | 两个 P1 已按要求修复。 |
 
 ## 5. Regression 风险
 
-本轮 follow-up 是文档更新，不改变运行时行为。原有残余风险仍然存在但已被正确记录：
+风险较低：
 
-- `GET /v1/realtime/conversations` 仍是 public alpha，会返回 tenant conversation snapshot。
-- `apps/admin-web` 默认 token mode 下仍不能直接工作，除非 local dev 显式 disabled 或未来实现 server-side auth/proxy。
-- 这不是 production auth/RBAC。
+- `/admin/access?next=...` 非安全路径会 fallback 到 `/admin`，不会跳外站。
+- Public handoff 现在要求 `visitorId`，任何旧客户端如果没传会收到 400；当前 widget/local demo 已传，符合预期。
 
 ## 6. AI Chatbox 专项检查
 
-本轮不涉及 AI chatbox 实现变更。
+本轮只收紧 handoff scope，不改变 AI 回复生成、prompt、provider、retrieval、citations、conversation history 或 `PENDING_HUMAN` AI blocking。
 
-Customer chat/widget 行为保持 intact：
+检查结果：
 
-- 没有改 `apps/customer-widget`。
-- 没有改 `POST /v1/chat/messages`。
-- 没有改 handoff、conversation detail/read 或 realtime SSE 行为。
-- 没有改 prompt、conversation history、provider、retrieval、citations、streaming 或 API key handling。
+- customer message send 未改。
+- customer handoff with correct `visitorId` 仍可成功。
+- missing/blank `visitorId` 被拒绝。
+- wrong `visitorId` 被拒绝。
+- 未发现 admin/API secret 暴露新增风险。
 
 ## 7. 验证建议
 
-QA 本轮已执行：
+QA 已执行：
 
-- `Get-Content docs/ai-handoff/latest-qa.md`
-- `Get-Content docs/ai-handoff/latest-implementation.md`
-- `git diff --stat`
-- `git diff --name-only`
-- Focused `git diff` for `latest-implementation.md` and relevant `docs/skills/*`
-- `git status --short --untracked-files=all`
-
-由于本轮 follow-up 是文档-only，不需要重新跑 build/typecheck 作为 blocking 验证。
+- `pnpm --filter @platform/admin-web test`：通过。
+- `pnpm --filter @platform/api test`：通过。
+- `pnpm --filter @platform/admin-web typecheck`：通过。
+- `pnpm --filter @platform/api typecheck`：通过。
+- `pnpm --filter @platform/admin-web build`：通过。
 
 人工验收建议：
 
-- 阅读 `docs/ai-handoff/latest-implementation.md` 的 “Intentionally public”、“QA follow-up documentation”、“Risks / Notes”。
-- 阅读 `docs/skills/auth-skill.md` 和 `docs/skills/api-contract-skill.md`，确认 admin-web token 限制和 realtime public alpha 描述符合当前产品策略。
+- 访问 `/admin/access?next=//example.com`，输入正确 token 后确认不跳外站。
+- customer handoff 不传 `visitorId` 应 400。
+- customer handoff 传错 `visitorId` 应被拒绝。
+- widget 正常点击 Human 应仍成功进入 handoff。
 
 ## 8. 是否需要更新 docs/skills
 
-不需要额外更新。Codex 2 已经同步了相关 docs/skills：
+不需要额外更新。本轮 diff 已同步：
 
 - `docs/skills/api-contract-skill.md`
-- `docs/skills/auth-skill.md`
-- `docs/skills/backend-skill.md`
 - `docs/skills/frontend-skill.md`
 - `docs/skills/qa-skill.md`
-- `docs/skills/current-status.md`
-- `docs/skills/decision-log.md`
-- `docs/skills/deployment-skill.md`
-- `docs/skills/project-summary.md`
+- `docs/ai-handoff/latest-implementation.md`
 
 ## 9. 给 Implementation Chat 的修复请求
 

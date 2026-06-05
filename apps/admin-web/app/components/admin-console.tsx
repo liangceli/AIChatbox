@@ -1,9 +1,22 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import type { CreateTenantRequest, TenantOverviewRecord } from "@platform/types";
+import { useEffect, useState } from "react";
+import type { TenantOverviewRecord } from "@platform/types";
 import { ConversationOpsPanel } from "./conversation-ops-panel";
 import { KnowledgeBasePanel } from "./knowledge-base-panel";
+
+const drawerNavigationItems = [
+  { label: "Dashboard", icon: "dashboard", active: true },
+  { label: "Knowledge Base", icon: "database" },
+  { label: "Conversations", icon: "chat" },
+  { label: "Analytics", icon: "bar_chart" },
+  { label: "Settings", icon: "settings" },
+  { label: "Support", icon: "help", separated: true },
+  { label: "Account", icon: "account_circle" }
+];
+
+const profileImageUrl =
+  "https://lh3.googleusercontent.com/aida-public/AB6AXuCn5u1vN6rNspRKGCTnzyMfAhnhm2Lk2G_BH5F-X0q9lOdEyB4sxfXsM8KwfBQfr-QSf-Ao7FU0K3zw0juKN7bHDVIuD9GnWPAwuGIvhUf-ZbyRzdEx2cl4N3h6l6Xfs4tu8fATVqHqYgxpHIdO-CNsZC3sBRXShn0jdjtp2ZvfOOTMDoFVbdjxmGWoFisXO_fLKtrMlJk279dVYaAk920zoRPdRWJAlTsNPPd9aRdE2HRnBaYAbEIeMnEBMm1TfFhYxSRmnFQME5Z1";
 
 export function AdminConsole({
   apiBaseUrl,
@@ -16,10 +29,7 @@ export function AdminConsole({
   const [selectedTenantSlug, setSelectedTenantSlug] = useState(defaultTenantSlug);
   const [error, setError] = useState<string>();
   const [isLoadingTenants, setIsLoadingTenants] = useState(true);
-  const [tenantName, setTenantName] = useState("");
-  const [tenantSlug, setTenantSlug] = useState("");
-  const [tenantSupportEmail, setTenantSupportEmail] = useState("");
-  const [isCreatingTenant, setIsCreatingTenant] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   async function loadTenants(nextSelectedSlug?: string) {
     setIsLoadingTenants(true);
@@ -58,79 +68,76 @@ export function AdminConsole({
     void loadTenants();
   }, [apiBaseUrl]);
 
-  async function handleTenantSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const payload: CreateTenantRequest = {
-      name: tenantName.trim(),
-      slug: tenantSlug.trim().toLowerCase(),
-      supportEmail: tenantSupportEmail.trim() || undefined
-    };
-
-    if (!payload.name || !payload.slug) {
-      return;
-    }
-
-    setIsCreatingTenant(true);
-    setError(undefined);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/tenants`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Tenant create failed with status ${response.status}`);
-      }
-
-      const createdTenant = (await response.json()) as TenantOverviewRecord;
-      setTenantName("");
-      setTenantSlug("");
-      setTenantSupportEmail("");
-      await loadTenants(createdTenant.slug);
-    } catch (requestError: unknown) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to create tenant.");
-    } finally {
-      setIsCreatingTenant(false);
-    }
-  }
-
   const selectedTenant = tenants.find((tenant) => tenant.slug === selectedTenantSlug);
-  const tenantOptions =
-    tenants.length > 0
-      ? tenants
-      : [
-          {
-            id: defaultTenantSlug,
-            slug: defaultTenantSlug,
-            name: defaultTenantSlug,
-            status: "active",
-            conversationCount: 0,
-            pendingHumanCount: 0,
-            knowledgeBaseCount: 0,
-            createdAt: "",
-            updatedAt: ""
-          }
-        ];
+  const fallbackTenant: TenantOverviewRecord = {
+    id: defaultTenantSlug,
+    slug: defaultTenantSlug,
+    name: defaultTenantSlug,
+    status: "active",
+    conversationCount: 0,
+    pendingHumanCount: 0,
+    knowledgeBaseCount: 0,
+    createdAt: "",
+    updatedAt: ""
+  };
+  const tenantOptions = tenants.length > 0 ? tenants : [fallbackTenant];
+  const activeTenant = selectedTenant ?? fallbackTenant;
+  const tenantName = activeTenant.name || activeTenant.slug;
+  const tenantInitial = getInitials(tenantName);
+  const metricCards = [
+    {
+      label: "Conversations",
+      value: activeTenant.conversationCount,
+      helper: "+12% vs LW",
+      icon: "chat_bubble",
+      tone: "standard"
+    },
+    {
+      label: "Pending Human",
+      value: activeTenant.pendingHumanCount,
+      helper: "Needs attention",
+      icon: "person_alert",
+      tone: "urgent"
+    },
+    {
+      label: "Knowledge Bases",
+      value: activeTenant.knowledgeBaseCount,
+      helper: "Active",
+      icon: "terminal",
+      tone: "muted"
+    }
+  ];
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div>
-          <img className="brand-mark" src="/images/logo.png" alt="Platform logo" />
-          <h1>Platform Admin</h1>
-          <p>Tenants, knowledge, conversations, and human handoff operations.</p>
+    <main className="admin-dashboard">
+      <button
+        type="button"
+        className={`drawer-overlay ${isMobileMenuOpen ? "open" : ""}`}
+        aria-label="Close navigation drawer"
+        onClick={() => setIsMobileMenuOpen(false)}
+      />
+
+      <aside className={`mobile-drawer ${isMobileMenuOpen ? "open" : ""}`} aria-label="Admin navigation">
+        <div className="drawer-header">
+          <h1>Solaris AI</h1>
+          <button
+            type="button"
+            className="nav-icon-button"
+            aria-label="Close navigation drawer"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            <Icon name="close" />
+          </button>
         </div>
 
-        <label className="field">
-          <span>Tenant</span>
+        <label className="tenant-switcher">
           <select
+            aria-label="Tenant"
             value={selectedTenantSlug}
-            onChange={(event) => setSelectedTenantSlug(event.target.value)}
+            onChange={(event) => {
+              setSelectedTenantSlug(event.target.value);
+              setIsMobileMenuOpen(false);
+            }}
           >
             {isLoadingTenants ? <option value={selectedTenantSlug}>Loading tenants...</option> : null}
             {!isLoadingTenants && tenantOptions.map((tenant) => (
@@ -139,83 +146,113 @@ export function AdminConsole({
               </option>
             ))}
           </select>
-          {!isLoadingTenants && tenants.length === 0 ? (
-            <small>Using default tenant because the tenant list did not load.</small>
-          ) : null}
+          <span className="tenant-avatar">{tenantInitial}</span>
+          <span className="tenant-copy">
+            <strong>{tenantName}</strong>
+            <small>Tenant</small>
+          </span>
+          <Icon name="unfold_more" className="tenant-unfold" />
         </label>
 
-        {selectedTenant ? (
-          <div className="metric-list">
-            <div>
-              <strong>{selectedTenant.conversationCount}</strong>
-              <span>Conversations</span>
-            </div>
-            <div>
-              <strong>{selectedTenant.pendingHumanCount}</strong>
-              <span>Pending human</span>
-            </div>
-            <div>
-              <strong>{selectedTenant.knowledgeBaseCount}</strong>
-              <span>Knowledge bases</span>
-            </div>
-          </div>
-        ) : null}
-
-        <form className="tenant-create-form" onSubmit={handleTenantSubmit}>
-          <strong>Register tenant</strong>
-          <input
-            value={tenantName}
-            onChange={(event) => setTenantName(event.target.value)}
-            placeholder="Tenant name"
-          />
-          <input
-            value={tenantSlug}
-            onChange={(event) => setTenantSlug(event.target.value.toLowerCase())}
-            placeholder="tenant-slug"
-            pattern="[a-z0-9]+(-[a-z0-9]+)*"
-          />
-          <input
-            value={tenantSupportEmail}
-            onChange={(event) => setTenantSupportEmail(event.target.value)}
-            placeholder="Optional support admin email"
-            type="email"
-          />
-          <button type="submit" disabled={isCreatingTenant || !tenantName.trim() || !tenantSlug.trim()}>
-            {isCreatingTenant ? "Creating..." : "Create tenant"}
-          </button>
-        </form>
-
-        <nav className="surface-links">
-          <a href="/agent">Agent console</a>
-          <a href="/chat">Customer chat</a>
+        <nav className="drawer-nav">
+          {drawerNavigationItems.map((item) => (
+            <a
+              key={item.label}
+              className={`${item.active ? "active" : ""} ${item.separated ? "separated" : ""}`}
+              href="#workspace"
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
+            </a>
+          ))}
         </nav>
+
+        <div className="drawer-footer">
+          <button type="button" className="drawer-primary-button primary-btn">
+            <Icon name="add" />
+            <span>New Chatbot</span>
+          </button>
+        </div>
       </aside>
 
-      <section className="workspace">
-        <header className="workspace-header">
-          <div>
-            <p className="eyebrow">Admin workspace</p>
-            <h2>{selectedTenant?.name ?? selectedTenantSlug}</h2>
+      <div className="admin-screen">
+        <header className="admin-topbar">
+          <div className="topbar-left">
+            <button
+              type="button"
+              className="nav-icon-button"
+              aria-label="Open navigation drawer"
+              aria-expanded={isMobileMenuOpen}
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Icon name="menu" />
+            </button>
+            <h1>Solaris AI</h1>
           </div>
-          <span className="status-chip">Live</span>
+
+          <label className="topbar-search">
+            <Icon name="search" />
+            <input type="search" placeholder="Search resources..." />
+          </label>
+
+          <div className="topbar-actions">
+            <button type="button" className="topbar-notification" aria-label="Notifications">
+              <Icon name="notifications" />
+              <span />
+            </button>
+            <div className="topbar-divider" />
+            <button type="button" className="deploy-button primary-btn">Deploy</button>
+            <img alt="User Profile" className="profile-avatar" src={profileImageUrl} />
+          </div>
         </header>
 
-        <div className="split-grid">
-          <article className="work-panel">
-            <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
-          </article>
-          <article className="work-panel">
-            <ConversationOpsPanel
-              apiBaseUrl={apiBaseUrl}
-              tenantSlug={selectedTenantSlug}
-              allowAssignment
-              allowAdminDeletes
-            />
-          </article>
-        </div>
-      </section>
+        <main className="admin-page-content" id="workspace">
+          <section className="stats-grid" aria-label="Tenant statistics">
+            {metricCards.map((metric) => (
+              <article key={metric.label} className={`stat-card glass-card ${metric.tone}`}>
+                <span className="stat-icon">
+                  <Icon name={metric.icon} />
+                </span>
+                <div>
+                  <p>{metric.label}</p>
+                  <h2>{metric.value.toLocaleString()}</h2>
+                  <small>{metric.helper}</small>
+                </div>
+              </article>
+            ))}
+          </section>
+
+          <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+
+          <ConversationOpsPanel
+            apiBaseUrl={apiBaseUrl}
+            tenantSlug={selectedTenantSlug}
+            allowAssignment
+            allowAdminDeletes
+          />
+        </main>
+      </div>
 
       {error ? <div className="toast-error">{error}</div> : null}
     </main>
   );
+}
+
+function Icon({ name, className = "" }: { name: string; className?: string }) {
+  return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
+}
+
+function getInitials(value: string): string {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+
+  if (words.length === 0) {
+    return "S";
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 }

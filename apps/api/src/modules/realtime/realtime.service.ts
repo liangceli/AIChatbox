@@ -34,4 +34,34 @@ export class RealtimeService {
       activeConversation
     };
   }
+
+  async createCustomerSnapshot(
+    tenant: ResolvedTenant,
+    conversationId?: string,
+    visitorId?: string
+  ): Promise<{
+    conversation: ConversationDetail | null;
+  }> {
+    if (!conversationId?.trim() || !visitorId?.trim()) {
+      return {
+        conversation: null
+      };
+    }
+
+    try {
+      const conversation = await this.conversationsService.getCustomerConversationDetail(
+        tenant,
+        conversationId,
+        visitorId
+      );
+
+      return {
+        conversation
+      };
+    } catch {
+      return {
+        conversation: null
+      };
+    }
+  }
 }

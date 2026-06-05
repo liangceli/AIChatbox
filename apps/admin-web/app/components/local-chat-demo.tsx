@@ -154,7 +154,7 @@ export function LocalChatDemo({
   }
 
   async function refreshConversation() {
-    if (!conversation?.id) {
+    if (!conversation?.id || !visitorId) {
       return;
     }
 
@@ -162,11 +162,14 @@ export function LocalChatDemo({
     setError(undefined);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/conversations/${conversation.id}/detail`, {
-        headers: {
-          "x-tenant-slug": tenantSlug
+      const response = await fetch(
+        `${apiBaseUrl}/conversations/${conversation.id}/customer-detail?visitorId=${encodeURIComponent(visitorId)}`,
+        {
+          headers: {
+            "x-tenant-slug": tenantSlug
+          }
         }
-      });
+      );
 
       if (!response.ok) {
         throw new Error(`Conversation refresh failed with status ${response.status}`);

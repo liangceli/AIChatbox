@@ -11,16 +11,17 @@ Missing protection returns 401. Invalid protection returns 403. Customer chat/wi
 
 Route map smoke expectation:
 
-- Protected admin/platform endpoints, including tenants, knowledge management, admin conversation list/support-users, assignment, agent replies, message clearing, and conversation deletion, must reject missing tokens with 401, reject invalid tokens with 403, and accept a valid admin token.
-- Public alpha customer/widget endpoints, including customer chat, customer handoff, conversation detail/read, and realtime SSE, must remain reachable without an admin token under the current alpha contract.
-- `GET /v1/realtime/conversations` is currently public alpha behavior. It returns tenant-scoped conversation snapshots containing the conversation list, `pendingHumanCount`, and `activeConversation` detail. This endpoint must be narrowed or protected before production.
+- Protected admin/platform endpoints, including tenants, knowledge management, admin conversation list/support-users/detail/messages, assignment, agent replies, message clearing, conversation deletion, and admin realtime snapshots, must reject missing tokens with 401, reject invalid tokens with 403, and accept a valid admin token.
+- Public customer/widget endpoints, including customer chat, customer handoff, customer-scoped conversation detail/messages, and customer-scoped realtime SSE, must remain reachable without an admin token under the current alpha contract.
+- `GET /v1/realtime/conversations` is admin-protected and returns tenant-scoped conversation snapshots containing the conversation list, `pendingHumanCount`, and `activeConversation` detail.
+- `GET /v1/realtime/customer-conversation` is public but requires tenant slug, conversationId, and visitorId, and only returns that customer conversation snapshot.
 
 ## 基础规则
 
 - API base: `http://localhost:4000/v1`
 - 全局 prefix: `/v1`
 - Tenant-scoped endpoints 必须带 `x-tenant-slug` header。
-- `GET /realtime/conversations` 也支持 query `tenantSlug`，因为 EventSource 不方便设置自定义 header。
+- Realtime SSE routes support query `tenantSlug` because EventSource cannot easily set custom headers.
 - DTO 使用 `class-validator`，全局 `ValidationPipe` 开启 `transform: true` 和 `whitelist: true`。
 - 共享 request/response 类型定义在 `packages/types/src/index.ts`。
 
@@ -37,7 +38,7 @@ Route map smoke expectation:
 
 ### `GET /v1/tenants`
 
-返回 `TenantOverviewRecord[]`。当前没有 tenant middleware，也没有 auth。
+返回 `TenantOverviewRecord[]`。当前没有 tenant middleware，但需要 admin protection token。
 
 ### `POST /v1/tenants`
 
@@ -83,9 +84,11 @@ Response: `SendChatMessageResponse`
 
 - `GET /v1/conversations?status=...`: 返回 `ConversationListItem[]`。
 - `GET /v1/conversations/support-users`: 返回 `SupportUserRecord[]`。
-- `GET /v1/conversations/:conversationId`: 返回 `ConversationSummary`。
-- `GET /v1/conversations/:conversationId/detail`: 返回 `ConversationDetail`。
-- `GET /v1/conversations/:conversationId/messages`: 返回 `ChatMessageRecord[]`。
+- `GET /v1/conversations/:conversationId`: admin-protected，返回 `ConversationSummary`。
+- `GET /v1/conversations/:conversationId/detail`: admin-protected，返回 `ConversationDetail`。
+- `GET /v1/conversations/:conversationId/customer-detail?visitorId=...`: public customer-scoped，返回 `ConversationDetail`。
+- `GET /v1/conversations/:conversationId/messages`: admin-protected，返回 `ChatMessageRecord[]`。
+- `GET /v1/conversations/:conversationId/customer-messages?visitorId=...`: public customer-scoped，返回 `ChatMessageRecord[]`。
 - `POST /v1/conversations/:conversationId/handoff`: 请求人工。
 - `POST /v1/conversations/:conversationId/assign`: 分配 support user。
 - `POST /v1/conversations/:conversationId/agent-replies`: 发送人工回复。
@@ -94,7 +97,7 @@ Response: `SendChatMessageResponse`
 
 Handoff body:
 
-- `visitorId?`: string
+- `visitorId`: required string; public customer handoff rejects missing/blank visitorId and rejects conversations that do not belong to that visitor
 - `reason?`: string, max 500
 
 Assign body:
@@ -156,10 +159,18 @@ Reprocess body:
 
 SSE endpoint. Emits event type `conversation_snapshot` every 2 seconds.
 
-Current protection status: public alpha behavior. It is tenant-scoped through `tenantSlug`, but does not require the admin API token because current browser/widget realtime flows depend on direct `EventSource` access. Before production, narrow this endpoint to the minimum widget-safe payload or protect/admin-split it with a server-side auth/proxy model.
+Current protection status: admin-protected. Admin-web consumes it through the server-side `/api/admin/...` proxy so the browser never receives `ADMIN_API_TOKEN`.
 
 Data shape:
 
 - `conversations`: `ConversationListItem[]`
 - `pendingHumanCount`: number
 - `activeConversation`: `ConversationDetail | null`
+
+### `GET /v1/realtime/customer-conversation?tenantSlug=...&conversationId=...&visitorId=...`
+
+Public customer-scoped SSE endpoint. Emits event type `customer_conversation_snapshot` every 2 seconds.
+
+Data shape:
+
+- `conversation`: `ConversationDetail | null`

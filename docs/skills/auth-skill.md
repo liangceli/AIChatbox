@@ -12,9 +12,11 @@
   - `x-admin-api-token: <token>`
   - `Authorization: Bearer <token>`
 - Missing protection returns 401; invalid protection returns 403.
-- Public customer chat, customer handoff, conversation detail/read, and realtime SSE flows remain public but tenant-scoped under the current alpha contract.
-- `GET /v1/realtime/conversations` is currently public alpha behavior. It returns tenant-scoped conversation snapshots, including the conversation list, `pendingHumanCount`, and `activeConversation` detail, and must be narrowed or protected before production.
-- `apps/admin-web` is currently a browser-only app and does not have a safe token/session/proxy path. Do not expose `ADMIN_API_TOKEN` directly to browser code. Local alpha admin-web usage either needs explicit `ADMIN_API_PROTECTION_MODE=disabled` plus `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV=true`, or a future server-side auth/proxy implementation.
+- `apps/admin-web` now has an alpha server-side access path. Browser code calls same-origin `/api/admin/...`; the Next route handler checks an httpOnly admin-web session cookie and injects `x-admin-api-token` server-side.
+- Admin-web access env keys: `API_INTERNAL_BASE_URL`, `ADMIN_WEB_ACCESS_TOKEN`, `ADMIN_WEB_SESSION_COOKIE_NAME`, `ADMIN_WEB_SESSION_SECRET`, `ADMIN_WEB_SESSION_TTL_SECONDS`.
+- Do not expose `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, or `ADMIN_WEB_SESSION_SECRET` through `NEXT_PUBLIC_*`, bundled browser code, local storage, responses, or logs.
+- `GET /v1/realtime/conversations` is now admin-protected and returns tenant-wide conversation list, `pendingHumanCount`, and active conversation detail only for admin/agent paths.
+- Public customer chat, customer handoff, customer conversation detail/read, and customer realtime remain public but are tenant + visitor/conversation scoped.
 - This is not production auth/RBAC. Browser-exposed permanent admin tokens are not production-ready.
 
 ## Current Auth State
@@ -36,7 +38,7 @@ Current code does not have:
 - Route guards for admin web.
 - Production auth/RBAC guards for tenant management.
 - Full RBAC permission matrix.
-- Safe admin-web session, server action, BFF, or proxy path for admin API calls.
+- Production-grade admin-web identity/session provider.
 
 ## Implemented Permission Checks
 
@@ -52,7 +54,7 @@ These checks confirm a user belongs to the current tenant, but they do not authe
 - `GET /v1/tenants` and `POST /v1/tenants` are platform-level and protected only by the alpha admin API guard, not production auth/RBAC.
 - Admin and agent actions rely on request body `userId`; production code must not trust client-supplied identity.
 - Tenant isolation is enforced mainly by tenant resolution and Prisma query scoping, not by authenticated principal permissions.
-- Realtime conversation snapshots are tenant-scoped but currently public alpha behavior and expose conversation list, pending human count, and active detail for that tenant.
+- Admin-web alpha access is a minimal token gate, not user identity or RBAC.
 
 ## Future Auth Direction
 

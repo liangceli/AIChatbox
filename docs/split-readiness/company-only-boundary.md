@@ -29,7 +29,8 @@ Reusable platform/core content:
 
 Company-only or split-review items:
 
-- `apps/api/src/modules/knowledge/knowledge.service.ts` uses `HanecoAIPilotBot/0.1 knowledge-import` as the URL import user-agent. This is not tenant business logic, but should be renamed to a product-neutral user-agent during or before repo split.
+- Cleaned: the URL import user-agent is now product-neutral/configurable through `KNOWLEDGE_IMPORT_USER_AGENT`.
+- Remaining demo/reference item: local admin/chat page defaults may still use the seeded `kasta` tenant slug for local demos. This is seed/demo configuration, not reusable product behavior, and should be renamed or excluded during a personal repo split.
 - Any future SAP/Salesforce/invoice/warehouse/ATP integration must be implemented as a company-only module or downstream deployment, not in reusable core.
 
 ## Current Action

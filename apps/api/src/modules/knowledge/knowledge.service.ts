@@ -1,4 +1,5 @@
 import { KnowledgeDocumentSourceType, KnowledgeDocumentStatus, Prisma } from "@platform/database";
+import { loadServerEnv } from "@platform/config";
 import type {
   KnowledgeBaseRecord,
   KnowledgeChunkRecord,
@@ -32,6 +33,7 @@ import {
 @Injectable()
 export class KnowledgeService {
   private readonly logger = new Logger(KnowledgeService.name);
+  private readonly importUserAgent = loadServerEnv(process.env).KNOWLEDGE_IMPORT_USER_AGENT;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -544,7 +546,7 @@ export class KnowledgeService {
     try {
       response = await fetch(url, {
         headers: {
-          "user-agent": "HanecoAIPilotBot/0.1 knowledge-import"
+          "user-agent": this.importUserAgent
         }
       });
     } catch (error: unknown) {

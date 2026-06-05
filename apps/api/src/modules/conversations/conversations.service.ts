@@ -112,6 +112,16 @@ export class ConversationsService {
     return this.toConversationDetail(conversation);
   }
 
+  async getCustomerConversationDetail(
+    tenant: ResolvedTenant,
+    conversationId: string,
+    visitorId?: string
+  ): Promise<ConversationDetail> {
+    const conversation = await this.loadCustomerConversationDetail(tenant.id, conversationId, visitorId);
+
+    return this.toConversationDetail(conversation);
+  }
+
   async listMessages(tenant: ResolvedTenant, conversationId: string): Promise<ChatMessageRecord[]> {
     const conversation = await this.prisma.client.conversation.findUnique({
       where: {
@@ -149,12 +159,28 @@ export class ConversationsService {
     return messages.map((message) => toChatMessageRecord(message));
   }
 
+  async listCustomerMessages(
+    tenant: ResolvedTenant,
+    conversationId: string,
+    visitorId?: string
+  ): Promise<ChatMessageRecord[]> {
+    await this.loadCustomerConversationDetail(tenant.id, conversationId, visitorId);
+
+    return this.listMessages(tenant, conversationId);
+  }
+
   async requestHandoff(
     tenant: ResolvedTenant,
     conversationId: string,
     visitorId?: string,
     reason?: string
   ): Promise<ConversationDetail> {
+    const normalizedVisitorId = visitorId?.trim();
+
+    if (!normalizedVisitorId) {
+      throw new BadRequestException("visitorId is required for customer handoff.");
+    }
+
     const normalizedReason = reason?.trim() || null;
 
     await this.prisma.client.$transaction(async (tx) => {
@@ -178,7 +204,7 @@ export class ConversationsService {
         throw new NotFoundException("Conversation not found.");
       }
 
-      if (visitorId?.trim() && conversation.customer.visitorId !== visitorId.trim()) {
+      if (conversation.customer.visitorId !== normalizedVisitorId) {
         throw new ForbiddenException("Conversation does not belong to this visitor.");
       }
 
@@ -409,6 +435,50 @@ export class ConversationsService {
 
     if (!conversation) {
       throw new NotFoundException("Conversation not found.");
+    }
+
+    return conversation;
+  }
+
+  private async loadCustomerConversationDetail(
+    tenantId: string,
+    conversationId: string,
+    visitorId?: string
+  ): Promise<ConversationWithRelations> {
+    const normalizedVisitorId = visitorId?.trim();
+
+    if (!normalizedVisitorId) {
+      throw new BadRequestException("visitorId is required for customer conversation reads.");
+    }
+
+    const conversation = await this.prisma.client.conversation.findFirst({
+      where: {
+        id: conversationId,
+        tenantId,
+        customer: {
+          visitorId: normalizedVisitorId
+        }
+      },
+      include: {
+        customer: true,
+        assignedUser: true,
+        messages: {
+          include: {
+            authorUser: {
+              select: {
+                name: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: "asc"
+          }
+        }
+      }
+    });
+
+    if (!conversation) {
+      throw new NotFoundException("Conversation not found for this tenant and visitor.");
     }
 
     return conversation;

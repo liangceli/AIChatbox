@@ -7,13 +7,17 @@ import {
   UnauthorizedException,
   type ExecutionContext
 } from "@nestjs/common";
+import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { AdminApiGuard } from "../src/common/admin-protection/admin-api.guard";
 import { createTenantResolutionMiddleware } from "../src/common/tenant/tenant-resolution.middleware";
 import { AssistantReplyService } from "../src/modules/chat/assistant-reply.service";
 import { ChatService } from "../src/modules/chat/chat.service";
 import { LlmProviderResolverService } from "../src/modules/chat/llm-provider-resolver.service";
 import { OpenAiLlmProviderService } from "../src/modules/chat/openai-llm-provider.service";
+import { ConversationsService } from "../src/modules/conversations/conversations.service";
 import { KnowledgeRetrievalService } from "../src/modules/knowledge/knowledge-retrieval.service";
+import { RealtimeController } from "../src/modules/realtime/realtime.controller";
+import { RealtimeService } from "../src/modules/realtime/realtime.service";
 
 const baseInput = {
   tenant: {
@@ -216,6 +220,13 @@ async function testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed() {
   assert.equal(guard.canActivate(createGuardContext({})), true);
 }
 
+async function testAdminRealtimeControllerUsesAdminGuard() {
+  const guards =
+    Reflect.getMetadata(GUARDS_METADATA, RealtimeController.prototype.streamConversations) ?? [];
+
+  assert.ok(guards.includes(AdminApiGuard));
+}
+
 async function testTenantResolutionStillRequiresTenantSlug() {
   const middleware = createTenantResolutionMiddleware({
     tenant: {
@@ -237,6 +248,193 @@ async function testTenantResolutionStillRequiresTenantSlug() {
   );
 
   assert.ok(capturedError instanceof BadRequestException);
+}
+
+async function testCustomerConversationReadRequiresVisitorScope() {
+  const conversationsService = new ConversationsService({
+    client: {
+      conversation: {
+        findFirst: async (query: {
+          where?: {
+            customer?: {
+              visitorId?: string;
+            };
+          };
+        }) => {
+          if (query.where?.customer?.visitorId !== "visitor-1") {
+            return null;
+          }
+
+          return {
+            id: "conversation-1",
+            tenantId: "tenant-1",
+            customerId: "customer-1",
+            assignedUserId: null,
+            channel: "WIDGET",
+            status: ConversationStatus.AWAITING_CUSTOMER,
+            handoffRequestedAt: null,
+            handoffReason: null,
+            lastMessageAt: new Date("2026-01-01T00:00:00.000Z"),
+            createdAt: new Date("2026-01-01T00:00:00.000Z"),
+            updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+            customer: {
+              id: "customer-1",
+              tenantId: "tenant-1",
+              visitorId: "visitor-1",
+              externalId: "visitor-1",
+              email: null,
+              name: null,
+              metadata: null,
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:00:00.000Z")
+            },
+            assignedUser: null,
+            messages: []
+          };
+        }
+      }
+    }
+  } as never);
+
+  await assert.rejects(
+    () => conversationsService.getCustomerConversationDetail(baseInput.tenant, "conversation-1"),
+    BadRequestException
+  );
+  await assert.rejects(
+    () =>
+      conversationsService.getCustomerConversationDetail(
+        baseInput.tenant,
+        "conversation-1",
+        "visitor-2"
+      ),
+    /Conversation not found/
+  );
+
+  const detail = await conversationsService.getCustomerConversationDetail(
+    baseInput.tenant,
+    "conversation-1",
+    "visitor-1"
+  );
+
+  assert.equal(detail.id, "conversation-1");
+  assert.equal(detail.customer.visitorId, "visitor-1");
+}
+
+function createConversationRecord(visitorId: string) {
+  return {
+    id: "conversation-1",
+    tenantId: "tenant-1",
+    customerId: "customer-1",
+    assignedUserId: null,
+    channel: "WIDGET",
+    status: ConversationStatus.AWAITING_CUSTOMER,
+    handoffRequestedAt: null,
+    handoffReason: null,
+    lastMessageAt: new Date("2026-01-01T00:00:00.000Z"),
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    customer: {
+      id: "customer-1",
+      tenantId: "tenant-1",
+      visitorId,
+      externalId: visitorId,
+      email: null,
+      name: null,
+      metadata: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z")
+    },
+    assignedUser: null,
+    messages: []
+  };
+}
+
+function createConversationServiceForHandoff(visitorId: string): ConversationsService {
+  return new ConversationsService({
+    client: {
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          conversation: {
+            findUnique: async () => createConversationRecord(visitorId),
+            update: async () => ({})
+          },
+          message: {
+            create: async () => ({
+              id: "message-1",
+              createdAt: new Date("2026-01-01T00:01:00.000Z")
+            })
+          }
+        }),
+      conversation: {
+        findUnique: async () => ({
+          ...createConversationRecord(visitorId),
+          status: ConversationStatus.PENDING_HUMAN,
+          handoffRequestedAt: new Date("2026-01-01T00:01:00.000Z"),
+          handoffReason: "Need help"
+        })
+      }
+    }
+  } as never);
+}
+
+async function testCustomerHandoffRequiresCorrectVisitorScope() {
+  const conversationsService = createConversationServiceForHandoff("visitor-1");
+
+  await assert.rejects(
+    () => conversationsService.requestHandoff(baseInput.tenant, "conversation-1", undefined),
+    BadRequestException
+  );
+  await assert.rejects(
+    () => conversationsService.requestHandoff(baseInput.tenant, "conversation-1", "   "),
+    BadRequestException
+  );
+  await assert.rejects(
+    () => conversationsService.requestHandoff(baseInput.tenant, "conversation-1", "visitor-2"),
+    ForbiddenException
+  );
+
+  const detail = await conversationsService.requestHandoff(
+    baseInput.tenant,
+    "conversation-1",
+    "visitor-1",
+    "Need help"
+  );
+
+  assert.equal(detail.id, "conversation-1");
+  assert.equal(detail.customer.visitorId, "visitor-1");
+  assert.equal(detail.status, "pending_human");
+}
+
+async function testCustomerRealtimeSnapshotDoesNotExposeTenantList() {
+  const realtimeService = new RealtimeService({} as never, {
+    getCustomerConversationDetail: async () => ({
+      id: "conversation-1",
+      status: "awaiting_customer",
+      channel: "widget",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      lastMessageAt: "2026-01-01T00:00:00.000Z",
+      customer: {
+        id: "customer-1",
+        visitorId: "visitor-1"
+      },
+      assignedUser: null,
+      handoffRequestedAt: null,
+      handoffReason: null,
+      isHandoffPending: false,
+      messages: []
+    })
+  } as never);
+
+  const snapshot = await realtimeService.createCustomerSnapshot(
+    baseInput.tenant,
+    "conversation-1",
+    "visitor-1"
+  );
+
+  assert.equal(snapshot.conversation?.id, "conversation-1");
+  assert.equal("conversations" in snapshot, false);
+  assert.equal("pendingHumanCount" in snapshot, false);
 }
 
 async function testResolverSelection() {
@@ -527,7 +725,11 @@ async function run() {
   await testAdminProtectionGuardRejectsMissingAndInvalidTokens();
   await testAdminProtectionGuardAcceptsValidTokens();
   await testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed();
+  await testAdminRealtimeControllerUsesAdminGuard();
   await testTenantResolutionStillRequiresTenantSlug();
+  await testCustomerConversationReadRequiresVisitorScope();
+  await testCustomerHandoffRequiresCorrectVisitorScope();
+  await testCustomerRealtimeSnapshotDoesNotExposeTenantList();
   await testResolverSelection();
   await testOpenAiSuccessMapsResponse();
   await testOpenAiSuccessPreservesCitationsWhenDeterministicWouldNotGround();

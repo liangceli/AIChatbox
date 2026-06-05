@@ -36,4 +36,11 @@ Create the new personal product repo before any of these happen:
 
 ## Current Decision
 
-The repo is not split yet. It can continue for a small number of cycles if company-specific work remains seed/demo/config-only and admin/agent/platform operations stay protected before alpha use.
+After the 2026-06-04 alpha-safe access round, the repo is conditionally ready for the user to create a personal/commercial product repo before the next major product-direction step.
+
+Recommended gate:
+
+- If the next task is Level 3 lead capture, public personal branding/demo, or company-specific integration work, split first.
+- If the next task is small shared-platform hardening, this repo can continue briefly as long as company-specific behavior remains seed/demo/company-only.
+
+The future personal repo should start from reusable core, admin-web with server-side protected API access, customer widget, API, shared packages, and neutral docs. It should exclude Haneco/Kasta seed/customer/company content and reset handoff/skills docs.

@@ -20,11 +20,14 @@
 
 ## Admin Console
 
-Admin protection limitation:
+Admin protection:
 
-- The backend `AdminApiGuard` protects admin/platform API endpoints, but `apps/admin-web` is currently browser-only and has no safe token/session/proxy path.
-- Do not expose `ADMIN_API_TOKEN` through `NEXT_PUBLIC_*`, bundled client code, local storage, or direct browser requests.
-- Local alpha admin-web usage with protected endpoints either needs explicit `ADMIN_API_PROTECTION_MODE=disabled` and `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV=true`, or a future server-side auth/proxy implementation that keeps the admin token off the browser.
+- The backend `AdminApiGuard` protects admin/platform API endpoints.
+- `apps/admin-web` now uses a same-origin server-side proxy at `/api/admin/...` for protected admin/agent/platform calls.
+- The browser authenticates to admin-web with an alpha access token through `/admin/access`; success sets an httpOnly sameSite cookie.
+- `/admin/access?next=...` only accepts safe same-origin relative paths such as `/admin` and `/agent`; protocol-relative, absolute, and backslash URLs fall back to `/admin`.
+- The Next route handler injects `x-admin-api-token` server-side. Browser code must not receive or send `ADMIN_API_TOKEN`.
+- Required non-public env for proxy/gate: `API_INTERNAL_BASE_URL`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, `ADMIN_WEB_SESSION_SECRET`; optional `ADMIN_WEB_SESSION_COOKIE_NAME`, `ADMIN_WEB_SESSION_TTL_SECONDS`.
 
 核心组件：
 
@@ -57,7 +60,7 @@ Admin protection limitation:
 
 ## Customer Widget
 
-Current alpha realtime note: `GET /v1/realtime/conversations` remains public and tenant-scoped for widget/admin browser flows. It returns conversation snapshots including the conversation list, `pendingHumanCount`, and active conversation detail, so it must be narrowed or protected before production.
+Current realtime note: admin/agent `GET /v1/realtime/conversations` goes through the protected admin-web proxy and returns tenant-wide snapshots. Customer widget realtime uses `GET /v1/realtime/customer-conversation` with tenant slug, conversationId, and visitorId, and only receives that visitor's conversation detail.
 
 核心文件：
 
@@ -72,8 +75,8 @@ Widget 行为：
 - 发消息到 `POST /chat/messages`，带 `x-tenant-slug`。
 - 如果已有 conversation，则继续传 `conversationId`。
 - 请求人工支持到 `POST /conversations/:conversationId/handoff`。
-- 读取 conversation detail 到 `GET /conversations/:conversationId/detail`。
-- 使用 SSE `GET /realtime/conversations?tenantSlug=...` 检测当前 conversation 更新。
+- 读取 customer-scoped conversation detail 到 `GET /conversations/:conversationId/customer-detail?visitorId=...`。
+- 使用 SSE `GET /realtime/customer-conversation?tenantSlug=...&conversationId=...&visitorId=...` 检测当前 conversation 更新。
 - 展示 assistant/agent/system/customer messages 和 citations。
 
 ## 前端 API 调用规则
@@ -91,3 +94,9 @@ Widget 行为：
 - 复杂组件拆分时，不要跨 app import，公共类型/工具放 packages。
 - 任何新增 tenant 配置项，都应从 API/AgentConfig/Tenant branding 流入前端，而不是硬编码到组件。
 - 对话、知识库、handoff UI 变动后，同步更新本 skill。
+
+## Admin Dashboard Visual Shell
+
+- The admin dashboard currently follows the Solaris AI `code.html` design reference: pale `#fbf8ff` background, white/glass surfaces, golden `#fec931` highlights, black primary text/buttons, sticky topbar, mobile drawer, statistics cards, knowledge table, ingest card, active chats, metadata, and human reply panels.
+- Do not use the old `/images/logo.png` mark in the admin dashboard shell; the current design uses the `Solaris AI` wordmark text and tenant initials/profile imagery instead.
+- Keep future admin UI changes consistent with this responsive pattern unless a new design brief replaces it.

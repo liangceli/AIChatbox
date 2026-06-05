@@ -13,10 +13,12 @@
 ## 2026-06-04 Admin Protection And Split Readiness Notes
 
 - Minimal admin API guard lives in `apps/api/src/common/admin-protection/admin-api.guard.ts`.
-- Protected categories: tenant management, knowledge management, conversation list/support-users, assignment, agent replies, message clearing, and conversation deletion.
-- Intentionally public alpha categories: customer chat, customer handoff, conversation detail/read endpoints, and `GET /v1/realtime/conversations` because current widget/realtime flows may depend on them.
-- `GET /v1/realtime/conversations` returns tenant-scoped conversation snapshots, including conversation list, `pendingHumanCount`, and active conversation detail. This is an alpha privacy limitation and must be narrowed or protected before production.
+- Protected categories: tenant management, knowledge management, conversation list/support-users, admin conversation detail/messages/summary, assignment, agent replies, message clearing, conversation deletion, and admin realtime snapshots.
+- Public customer categories: customer chat, customer handoff, customer conversation detail/messages with visitor scope, and customer realtime with visitor/conversation scope.
+- `GET /v1/realtime/conversations` is protected by `AdminApiGuard` and returns tenant-wide conversation list, `pendingHumanCount`, and active conversation detail.
+- `GET /v1/realtime/customer-conversation` is public but only returns the current visitor/conversation snapshot.
 - Guard is token-based and configured through `ADMIN_API_PROTECTION_MODE`, `ADMIN_API_TOKEN`, and `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV`.
+- URL import user-agent is product-neutral/configurable through `KNOWLEDGE_IMPORT_USER_AGENT`.
 - Split-readiness docs live in `docs/split-readiness/`.
 - Long-term product priority is the user's personal Level 3 AI customer support + lead capture product; Haneco/Kasta-specific work must remain seed/demo/company-only.
 
@@ -67,7 +69,7 @@ API 启动入口：
 
 注意：
 
-- tenant list 当前是 platform-level，没有 tenant middleware。
+- tenant list 当前是 platform-level，没有 tenant middleware，但有 admin protection guard。
 - create tenant 会创建 Tenant、AgentConfig、Default Knowledge Base。
 - 如果传 `supportEmail`，会 upsert User 并创建 tenant Role。
 
@@ -151,7 +153,9 @@ API 启动入口：
 - `GET /v1/conversations/support-users`
 - `GET /v1/conversations/:conversationId`
 - `GET /v1/conversations/:conversationId/detail`
+- `GET /v1/conversations/:conversationId/customer-detail?visitorId=...`
 - `GET /v1/conversations/:conversationId/messages`
+- `GET /v1/conversations/:conversationId/customer-messages?visitorId=...`
 - `POST /v1/conversations/:conversationId/handoff`
 - `POST /v1/conversations/:conversationId/assign`
 - `POST /v1/conversations/:conversationId/agent-replies`
@@ -160,7 +164,8 @@ API 启动入口：
 
 规则：
 
-- list/detail/messages 都 tenant-scoped。
+- list/admin detail/admin messages 都 tenant-scoped 且 admin-protected。
+- customer detail/messages 需要 tenant + visitorId + conversationId，不返回其他 visitor 的 conversation。
 - handoff 可校验 visitorId，防止客户访问不属于自己的 conversation。
 - assign/reply 前必须 `ensureTenantUser`，即 user 需要有当前 tenant Role。
 - agent reply 会把 conversation 移到 `AWAITING_CUSTOMER`。
@@ -172,6 +177,9 @@ API 启动入口：
 - `apps/api/src/modules/realtime`
 
 当前是 SSE snapshot 流，用于 admin/widget 自动刷新 conversation 状态。它不是完整 websocket 层。
+
+- `GET /v1/realtime/conversations`: admin-protected tenant-wide snapshot.
+- `GET /v1/realtime/customer-conversation`: public customer-scoped snapshot for one visitor/conversation.
 
 ## Prisma 数据模型
 

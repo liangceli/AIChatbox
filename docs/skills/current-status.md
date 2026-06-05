@@ -2,17 +2,18 @@
 
 ## 2026-06-04 Split Readiness And Admin Protection Update
 
-- Latest commit reviewed: `10229ff Add admin protection boundary and split-readiness docs`.
+- Latest implementation state includes the alpha-safe admin-web proxy/realtime narrowing follow-up.
 - Split-readiness documentation now exists under `docs/split-readiness/`.
 - Long-term direction is the user's personal/commercial Level 3 AI support + lead capture product.
 - Haneco/Kasta/company-specific work must remain seed/demo/company-only and must not drive platform core.
-- Minimal admin API token guard now protects tenant management, knowledge management, and key admin/agent conversation operations.
+- Minimal admin API token guard now protects tenant management, knowledge management, key admin/agent conversation operations, admin conversation reads, and admin realtime snapshots.
 - Guard accepts `x-admin-api-token` or `Authorization: Bearer`; missing token returns 401 and invalid token returns 403.
-- Customer chat/widget, customer handoff, conversation detail/read, and realtime SSE remain public but tenant-scoped under the current alpha contract.
-- `GET /v1/realtime/conversations` currently returns public alpha tenant-scoped snapshots with conversation list, `pendingHumanCount`, and active conversation detail; this must be narrowed or protected before production.
-- `apps/admin-web` is still browser-only and has no safe admin token/session/proxy path. Do not expose `ADMIN_API_TOKEN` to the browser; local alpha usage requires explicit dev disable mode or a future server-side auth/proxy.
-- Route-map QA expectation: protected admin/agent/platform routes must reject missing/invalid tokens and accept valid tokens, while public customer/widget/realtime alpha routes must stay reachable for now.
-- Accepted QA found no required fixes after the docs follow-up.
+- `apps/admin-web` now has `/admin/access` alpha access gate and a same-origin `/api/admin/...` server-side proxy. The browser never receives `ADMIN_API_TOKEN`.
+- Customer chat/widget and customer handoff remain public but tenant-scoped.
+- Customer conversation read/realtime is now visitor/conversation-scoped.
+- `GET /v1/realtime/conversations` is admin-protected and no longer broadly public alpha.
+- Product-specific runtime URL import user-agent was replaced by product-neutral/configurable `KNOWLEDGE_IMPORT_USER_AGENT`.
+- Split gate: the repo is conditionally ready for a personal product repo split if the next work starts Level 3 lead capture, public personal branding, or company-specific integrations.
 
 ## 2026-06-03 Stabilization Update
 
@@ -47,10 +48,10 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 ## Latest Accepted Task
 
 - Latest commit: `10229ff Add admin protection boundary and split-readiness docs`.
-- Accepted task: prepared split-readiness documentation for the future personal/commercial Level 3 AI support + lead capture product and added a minimal backend admin/agent/platform protection boundary.
-- Main changes: tenant management, all knowledge management, and admin/agent conversation list/support-users/assign/reply/clear/delete routes are protected by `AdminApiGuard`.
-- Public alpha map: customer chat, customer handoff, conversation detail/read, and `GET /v1/realtime/conversations` remain reachable without admin token under the current alpha contract.
-- Admin-web limitation: `apps/admin-web` is browser-only and must not receive or expose `ADMIN_API_TOKEN`; local browser testing needs explicit dev disable mode or a future server-side auth/proxy path.
+- Accepted task: prepared split-readiness documentation and added alpha admin protection; latest implementation adds admin-web server-side access, protected admin realtime, customer-scoped realtime/read, and product-neutral URL import user-agent.
+- Main changes: tenant management, all knowledge management, admin/agent conversation list/support-users/detail/messages/assign/reply/clear/delete, and admin realtime routes are protected by `AdminApiGuard`.
+- Public customer map: customer chat, customer handoff, customer detail/messages with visitorId, and customer realtime for one visitor/conversation remain reachable without admin token.
+- Admin-web access: `apps/admin-web` uses `/admin/access` and `/api/admin/...`; backend `ADMIN_API_TOKEN` is injected only server-side.
 - Split-readiness: `docs/split-readiness/` records personal product boundary, company-only boundary, core extraction map, and repo split checklist. Haneco/Kasta/company-specific behavior is classified as seed/demo/company-only and must not define reusable platform core.
 - QA result: accepted QA found no required fixes after the docs follow-up. Route-map expectations now cover protected 401/403/valid-token behavior and public alpha customer/widget/realtime reachability.
 - Verification summary: API/config/ai-core typecheck/lint/build checks passed where applicable; API tests covered admin guard/config behavior, tenant slug regression, provider/retrieval regressions, and `PENDING_HUMAN`.
@@ -68,14 +69,13 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 - `pnpm-lock.yaml` is part of dependency reproducibility policy.
 - Knowledge base supports create, manual text, file text, single/batch URL import, chunking, reprocess, archive, and delete.
 - Handoff supports customer human-support request, support user assignment, and agent reply.
-- Realtime is currently a 2-second SSE snapshot flow, not a websocket collaboration layer.
+- Realtime is currently a 2-second SSE snapshot flow, not a websocket collaboration layer. Admin snapshots are protected; customer snapshots are visitor/conversation-scoped.
 
 ## Current Limitations
 
 - This is not production auth/RBAC; `AdminApiGuard` is only an alpha token boundary.
-- `apps/admin-web` has no safe token/session/proxy path for protected admin endpoints.
-- `GET /v1/realtime/conversations` is public alpha and exposes tenant-scoped conversation snapshots.
-- Conversation read/detail endpoints remain public alpha for current widget/realtime assumptions.
+- Admin-web access gate is alpha token/session-cookie protection, not real user identity or RBAC.
+- Customer conversation read/detail endpoints require visitorId but do not yet use signed customer sessions.
 - Real OpenAI success smoke has not run because no OpenAI API key is currently available.
 - Embeddings, vector database, and reranker are not implemented.
 - Short keyword-style questions can still produce weak deterministic retrieval matches.
@@ -87,20 +87,18 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 ## Observed Risks
 
 - Production auth must derive identity from auth context and apply tenant-aware authorization.
-- Realtime snapshots should be narrowed or protected before production.
-- Never expose `ADMIN_API_TOKEN` through `NEXT_PUBLIC_*`, browser bundles, local storage, or direct browser requests.
-- `apps/api/src/modules/knowledge/knowledge.service.ts` uses `HanecoAIPilotBot/0.1 knowledge-import` as URL import user-agent; rename it to product-neutral wording before or during repo split.
+- Never expose `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, or `ADMIN_WEB_SESSION_SECRET` through `NEXT_PUBLIC_*`, browser bundles, local storage, responses, or logs.
+- Customer visitorId is still bearer-like anonymous identity; production customer-session hardening remains future work.
 - Real-key OpenAI smoke helper is manual-only and must not become a normal blocking automated test.
 - Customer widget uses `/images/logo.png` as avatar path; external embed static asset strategy still needs review.
 - Realtime snapshot load should be reevaluated as conversation volume grows.
 
 ## Recommended Next Tasks
 
-1. Decide whether the next alpha cycle should keep admin-web local testing in explicit dev-disable mode or implement a server-side admin auth/proxy path.
-2. Narrow or protect `GET /v1/realtime/conversations` before production.
-3. Decide the customer/session auth model for conversation read/detail endpoints.
-4. Rename product-specific split-review items before or during repo split.
-5. Run manual real-key OpenAI smoke when an API key is available.
-6. Continue monitoring deterministic retrieval quality for short keyword-style questions.
-7. Move knowledge ingestion from synchronous API requests toward worker/queue when product need is clear.
-8. Plan embeddings/vector retrieval only when there is an explicit product need.
+1. If the next task begins Level 3 lead capture, public personal branding, or company-specific integrations, create the personal product repo first.
+2. Replace alpha admin-web access with production auth/RBAC before production.
+3. Decide the signed customer/session auth model for public customer conversation reads.
+4. Run manual real-key OpenAI smoke when an API key is available.
+5. Continue monitoring deterministic retrieval quality for short keyword-style questions.
+6. Move knowledge ingestion from synchronous API requests toward worker/queue when product need is clear.
+7. Plan embeddings/vector retrieval only when there is an explicit product need.

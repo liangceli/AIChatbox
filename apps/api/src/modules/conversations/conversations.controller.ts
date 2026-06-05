@@ -37,6 +37,7 @@ export class ConversationsController {
   }
 
   @Get(":conversationId")
+  @UseGuards(AdminApiGuard)
   async getConversation(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string
@@ -45,6 +46,7 @@ export class ConversationsController {
   }
 
   @Get(":conversationId/detail")
+  @UseGuards(AdminApiGuard)
   async getConversationDetail(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string
@@ -52,12 +54,31 @@ export class ConversationsController {
     return this.conversationsService.getConversationDetail(tenant, conversationId);
   }
 
+  @Get(":conversationId/customer-detail")
+  async getCustomerConversationDetail(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("conversationId") conversationId: string,
+    @Query("visitorId") visitorId?: string
+  ): Promise<ConversationDetail> {
+    return this.conversationsService.getCustomerConversationDetail(tenant, conversationId, visitorId);
+  }
+
   @Get(":conversationId/messages")
+  @UseGuards(AdminApiGuard)
   async listMessages(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string
   ): Promise<ChatMessageRecord[]> {
     return this.conversationsService.listMessages(tenant, conversationId);
+  }
+
+  @Get(":conversationId/customer-messages")
+  async listCustomerMessages(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("conversationId") conversationId: string,
+    @Query("visitorId") visitorId?: string
+  ): Promise<ChatMessageRecord[]> {
+    return this.conversationsService.listCustomerMessages(tenant, conversationId, visitorId);
   }
 
   @Post(":conversationId/handoff")

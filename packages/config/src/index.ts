@@ -22,6 +22,15 @@ export const serverEnvSchema = z
     OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
     ADMIN_API_PROTECTION_MODE: z.enum(["token", "disabled"]).default("token"),
     ADMIN_API_TOKEN: z.string().optional(),
+    API_INTERNAL_BASE_URL: z.string().min(1).default("http://localhost:4000/v1"),
+    ADMIN_WEB_ACCESS_TOKEN: z.string().optional(),
+    ADMIN_WEB_SESSION_COOKIE_NAME: z.string().min(1).default("platform_admin_session"),
+    ADMIN_WEB_SESSION_SECRET: z.string().optional(),
+    ADMIN_WEB_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(43200),
+    KNOWLEDGE_IMPORT_USER_AGENT: z
+      .string()
+      .min(1)
+      .default("PlatformKnowledgeImporter/0.1 knowledge-import"),
     ALLOW_UNPROTECTED_ADMIN_API_IN_DEV: z.preprocess(
       (value) => value === true || value === "true",
       z.boolean()

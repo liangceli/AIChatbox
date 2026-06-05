@@ -1,9 +1,9 @@
-import { IsOptional, IsString, MaxLength } from "class-validator";
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from "class-validator";
 
 export class RequestHandoffDto {
-  @IsOptional()
   @IsString()
-  visitorId?: string;
+  @IsNotEmpty()
+  visitorId!: string;
 
   @IsOptional()
   @IsString()

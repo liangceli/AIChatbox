@@ -42,6 +42,12 @@ Current server env keys:
 - `OPENAI_TIMEOUT_MS`
 - `ADMIN_API_PROTECTION_MODE`
 - `ADMIN_API_TOKEN`
+- `API_INTERNAL_BASE_URL`
+- `ADMIN_WEB_ACCESS_TOKEN`
+- `ADMIN_WEB_SESSION_COOKIE_NAME`
+- `ADMIN_WEB_SESSION_SECRET`
+- `ADMIN_WEB_SESSION_TTL_SECONDS`
+- `KNOWLEDGE_IMPORT_USER_AGENT`
 - `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV`
 
 `AI_PROVIDER` defaults to `deterministic`. `AI_PROVIDER=openai` requires both `OPENAI_API_KEY` and `OPENAI_MODEL`; missing values fail config validation. `OPENAI_TIMEOUT_MS` defaults to `30000`.
@@ -49,6 +55,10 @@ Current server env keys:
 Do not commit real API keys or secrets. Use local `.env` files or deployment secret managers for `OPENAI_API_KEY`.
 
 `ADMIN_API_PROTECTION_MODE` defaults to `token`. Protected admin/agent/platform requests need `ADMIN_API_TOKEN` through `x-admin-api-token` or `Authorization: Bearer`. `ADMIN_API_PROTECTION_MODE=disabled` is allowed only outside production and requires `ALLOW_UNPROTECTED_ADMIN_API_IN_DEV=true`.
+
+Admin-web protected UI uses a server-side proxy. Configure `API_INTERNAL_BASE_URL`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, and `ADMIN_WEB_SESSION_SECRET` as non-public server env. Do not expose these values through `NEXT_PUBLIC_*`.
+
+`KNOWLEDGE_IMPORT_USER_AGENT` defaults to `PlatformKnowledgeImporter/0.1 knowledge-import` and can be customized without hardcoding product/company names in runtime code.
 
 ## Dependency Reproducibility
 

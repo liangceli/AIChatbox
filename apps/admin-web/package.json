@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('No tests configured for admin-web yet')\"",
+    "test": "node scripts/admin-access.test.cjs",
     "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\""
   },
   "dependencies": {

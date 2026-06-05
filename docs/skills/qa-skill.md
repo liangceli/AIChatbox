@@ -43,9 +43,11 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Protected tenant/knowledge/admin-agent endpoints reject invalid admin token with 403.
 - Protected tenant/knowledge/admin-agent endpoints accept `x-admin-api-token` or bearer token when valid.
 - Customer chat and customer handoff remain public but tenant-scoped.
-- Conversation detail/read endpoints remain reachable without admin token under the current alpha contract.
-- Realtime SSE remains reachable without admin token under the current alpha contract and emits tenant-scoped snapshots with conversation list, `pendingHumanCount`, and `activeConversation`; this is a public alpha limitation that must be narrowed or protected before production.
-- Admin-web local alpha testing must not expose `ADMIN_API_TOKEN` in browser code. Use explicit dev disable mode for local browser-only testing, or test protected API calls directly with a server/client that can keep the token private.
+- Admin conversation detail/read endpoints reject missing/invalid admin token and accept valid admin token.
+- Customer conversation detail/read endpoints require visitorId and only return that visitor/conversation scope.
+- Admin realtime SSE rejects missing/invalid admin token and accepts valid admin token.
+- Customer realtime SSE remains reachable without admin token but only returns one visitor/conversation snapshot.
+- Admin-web local alpha testing must not expose `ADMIN_API_TOKEN` in browser code. Use `/admin/access` and same-origin `/api/admin/...` proxy with httpOnly cookie.
 - Tenant-scoped endpoints reject missing `x-tenant-slug`.
 - Tenant-scoped reads/writes never expose another tenant's records.
 - `POST /chat/messages` refuses empty messages and max-length violations.
@@ -62,6 +64,8 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - OpenAI smoke helper is not part of normal tests and requires explicit OpenAI env.
 - OpenAI provider failure falls back to deterministic content/citations behavior and records fallback metadata.
 - Handoff rejects mismatched visitorId.
+- Public handoff rejects missing/blank visitorId.
+- Public handoff succeeds with the correct visitorId.
 - Assign/reply rejects users without current tenant Role.
 - Knowledge document archive removes chunks and excludes the document from retrieval.
 - Reprocess replaces old chunks and updates `chunkCount`, `checksum`, `ingestedAt`.

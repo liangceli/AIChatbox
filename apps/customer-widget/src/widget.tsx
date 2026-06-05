@@ -248,16 +248,16 @@ export function CustomerWidget({
     }
 
     const events = new EventSource(
-      `${apiBaseUrl}/realtime/conversations?tenantSlug=${encodeURIComponent(tenantSlug)}`
+      `${apiBaseUrl}/realtime/customer-conversation?tenantSlug=${encodeURIComponent(tenantSlug)}&conversationId=${encodeURIComponent(conversation.id)}&visitorId=${encodeURIComponent(visitorId)}`
     );
 
-    events.addEventListener("conversation_snapshot", (event) => {
+    events.addEventListener("customer_conversation_snapshot", (event) => {
       const payload = JSON.parse(event.data) as {
-        conversations: Array<{ id: string }>;
+        conversation?: ConversationDetail | null;
       };
 
-      if (payload.conversations.some((item) => item.id === conversation.id)) {
-        void loadConversationDetail(conversation.id);
+      if (payload.conversation?.id === conversation.id) {
+        setConversation(payload.conversation);
       }
     });
 
@@ -268,7 +268,7 @@ export function CustomerWidget({
     return () => {
       events.close();
     };
-  }, [apiBaseUrl, tenantSlug, conversation?.id]);
+  }, [apiBaseUrl, tenantSlug, conversation?.id, visitorId]);
 
   const isPendingHuman = conversation?.status === "pending_human";
   const messages = conversation?.messages ?? [];
@@ -382,11 +382,14 @@ export function CustomerWidget({
 
   async function loadConversationDetail(conversationId: string) {
     try {
-      const response = await fetch(`${apiBaseUrl}/conversations/${conversationId}/detail`, {
+      const response = await fetch(
+        `${apiBaseUrl}/conversations/${conversationId}/customer-detail?visitorId=${encodeURIComponent(visitorId)}`,
+        {
         headers: {
           "x-tenant-slug": tenantSlug
         }
-      });
+        }
+      );
 
       if (!response.ok) {
         throw new Error(`Conversation refresh failed with status ${response.status}`);

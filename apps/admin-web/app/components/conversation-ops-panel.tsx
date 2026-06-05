@@ -4,29 +4,16 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationDetail,
   ConversationListItem,
-  MessageAuthorType,
   SupportUserRecord
 } from "@platform/types";
 
-const filterOptions = [
-  { label: "Pending human", value: "pending_human" },
-  { label: "Open", value: "open" },
-  { label: "Awaiting customer", value: "awaiting_customer" },
-  { label: "All", value: "all" }
-] as const;
-
-const authorLabels: Record<MessageAuthorType, string> = {
-  customer: "Customer",
-  assistant: "Assistant",
-  agent: "Agent",
-  system: "System"
-};
+const customerAvatarUrl =
+  "https://lh3.googleusercontent.com/aida-public/AB6AXuBzSSY0zSYuUn1Ewe4A3NsvnnAkGMjly-MmtW4ThTM2Ekakbp-pzRIfGVIzGfKRX2j8-pid2ECZDbc7L-LGWPLdg5GqNomoDO1sqfeQlf_L7QYS8qDvrSlDei7uRo3ghjgJfXwYKqhqR8S43GXQCkeSaZumW6dAEMmLpvSpWj9hCyk2CJEvNevc1t6okXRGx18ZNEOOlAI191-E0zY-77k_vAqg7xg_kvH4HmYLL8mj4Hc5GE7iKx9TGxT5xC9c-OlA7JTsh0zlWLo2";
 
 export function ConversationOpsPanel({
   apiBaseUrl,
   tenantSlug,
   allowAssignment = true,
-  allowAdminDeletes = false,
   messagesNewestFirst = false
 }: {
   apiBaseUrl: string;
@@ -44,7 +31,6 @@ export function ConversationOpsPanel({
   const [replyDraft, setReplyDraft] = useState("");
   const [error, setError] = useState<string>();
   const [isLoading, setIsLoading] = useState(false);
-  const [isAssigning, setIsAssigning] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
   const conversationsSignatureRef = useRef("");
   const detailSignatureRef = useRef("");
@@ -123,11 +109,16 @@ export function ConversationOpsPanel({
     () => supportUsers.find((user) => user.id === selectedUserId) ?? null,
     [selectedUserId, supportUsers]
   );
+  const selectedConversation = useMemo(
+    () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
+    [conversations, selectedConversationId]
+  );
   const visibleMessages = useMemo(() => {
     const messages = conversationDetail?.messages ?? [];
 
     return messagesNewestFirst ? [...messages].reverse() : messages;
   }, [conversationDetail?.messages, messagesNewestFirst]);
+  const latestMessage = visibleMessages.at(-1)?.content ?? "";
 
   async function loadSupportUsers() {
     try {
@@ -177,9 +168,7 @@ export function ConversationOpsPanel({
           : payload[0]?.id
       );
     } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Unable to load conversations."
-      );
+      setError(requestError instanceof Error ? requestError.message : "Unable to load conversations.");
     } finally {
       setIsLoading(false);
     }
@@ -201,47 +190,7 @@ export function ConversationOpsPanel({
       detailSignatureRef.current = createDetailSignature(payload);
       setConversationDetail(payload);
     } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Unable to load conversation detail."
-      );
-    }
-  }
-
-  async function handleAssign(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!conversationDetail?.id || !selectedUserId) {
-      return;
-    }
-
-    setIsAssigning(true);
-    setError(undefined);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/conversations/${conversationDetail.id}/assign`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-tenant-slug": tenantSlug
-        },
-        body: JSON.stringify({
-          userId: selectedUserId
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Conversation assignment failed with status ${response.status}`);
-      }
-
-      const payload = (await response.json()) as ConversationDetail;
-      setConversationDetail(payload);
-      await loadConversations(filter);
-    } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Unable to assign conversation."
-      );
-    } finally {
-      setIsAssigning(false);
+      setError(requestError instanceof Error ? requestError.message : "Unable to load conversation detail.");
     }
   }
 
@@ -256,20 +205,17 @@ export function ConversationOpsPanel({
     setError(undefined);
 
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/conversations/${conversationDetail.id}/agent-replies`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-tenant-slug": tenantSlug
-          },
-          body: JSON.stringify({
-            userId: selectedUserId,
-            message: replyDraft.trim()
-          })
-        }
-      );
+      const response = await fetch(`${apiBaseUrl}/conversations/${conversationDetail.id}/agent-replies`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-tenant-slug": tenantSlug
+        },
+        body: JSON.stringify({
+          userId: selectedUserId,
+          message: replyDraft.trim()
+        })
+      });
 
       if (!response.ok) {
         throw new Error(`Agent reply failed with status ${response.status}`);
@@ -286,341 +232,196 @@ export function ConversationOpsPanel({
     }
   }
 
-  async function handleClearMessageHistory() {
-    if (!conversationDetail?.id) {
-      return;
-    }
-
-    if (!window.confirm("Clear all message history for this conversation?")) {
-      return;
-    }
-
-    setError(undefined);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/conversations/${conversationDetail.id}/messages`, {
-        method: "DELETE",
-        headers: {
-          "x-tenant-slug": tenantSlug
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Message history delete failed with status ${response.status}`);
-      }
-
-      const payload = (await response.json()) as ConversationDetail;
-      detailSignatureRef.current = createDetailSignature(payload);
-      setConversationDetail(payload);
-      await loadConversations(filter);
-    } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Unable to clear message history."
-      );
-    }
-  }
-
-  async function handleDeleteConversation(conversationId: string) {
-    if (!conversationId) {
-      return;
-    }
-
-    if (!window.confirm("Delete this conversation and all messages permanently?")) {
-      return;
-    }
-
-    setError(undefined);
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/conversations/${conversationId}`, {
-        method: "DELETE",
-        headers: {
-          "x-tenant-slug": tenantSlug
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Conversation delete failed with status ${response.status}`);
-      }
-
-      if (conversationDetail?.id === conversationId) {
-        setConversationDetail(null);
-        setSelectedConversationId(undefined);
-      }
-
-      await loadConversations(filter);
-    } catch (requestError: unknown) {
-      setError(
-        requestError instanceof Error ? requestError.message : "Unable to delete conversation."
-      );
-    }
-  }
-
   return (
-    <section style={{ display: "grid", gap: 14 }}>
-      <div>
-        <strong>Conversation management</strong>
-        <div style={{ color: "#6e5f53", fontSize: "0.95rem", marginTop: 6 }}>
-          Claim pending conversations, inspect the full trail, and send a human reply.
-        </div>
-      </div>
-
-      <label style={{ display: "grid", gap: 6 }}>
-        <span style={{ fontSize: "0.92rem", color: "#6e5f53" }}>Conversation filter</span>
-        <select
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          style={{
-            padding: "10px 12px",
-            borderRadius: "12px",
-            border: "1px solid rgba(62, 44, 31, 0.12)"
-          }}
-        >
-          {filterOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <div style={{ display: "grid", gap: 8 }}>
-        <strong>Conversations</strong>
-        {isLoading ? <div style={{ color: "#6e5f53" }}>Loading conversations...</div> : null}
-        {!isLoading && conversations.length === 0 ? (
-          <div style={{ color: "#6e5f53" }}>No conversations for the current filter.</div>
-        ) : (
-          conversations.map((conversation) => (
-            <div
-              key={conversation.id}
-              style={{
-                display: "grid",
-                gap: 8,
-                borderRadius: "14px",
-                border:
-                  selectedConversationId === conversation.id
-                    ? "1px solid #231a14"
-                    : "1px solid rgba(62, 44, 31, 0.12)",
-                background: "#fffaf6",
-                padding: "10px 12px",
-                cursor: "default"
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setSelectedConversationId(conversation.id)}
-                style={{
-                  textAlign: "left",
-                  border: 0,
-                  background: "transparent",
-                  padding: 0,
-                  cursor: "pointer"
-                }}
-              >
-                <strong>{conversation.id.slice(-8)}</strong>
-                <div style={{ fontSize: "0.9rem", color: "#6e5f53" }}>
-                  status: {conversation.status} | customer:{" "}
-                  {conversation.customer.name || conversation.customer.email || conversation.customer.visitorId || "anonymous"}
-                </div>
-                <div style={{ fontSize: "0.9rem", color: "#6e5f53" }}>
-                  assigned: {conversation.assignedUser?.name || conversation.assignedUser?.email || "unassigned"}
-                </div>
-                <div style={{ fontSize: "0.9rem", color: "#6e5f53" }}>
-                  last message: {conversation.lastMessageAt ? new Date(conversation.lastMessageAt).toLocaleString() : "none"}
-                </div>
-                {conversation.isHandoffPending ? (
-                  <div style={{ fontSize: "0.9rem", color: "#b42318" }}>handoff pending</div>
-                ) : null}
-              </button>
-              {allowAdminDeletes ? (
-                <button
-                  type="button"
-                  onClick={() => void handleDeleteConversation(conversation.id)}
-                  style={{
-                    justifySelf: "start",
-                    border: "1px solid rgba(180, 35, 24, 0.24)",
-                    borderRadius: "999px",
-                    padding: "7px 10px",
-                    background: "#fff",
-                    color: "#b42318",
-                    cursor: "pointer",
-                    fontSize: "0.85rem"
-                  }}
-                >
-                  Delete conversation
-                </button>
-              ) : null}
-            </div>
-          ))
-        )}
-      </div>
-
-      {conversationDetail ? (
-        <div style={{ display: "grid", gap: 10 }}>
-          <strong>Conversation detail</strong>
-          <div style={{ border: "1px solid rgba(62, 44, 31, 0.12)", borderRadius: 14, padding: 12 }}>
-            <div>Conversation ID: {conversationDetail.id}</div>
-            <div>Status: {conversationDetail.status}</div>
-            <div>
-              Customer:{" "}
-              {conversationDetail.customer.name ||
-                conversationDetail.customer.email ||
-                conversationDetail.customer.visitorId ||
-                conversationDetail.customer.id}
-            </div>
-            <div>
-              Assigned:{" "}
-              {conversationDetail.assignedUser?.name ||
-                conversationDetail.assignedUser?.email ||
-                "unassigned"}
-            </div>
-            {conversationDetail.handoffRequestedAt ? (
-              <div>Handoff requested: {new Date(conversationDetail.handoffRequestedAt).toLocaleString()}</div>
-            ) : null}
-            {conversationDetail.handoffReason ? (
-              <div>Handoff reason: {conversationDetail.handoffReason}</div>
-            ) : null}
+    <section className="conversation-grid">
+      <div className="chat-list-panel">
+        <div className="chat-list-header">
+          <div className="live-heading">
+            <h3>Active Chats</h3>
+            <span>LIVE</span>
           </div>
-
-          {allowAssignment ? (
-            <form onSubmit={handleAssign} style={{ display: "grid", gap: 8 }}>
-              <strong>Assignment</strong>
-              <select
-                value={selectedUserId}
-                onChange={(event) => setSelectedUserId(event.target.value)}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "12px",
-                  border: "1px solid rgba(62, 44, 31, 0.12)"
-                }}
-              >
-                {supportUsers.map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name || user.email} {user.roleName ? `(${user.roleName})` : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={isAssigning || !selectedUserId}
-                style={{
-                  alignSelf: "start",
-                  border: 0,
-                  borderRadius: "999px",
-                  padding: "10px 14px",
-                  background: "#231a14",
-                  color: "#fffaf6",
-                  cursor: "pointer"
-                }}
-              >
-                {isAssigning
-                  ? "Assigning..."
-                  : `Assign to ${selectedUser?.name || selectedUser?.email || "support user"}`}
-              </button>
-            </form>
-          ) : null}
-
-          <form onSubmit={handleAgentReply} style={{ display: "grid", gap: 8 }}>
-            <strong>Human reply</strong>
-            <textarea
-              value={replyDraft}
-              onChange={(event) => setReplyDraft(event.target.value)}
-              placeholder="Send a manual support reply"
-              style={{
-                minHeight: "120px",
-                borderRadius: "14px",
-                border: "1px solid rgba(62, 44, 31, 0.12)",
-                padding: "12px",
-                font: "inherit"
-              }}
-            />
+          <div className="chat-filter-buttons" aria-label="Conversation filters">
             <button
-              type="submit"
-              disabled={isReplying || !selectedUserId || !replyDraft.trim()}
-              style={{
-                alignSelf: "start",
-                border: 0,
-                borderRadius: "999px",
-                padding: "10px 14px",
-                background: "#231a14",
-                color: "#fffaf6",
-                cursor: "pointer"
-              }}
+              type="button"
+              className={filter === "all" ? "active" : undefined}
+              onClick={() => setFilter("all")}
             >
-              {isReplying ? "Sending..." : "Send human reply"}
+              All
             </button>
-          </form>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            <strong>Messages</strong>
-            {visibleMessages.map((message) => (
-              <div
-                key={message.id}
-                style={{
-                  borderRadius: "14px",
-                  border: "1px solid rgba(62, 44, 31, 0.12)",
-                  background: message.authorType === "customer" ? "#f6efe7" : "#fffaf6",
-                  padding: "10px 12px"
-                }}
-              >
-                <strong>
-                  {message.authorType === "agent" && message.authorName
-                    ? `${authorLabels[message.authorType]} · ${message.authorName}`
-                    : authorLabels[message.authorType]}
-                </strong>
-                <div style={{ fontSize: "0.9rem", color: "#6e5f53", marginTop: 4 }}>
-                  {new Date(message.createdAt).toLocaleString()} | type: {message.messageType}
-                </div>
-                <div style={{ marginTop: 8 }}>{message.content}</div>
-                {message.citations?.length ? (
-                  <div style={{ marginTop: 6, fontSize: "0.9rem", color: "#6e5f53" }}>
-                    <strong style={{ display: "block", marginBottom: 4 }}>Sources</strong>
-                    {message.citations.map((citation) => (
-                      <div key={`${citation.chunkId}-${citation.chunkIndex}`}>
-                        {citation.title} - chunk {citation.chunkIndex}
-                        {citation.sourceUri ? ` - ${citation.sourceUri}` : ""}
-                        {citation.relevanceScore ? ` - score ${citation.relevanceScore}` : ""}
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-
-          {allowAdminDeletes ? (
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                borderTop: "1px solid rgba(62, 44, 31, 0.12)",
-                paddingTop: 12
-              }}
+            <button
+              type="button"
+              className={filter === "pending_human" ? "active" : undefined}
+              onClick={() => setFilter("pending_human")}
             >
-              <button
-                type="button"
-                onClick={handleClearMessageHistory}
-                disabled={conversationDetail.messages.length === 0}
-                style={{
-                  borderRadius: "999px",
-                  padding: "10px 14px",
-                  background: "#fff",
-                  color: "#b42318",
-                  border: "1px solid rgba(180, 35, 24, 0.24)",
-                  cursor: "pointer"
-                }}
-              >
-                Clear message history
-              </button>
-            </div>
-          ) : null}
+              Alerts
+            </button>
+          </div>
         </div>
-      ) : null}
 
-      {error ? <div style={{ color: "#b42318" }}>{error}</div> : null}
+        <div className="chat-list">
+          {isLoading ? <div className="chat-empty-state">Loading conversations...</div> : null}
+          {!isLoading && conversations.length === 0 ? (
+            <div className="chat-empty-state">No conversations for the current filter.</div>
+          ) : (
+            conversations.map((conversation, index) => {
+              const customerName = getCustomerName(conversation);
+              const isSelected = selectedConversationId === conversation.id;
+              const status = getConversationDisplayStatus(conversation);
+
+              return (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  className={`chat-list-item ${isSelected ? "selected" : ""}`}
+                  onClick={() => setSelectedConversationId(conversation.id)}
+                >
+                  {index === 0 ? (
+                    <img alt="" className="chat-avatar image" src={customerAvatarUrl} />
+                  ) : (
+                    <span className="chat-avatar initials">{getInitials(customerName)}</span>
+                  )}
+                  <span className="chat-item-copy">
+                    <span className="chat-item-title">
+                      <strong>{customerName}</strong>
+                      <small>{formatRelativeTime(conversation.lastMessageAt)}</small>
+                    </span>
+                    <span className="chat-preview">
+                      {isSelected && latestMessage ? latestMessage : `Conversation status: ${conversation.status}`}
+                    </span>
+                    <span className={`chat-status ${status.tone}`}>
+                      <Icon name={status.icon} />
+                      {status.label}
+                    </span>
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      <aside className="conversation-detail-column">
+        <div className="metadata-card glass-card">
+          <div className="metadata-heading">
+            <h3>Metadata</h3>
+            <Icon name="info" />
+          </div>
+          <div className="metadata-list">
+            <div>
+              <span>Session</span>
+              <strong>{conversationDetail?.id.slice(-11).toUpperCase() ?? "8841-KK-902"}</strong>
+            </div>
+            <div>
+              <span>Language</span>
+              <strong>English</strong>
+            </div>
+            <div>
+              <span>Status</span>
+              <strong className={conversationDetail?.status === "pending_human" ? "error" : ""}>
+                <i />
+                {conversationDetail?.status === "pending_human" ? "Wait" : conversationDetail?.status ?? "Wait"}
+              </strong>
+            </div>
+            {allowAssignment && selectedUser ? (
+              <div>
+                <span>Agent</span>
+                <strong>{selectedUser.name || selectedUser.email}</strong>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <form className="human-reply-card" onSubmit={handleAgentReply}>
+          <h3>
+            <Icon name="record_voice_over" />
+            Human Reply
+          </h3>
+          <p>Intervene now to override AI and assist the user directly.</p>
+          <textarea
+            value={replyDraft}
+            onChange={(event) => setReplyDraft(event.target.value)}
+            placeholder="Type response..."
+          />
+          <button
+            type="submit"
+            className="primary-btn"
+            disabled={isReplying || !selectedUserId || !replyDraft.trim()}
+          >
+            <Icon name="send" />
+            <span>{isReplying ? "Sending..." : "Send Reply"}</span>
+          </button>
+        </form>
+
+        {error ? <div className="panel-error">{error}</div> : null}
+      </aside>
     </section>
   );
+}
+
+function Icon({ name }: { name: string }) {
+  return <span className="material-symbols-outlined">{name}</span>;
+}
+
+function getCustomerName(conversation: ConversationListItem): string {
+  return (
+    conversation.customer.name ||
+    conversation.customer.email ||
+    conversation.customer.visitorId ||
+    "Anonymous visitor"
+  );
+}
+
+function getInitials(value: string): string {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+
+  if (words.length === 0) {
+    return "AV";
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+}
+
+function formatRelativeTime(value?: string | null): string {
+  if (!value) {
+    return "now";
+  }
+
+  const diffMs = Date.now() - new Date(value).getTime();
+  const diffMinutes = Math.max(1, Math.round(diffMs / 60000));
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m`;
+  }
+
+  return `${Math.round(diffMinutes / 60)}h`;
+}
+
+function getConversationDisplayStatus(conversation: ConversationListItem) {
+  if (conversation.isHandoffPending || conversation.status === "pending_human") {
+    return {
+      label: "Escalate",
+      icon: "priority_high",
+      tone: "error"
+    };
+  }
+
+  if (conversation.status === "resolved" || conversation.status === "closed") {
+    return {
+      label: "Resolved",
+      icon: "check_circle",
+      tone: "success"
+    };
+  }
+
+  return {
+    label: "Open",
+    icon: "radio_button_checked",
+    tone: "primary"
+  };
 }
 
 function createConversationsSignature(conversations: ConversationListItem[]): string {
