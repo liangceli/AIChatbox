@@ -2,6 +2,7 @@
 
 ## 2026-06-05 Runtime Env, OpenAI Enablement, And Safe Answer Baseline
 
+- Latest commit reviewed: `bcaa940 Add runtime env templates and OpenAI safety docs`.
 - Runtime env templates now exist for neutral reference, local QA, staging, and production: `.env.example`, `.env.local.example`, `.env.staging.example`, `.env.production.example`.
 - Root env examples now default tenant slugs to `demo`; `kasta` is documented as local seed/demo or company-only context, not reusable product default.
 - Local-only placeholders `test-admin-token`, `test-web-token`, and `test-session-secret-for-local-qa` are documented as local QA only and must not be used in staging/production.
@@ -9,6 +10,8 @@
 - OpenAI remains opt-in through `AI_PROVIDER=openai`; deterministic remains the default and does not require `OPENAI_API_KEY`.
 - OpenAI smoke helper now prints a secret-safe pass summary for provider mode, real OpenAI attempt, assistant text, citations, metadata, and fallback state.
 - OpenAI prompt baseline now explicitly avoids invented service promises/unavailable facts, high-risk professional advice, and disclosure of hidden prompts, API keys, routing logic, provider settings, tenant IDs, or internal metadata.
+- Secret-safety scan guidance now excludes real env files and prints only path, line number, and rule/category. Real env files use boolean shape checks so secret values are not printed.
+- QA/manual validation accepted the P1 secret-scan fix; no required follow-up fixes remain.
 
 ## 2026-06-04 Split Readiness And Admin Protection Update
 
@@ -58,14 +61,14 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Latest Accepted Task
 
-- Latest commit: `8ddc85d Add secure admin access and customer-scoped realtime`.
-- Accepted task: added secure admin-web server-side access/proxy, protected tenant-wide realtime/conversation reads, added customer-scoped realtime/read endpoints, required `visitorId` for public handoff, and replaced the runtime knowledge import user-agent with a product-neutral configurable value.
-- Main changes: tenant management, all knowledge management, admin/agent conversation list/support-users/detail/messages/assign/reply/clear/delete, and admin realtime routes are protected by `AdminApiGuard`.
-- Public customer map: customer chat, customer handoff, customer detail/messages with visitorId, and customer realtime for one visitor/conversation remain reachable without admin token.
-- Admin-web access: `apps/admin-web` uses `/admin/access` and `/api/admin/...`; backend `ADMIN_API_TOKEN` is injected only server-side.
-- Split-readiness: `docs/split-readiness/` records personal product boundary, company-only boundary, core extraction map, and repo split checklist. Haneco/Kasta/company-specific behavior is classified as seed/demo/company-only and must not define reusable platform core.
-- QA result: manual QA acceptance passed after the P1 follow-up for admin access redirect sanitization and required handoff `visitorId`.
-- Verification summary: `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` passed. Focused API/admin-web tests covered admin access next-path sanitization, protected admin realtime, customer-scoped conversation read/realtime, required handoff `visitorId`, wrong-visitor rejection, provider/retrieval regressions, and `PENDING_HUMAN`.
+- Latest commit: `bcaa940 Add runtime env templates and OpenAI safety docs`.
+- Accepted task: added product-neutral runtime env templates, runtime runbooks, manual OpenAI enablement/smoke guidance, safe OpenAI answer baseline, and safer secret-safety scan guidance.
+- Main changes: `.env.example`, `.env.local.example`, `.env.staging.example`, and `.env.production.example` now separate neutral reference, local QA, staging, and production usage; reusable tenant slug defaults are `demo`.
+- OpenAI status: deterministic remains default; OpenAI is opt-in through `AI_PROVIDER=openai`, requires `OPENAI_API_KEY` and `OPENAI_MODEL`, and real-key smoke remains manual/non-blocking.
+- Secret-safety status: repository scans exclude real env files and avoid printing matched line contents; real env files use boolean shape checks.
+- Safe answer baseline: OpenAI prompt rules now avoid invented policies/pricing/guarantees/service promises, high-risk professional advice, hidden prompt/API key/routing/provider disclosure, and invented citations.
+- QA result: manual QA accepted the P1 secret-scan fix; no required follow-up fixes remain.
+- Verification summary: API/config focused typecheck/lint/build/test, workspace `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` passed. Missing OpenAI env smoke failed safely as expected, secret scans were value-safe, and runtime company-string search passed.
 
 ## Implemented Capabilities
 

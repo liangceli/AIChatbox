@@ -87,6 +87,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Known QA Observations
 
+- QA for `bcaa940 Add runtime env templates and OpenAI safety docs` accepted the P1 secret-scan fix: repository scans exclude real env files and output only `Path`, `LineNumber`, and `Rule`; real env checks use booleans and do not print values.
 - QA for `8ddc85d Add secure admin access and customer-scoped realtime` accepted the P1 fixes for admin access open-redirect sanitization and required public handoff `visitorId`; no required follow-up fixes remain.
 - Manual QA for `fb3ca66 Add LLM provider boundary with deterministic fallback` passed.
 - QA for `355e5f6 Add OpenAI provider with deterministic fallback` passed shell-verifiable checks and accepted the citation preservation fix.
