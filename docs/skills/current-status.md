@@ -2,11 +2,13 @@
 
 ## 2026-06-12 Knowledge URL Import SSRF Protection
 
+- Latest commit: `8db4939 feat: add secure knowledge answer debug and URL import`.
 - URL import now accepts only safe public HTTP(S) targets.
 - Initial URLs and every redirect target are checked against local/internal/metadata hostnames, restricted IPv4/IPv6 ranges, and all DNS results.
 - Outbound requests use DNS-pinned validated public addresses, a five-redirect limit, a true 15-second absolute deadline, and a 2 MB response limit.
 - Continuous slow-trickle responses cannot extend a URL import request beyond the absolute deadline, and deadline timers are cleared on every completion path.
 - Safe public HTML/text import behavior remains supported; no new dependency or migration was added.
+- Latest QA accepted the absolute-deadline P1 fix with no required follow-up fixes.
 
 ## 2026-06-12 Knowledge Answer Debug And Alpha Knowledge UX
 
@@ -16,15 +18,14 @@
 - Admin-web Knowledge Base now shows document source/status/chunk count/ingested time/checksum, document chunk previews, URL import, and clear reprocess/archive/delete feedback.
 - Real OpenAI debug remains user-gated: configure `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` only in local `.env` or a secret manager, run `pnpm --filter @platform/api smoke:openai`, then run a knowledge-backed question in Answer Debug.
 - No Prisma migration, public customer API change, provider default change, or real OpenAI automated test was introduced.
+- Manual acceptance passed for public URL import, restricted URL rejection, desktop/mobile knowledge UI, real OpenAI smoke, and real OpenAI Answer Debug.
 
 ## 2026-06-12 Latest Commit And QA Reconciliation
 
-- Latest commit: `906440b small fix`.
-- Latest commit adds server-side public tenant-profile prefetch for `/chat`, passes the initial profile into `CustomerWidget`, persists/restores the tenant-scoped customer conversation ID in browser localStorage, and auto-scrolls customer/admin conversation history to the latest message.
-- Latest accepted QA context applies to the preceding P1 fix commit `e499c45 fix: preserve human handoff state and profile media clearing`.
-- Accepted P1 behavior: explicit `logoUrl: null` / `avatarUrl: null` stops older media fallback after reload; provider-time human handoff discards the AI result and preserves the newer persisted `PENDING_HUMAN` conversation and `lastMessageAt`.
-- Latest QA found no required fixes for those P1 items. It recorded one non-blocking P2 risk: the earlier pre-provider pending-human branch may still move `lastMessageAt` backwards in a narrow concurrency window.
-- `906440b` is not covered by the current latest QA report. Its frontend restore/prefetch/auto-scroll behavior still needs focused manual validation.
+- Latest commit and latest QA now align on `8db4939 feat: add secure knowledge answer debug and URL import`.
+- Latest accepted P1 follow-up replaces URL-import socket inactivity timeout behavior with a true 15-second absolute per-request deadline.
+- Latest QA found no required fixes and confirmed existing SSRF protection, DNS pinning, redirect validation, response limit, admin protection, and tenant scope remain intact.
+- Manual QA passed all five acceptance items, including real OpenAI smoke and real OpenAI Answer Debug with no observed secret exposure.
 
 ## 2026-06-05 Persistent Human Support Mode
 
@@ -89,7 +90,7 @@
 - OpenAI real-key smoke helper added: `pnpm --filter @platform/api smoke:openai`; it is manual-only and not part of normal tests.
 - Short keyword retrieval now uses normalized exact-token scoring and stricter one-token thresholds to reduce weak substring matches.
 - API provider tests now cover retrieval short-query behavior, OpenAI citation preservation, safe provider metadata, fallback metadata, and `PENDING_HUMAN` blocking.
-- Real OpenAI smoke remains pending until a valid API key is available.
+- Real OpenAI smoke and real OpenAI Answer Debug have now passed manual acceptance. OpenAI remains opt-in and real-key checks remain manual rather than normal automated CI.
 
 ## Current Code State
 
@@ -115,12 +116,12 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Latest Accepted Task
 
-- Latest commit: `906440b small fix`.
-- Latest accepted QA task: `e499c45 fix: preserve human handoff state and profile media clearing`.
-- Accepted P1 changes: explicit-null Logo/Avatar removal persists through all fallback sources; provider-time handoff suppresses the generated assistant reply and preserves the newer handoff activity timestamp.
-- Latest commit changes after that QA: `/chat` prefetches public tenant profile server-side, widget conversation ID persists/restores per tenant, and customer/admin message history auto-scrolls to the latest message.
-- QA result: no required fixes for `e499c45`; one non-blocking P2 pre-provider `lastMessageAt` monotonicity risk remains.
-- Verification boundary: latest QA records passing API/admin-web focused checks and workspace typecheck/test/lint for the accepted P1 work. `906440b` requires separate focused/manual QA because it was committed after that report.
+- Latest commit: `8db4939 feat: add secure knowledge answer debug and URL import`.
+- Accepted task: added protected, non-persistent Answer Debug; practical knowledge document/chunk/lifecycle UX; SSRF-safe public URL import; and a true 15-second absolute outbound request deadline.
+- Security contract: initial URL and every redirect/DNS result are validated, requests are pinned to validated public addresses, restricted/internal/metadata targets are rejected, redirects are limited to five, and responses are limited to 2 MB.
+- Answer Debug contract: tenant-scoped and admin-protected, no customer/conversation/message persistence, bounded chunk previews/citations, allowlisted provider metadata, and no raw prompts/secrets/tenant IDs.
+- QA result: no required fixes. Five manual acceptance items passed, including public/restricted URL imports, responsive knowledge UI, real OpenAI smoke, and real OpenAI Answer Debug.
+- Verification summary: API and workspace typecheck/lint/test/build passed; slow-trickle absolute-deadline regression passed; `git diff --check` had only Windows line-ending warnings.
 
 ## Implemented Capabilities
 
@@ -142,8 +143,7 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 - This is not production auth/RBAC; `AdminApiGuard` is only an alpha token boundary.
 - Admin-web access gate is alpha token/session-cookie protection, not real user identity or RBAC.
 - Customer conversation read/detail endpoints require visitorId but do not yet use signed customer sessions.
-- Real OpenAI success smoke has not run because no OpenAI API key is currently available.
-- Real OpenAI enablement should follow `docs/runtime/openai-enable-checklist.md`; the smoke helper is manual-only and must not become a normal blocking CI test while it requires a real key.
+- Real OpenAI smoke has passed manual acceptance, but it remains opt-in/manual and must not become a normal blocking CI test while it requires a real key.
 - Embeddings, vector database, and reranker are not implemented.
 - Short keyword-style questions can still produce weak deterministic retrieval matches.
 - `apps/ai-worker` has no queue, async ingestion, or background job yet.
@@ -162,9 +162,8 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Recommended Next Tasks
 
-1. Manually validate `906440b`: refresh `/chat`, confirm tenant profile appears without a branding flash, restore the same visitor conversation after reload, clear stale/unauthorized stored conversation IDs, and confirm customer/admin history scrolls to the latest message.
-2. Consider fixing the non-blocking pre-provider pending-human `lastMessageAt` monotonicity risk.
-3. If the next task begins Level 3 lead capture, public personal branding, or company-specific integrations, create the personal product repo first.
-4. Replace alpha admin-web access with production auth/RBAC before production.
-5. Decide the signed customer/session auth model for public customer conversation reads.
-6. Run manual real-key OpenAI smoke when an API key is available.
+1. Add stronger Admin-Web component/browser automation for Answer Debug, document lifecycle actions, loading/error states, and mobile layout.
+2. Expand Answer Debug non-persistence tests to assert all relevant Prisma write APIs remain unused.
+3. Keep deployment-level egress denial for internal/metadata networks as defense in depth.
+4. Consider an overall URL-import flow deadline if the per-request deadline plus five redirects becomes operationally too slow.
+5. Replace alpha admin-web access with production auth/RBAC before production.

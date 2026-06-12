@@ -136,6 +136,9 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Known QA Observations
 
+- QA for `8db4939 feat: add secure knowledge answer debug and URL import` accepted the absolute 15-second per-request deadline and existing SSRF protections with no required fixes.
+- Manual acceptance passed for public URL import, restricted URL rejection, desktop/mobile Knowledge Base and Answer Debug layout, real OpenAI smoke, and real OpenAI Answer Debug. Real OpenAI used `openai` mode with no fallback and no observed API key/admin token/raw prompt/tenant ID exposure.
+- Remaining P2 gaps: Admin-Web interaction coverage is mainly source smoke, and Answer Debug non-persistence tests do not yet monitor every possible Prisma write API.
 - Latest QA accepts the P1 fixes in `e499c45 fix: preserve human handoff state and profile media clearing`; `906440b small fix` was committed afterward and is not covered by that QA report.
 - Non-blocking P2 risk: the pre-provider pending-human branch can still move `lastMessageAt` backwards in a narrow concurrency window.
 - QA for `bcaa940 Add runtime env templates and OpenAI safety docs` accepted the P1 secret-scan fix: repository scans exclude real env files and output only `Path`, `LineNumber`, and `Rule`; real env checks use booleans and do not print values.
