@@ -133,7 +133,7 @@ OpenAI 行为：
 - title
 - chunkIndex
 - sourceUri
-- sourceLocator
+- sourceLocator (optional; present only when it reliably maps to persisted document content)
 - relevanceScore
 - excerpt
 
@@ -145,6 +145,7 @@ OpenAI 行为：
 - 前端 admin/widget 都会展示 citations。
 - `buildBackendCitations` 是 chat providers 的 shared citation helper。
 - OpenAI success 有 retrieved chunks 时应保留 citations，即使 deterministic scoring 不会产生 grounded sentence。
+- `sourceLocator` must be omitted entirely when no reliable locator exists; do not persist `sourceLocator: undefined` in citation JSON.
 
 ## AgentConfig
 

@@ -1,5 +1,14 @@
 # Current Status
 
+## 2026-06-12 Reliable Citation Locator Omission
+
+- Latest commit: `49962f7 Fix reliable citation locator omission`.
+- Backend citations now omit the `sourceLocator` key entirely when a retrieved chunk has no reliable locator.
+- Reliable locators are still preserved when present on retrieved chunks.
+- This avoids persisting nested `sourceLocator: undefined` values into Prisma JSON fields.
+- Latest QA accepted this P1 fix with no required follow-up fixes.
+- This locator-only fix does not change provider requests, retrieval scoring, model output, message flow, handoff, or conversation history.
+
 ## 2026-06-12 RAG Quality Hardening
 
 - Knowledge URL import now removes common HTML noise, hidden blocks, duplicate lines, and preserves heading breaks before chunking.
@@ -124,12 +133,11 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Latest Accepted Task
 
-- Latest commit: `8db4939 feat: add secure knowledge answer debug and URL import`.
-- Accepted task: added protected, non-persistent Answer Debug; practical knowledge document/chunk/lifecycle UX; SSRF-safe public URL import; and a true 15-second absolute outbound request deadline.
-- Security contract: initial URL and every redirect/DNS result are validated, requests are pinned to validated public addresses, restricted/internal/metadata targets are rejected, redirects are limited to five, and responses are limited to 2 MB.
-- Answer Debug contract: tenant-scoped and admin-protected, no customer/conversation/message persistence, bounded chunk previews/citations, allowlisted provider metadata, and no raw prompts/secrets/tenant IDs.
-- QA result: no required fixes. Five manual acceptance items passed, including public/restricted URL imports, responsive knowledge UI, real OpenAI smoke, and real OpenAI Answer Debug.
-- Verification summary: API and workspace typecheck/lint/test/build passed; slow-trickle absolute-deadline regression passed; `git diff --check` had only Windows line-ending warnings.
+- Latest commit: `49962f7 Fix reliable citation locator omission`.
+- Accepted task: fix backend citation `sourceLocator` omission so citations without reliable locators do not contain `sourceLocator: undefined`.
+- Contract: `sourceLocator` is optional and reliable-only. Normal chunks may include it when it maps to persisted `KnowledgeDocument.content`; deduped/reordered chunks omit it.
+- QA result: no required fixes. Regression asserts `"sourceLocator" in citation === false` when the retrieved chunk has no reliable locator.
+- Verification summary: `pnpm --filter @platform/api test`, `pnpm --filter @platform/api typecheck`, and `git diff --check` passed, with only Windows LF/CRLF warnings.
 
 ## Implemented Capabilities
 
@@ -170,8 +178,8 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Recommended Next Tasks
 
-1. Add stronger Admin-Web component/browser automation for Answer Debug, document lifecycle actions, loading/error states, and mobile layout.
-2. Expand Answer Debug non-persistence tests to assert all relevant Prisma write APIs remain unused.
-3. Keep deployment-level egress denial for internal/metadata networks as defense in depth.
-4. Consider an overall URL-import flow deadline if the per-request deadline plus five redirects becomes operationally too slow.
-5. Replace alpha admin-web access with production auth/RBAC before production.
+1. Continue alpha knowledge QA using `docs/runtime/alpha-knowledge-qa-checklist.md`, including optional citation locator checks.
+2. Add a deadline wrapper for DNS/safety resolution if URL import resolution latency becomes a practical risk.
+3. Add stronger Admin-Web component/browser automation for Answer Debug, document lifecycle actions, loading/error states, and mobile layout.
+4. Expand Answer Debug non-persistence tests to assert all relevant Prisma write APIs remain unused.
+5. Keep deployment-level egress denial for internal/metadata networks as defense in depth.

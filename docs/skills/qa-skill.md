@@ -145,6 +145,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Known QA Observations
 
+- QA for `49962f7 Fix reliable citation locator omission` accepted the P1 backend citation omission fix: citations without reliable locators omit the `sourceLocator` key entirely, while reliable locators are still preserved.
 - QA for `8db4939 feat: add secure knowledge answer debug and URL import` accepted the absolute 15-second per-request deadline and existing SSRF protections with no required fixes.
 - Manual acceptance passed for public URL import, restricted URL rejection, desktop/mobile Knowledge Base and Answer Debug layout, real OpenAI smoke, and real OpenAI Answer Debug. Real OpenAI used `openai` mode with no fallback and no observed API key/admin token/raw prompt/tenant ID exposure.
 - Remaining P2 gaps: Admin-Web interaction coverage is mainly source smoke, and Answer Debug non-persistence tests do not yet monitor every possible Prisma write API.
@@ -166,7 +167,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Manual real-key smoke helper lives in `apps/api/scripts/openai-smoke.ts` and runs with `pnpm --filter @platform/api smoke:openai`.
 - Smoke helper requires `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; missing env fails clearly without printing API keys.
 - Smoke helper success summary reports provider mode, real OpenAI attempt, assistant text, citations, provider metadata presence, and fallback state.
-- Manual real-key smoke test remains pending until an OpenAI API key is available.
+- Manual real-key OpenAI smoke passed during the `8db4939` alpha knowledge QA cycle. Future OpenAI-affecting changes should rerun the smoke with user-managed secrets.
 
 ## Tenant Profile Real OpenAI Manual Gate
 
