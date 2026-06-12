@@ -1,5 +1,25 @@
 # QA Skill
 
+## 2026-06-12 URL Import SSRF Regression Gate
+
+- URL import must reject `localhost`, loopback, RFC1918 private ranges, carrier-grade NAT, link-local/cloud metadata targets, reserved/documentation addresses, non-public IPv6, embedded credentials, and hostnames resolving to any restricted address.
+- Every redirect target must be revalidated before a request is sent; a safe public URL redirecting to a restricted target must stop after the public request.
+- Safe public HTTP(S) redirects and HTML/text imports must continue to work.
+- DNS resolution used for safety validation must be pinned into the outbound request to avoid a second unvalidated DNS lookup.
+- Pinned DNS lookup regressions must cover Node's all-address lookup mode so safe public imports remain usable.
+- URL import must keep redirect, absolute-deadline, response-size, and safe error-message limits.
+- Slow-trickle regression coverage must prove continuous small response chunks cannot extend URL import beyond its absolute request deadline.
+
+## 2026-06-12 Answer Debug Regression Gate
+
+- Protected Answer Debug controller must use `AdminApiGuard`; missing/invalid/valid token behavior follows the existing protected route map.
+- Answer Debug retrieval and AgentConfig reads must use the resolved tenant ID, while the response must not return that tenant ID.
+- Knowledge-hit debug must return retrieved chunk previews, scores, backend citations, answer text, provider requested/used mode, fallback state, and safe provider metadata.
+- Knowledge-miss debug must explain that no relevant READY chunk met the threshold and must not create a conversation or message.
+- Tests must assert debug output drops injected API key/admin token/auth header/raw prompt/provider secret fields and citation `sourceLocator`.
+- Admin-web manual QA must cover deterministic hit/miss, document/chunk inspection, URL import, and reprocess/archive/delete feedback.
+- Real OpenAI acceptance is manual-only: user-managed secret config, `pnpm --filter @platform/api smoke:openai`, then a knowledge-backed Answer Debug question. Fake/test tokens are not alpha evidence.
+
 ## Verification Commands
 
 Use from repository root.
@@ -103,7 +123,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Assign/reply rejects users without current tenant Role.
 - Knowledge document archive removes chunks and excludes the document from retrieval.
 - Reprocess replaces old chunks and updates `chunkCount`, `checksum`, `ingestedAt`.
-- URL import rejects unsupported content types and too-short content.
+- URL import rejects restricted network targets, unsafe redirects, unsupported content types, oversized responses, and too-short content.
 - SSE endpoint sends `conversation_snapshot` and supports query `tenantSlug`.
 
 ## Known Test Gaps

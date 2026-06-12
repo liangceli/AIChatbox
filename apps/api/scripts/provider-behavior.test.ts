@@ -1,6 +1,8 @@
 import { ConversationStatus } from "@platform/database";
 import { loadAdminWebEnv, loadServerEnv, type ServerEnv } from "@platform/config";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { plainToInstance } from "class-transformer";
 import { validateSync } from "class-validator";
 import {
@@ -12,6 +14,8 @@ import {
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { AdminApiGuard } from "../src/common/admin-protection/admin-api.guard";
 import { createTenantResolutionMiddleware } from "../src/common/tenant/tenant-resolution.middleware";
+import { AnswerDebugController } from "../src/modules/chat/answer-debug.controller";
+import { AnswerDebugService } from "../src/modules/chat/answer-debug.service";
 import { AssistantReplyService } from "../src/modules/chat/assistant-reply.service";
 import { ChatService } from "../src/modules/chat/chat.service";
 import { LlmProviderResolverService } from "../src/modules/chat/llm-provider-resolver.service";
@@ -20,6 +24,15 @@ import { buildOpenAiPrompt } from "../src/modules/chat/openai-prompt";
 import { ConversationsController } from "../src/modules/conversations/conversations.controller";
 import { ConversationsService } from "../src/modules/conversations/conversations.service";
 import { KnowledgeRetrievalService } from "../src/modules/knowledge/knowledge-retrieval.service";
+import {
+  createPinnedLookup,
+  KnowledgeUrlImportService,
+  requestPinnedPublicUrl
+} from "../src/modules/knowledge/knowledge-url-import.service";
+import {
+  isPublicNetworkAddress,
+  KnowledgeUrlSafetyService
+} from "../src/modules/knowledge/knowledge-url-safety.service";
 import { RealtimeController } from "../src/modules/realtime/realtime.controller";
 import { RealtimeService } from "../src/modules/realtime/realtime.service";
 import { TenantsController } from "../src/modules/tenants/tenants.controller";
@@ -263,6 +276,370 @@ async function testAdminRealtimeControllerUsesAdminGuard() {
     Reflect.getMetadata(GUARDS_METADATA, RealtimeController.prototype.streamConversations) ?? [];
 
   assert.ok(guards.includes(AdminApiGuard));
+}
+
+async function testAnswerDebugControllerUsesAdminGuard() {
+  const guards = Reflect.getMetadata(GUARDS_METADATA, AnswerDebugController) ?? [];
+
+  assert.ok(guards.includes(AdminApiGuard));
+}
+
+async function testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe() {
+  let retrievalTenantId: string | undefined;
+  let agentConfigTenantId: string | undefined;
+  const answerDebugService = new AnswerDebugService(
+    {
+      client: {
+        agentConfig: {
+          findUnique: async (query: { where: { tenantId: string } }) => {
+            agentConfigTenantId = query.where.tenantId;
+
+            return {
+              displayName: "Debug Assistant",
+              fallbackMessage: "Safe fallback.",
+              handoffEnabled: true,
+              systemPrompt: "raw hidden prompt that must not be returned",
+              metadata: {
+                secretConfig: "admin-token-must-not-be-returned"
+              }
+            };
+          }
+        }
+      }
+    } as never,
+    {
+      retrieveRelevantChunks: async (tenant: { id: string }) => {
+        retrievalTenantId = tenant.id;
+
+        return baseInput.retrievedChunks;
+      }
+    } as never,
+    {
+      resolveProvider: () => ({
+        name: "openai",
+        generateReply: async () => ({
+          content: "Safe debug answer.",
+          citations: [
+            {
+              knowledgeDocumentId: "doc-1",
+              chunkId: "chunk-1",
+              title: "Warranty",
+              chunkIndex: 0,
+              sourceUri: "https://example.test/warranty",
+              relevanceScore: 12,
+              sourceLocator: {
+                rawInternalValue: "must-not-be-returned"
+              },
+              excerpt: "Warranty coverage lasts 12 months."
+            }
+          ],
+          metadata: {
+            providerName: "openai",
+            mode: "openai",
+            deterministic: false,
+            usedFallback: false,
+            model: "gpt-test",
+            latencyMs: 15,
+            responseId: "response-safe",
+            apiKey: "openai-key-must-not-be-returned",
+            rawPrompt: "raw hidden prompt that must not be returned",
+            authorization: "Bearer admin-token-must-not-be-returned"
+          }
+        })
+      })
+    } as never
+  );
+
+  const result = await answerDebugService.run(
+    {
+      id: "tenant-secret-id",
+      slug: "demo",
+      name: "Demo",
+      status: "ACTIVE"
+    } as never,
+    "What is the warranty?"
+  );
+  const serialized = JSON.stringify(result);
+
+  assert.equal(retrievalTenantId, "tenant-secret-id");
+  assert.equal(agentConfigTenantId, "tenant-secret-id");
+  assert.equal(result.answerSource, "knowledge_hit");
+  assert.equal(result.knowledge.outcome, "hit");
+  assert.equal(result.retrievedChunks.length, 1);
+  assert.equal(result.citations.length, 1);
+  assert.equal(result.provider.requestedMode, "openai");
+  assert.equal(result.provider.usedMode, "openai");
+  assert.equal(result.provider.usedFallback, false);
+  assert.equal(result.provider.metadata.model, "gpt-test");
+  assert.equal("sourceLocator" in result.citations[0]!, false);
+  assert.equal(serialized.includes("tenant-secret-id"), false);
+  assert.equal(serialized.includes("openai-key-must-not-be-returned"), false);
+  assert.equal(serialized.includes("admin-token-must-not-be-returned"), false);
+  assert.equal(serialized.includes("raw hidden prompt"), false);
+  assert.equal(serialized.includes("authorization"), false);
+}
+
+async function testAnswerDebugKnowledgeMissIsSafeAndNonPersistent() {
+  let writeCalled = false;
+  const answerDebugService = new AnswerDebugService(
+    {
+      client: {
+        agentConfig: {
+          findUnique: async () => null
+        },
+        conversation: {
+          create: async () => {
+            writeCalled = true;
+          }
+        }
+      }
+    } as never,
+    {
+      retrieveRelevantChunks: async () => []
+    } as never,
+    {
+      resolveProvider: () => ({
+        name: "deterministic",
+        generateReply: (input: Parameters<AssistantReplyService["generateReply"]>[0]) =>
+          new AssistantReplyService().generateReply(input)
+      })
+    } as never
+  );
+
+  const result = await answerDebugService.run(
+    {
+      id: "tenant-1",
+      slug: "demo",
+      name: "Demo",
+      status: "ACTIVE"
+    } as never,
+    "Question with no matching knowledge"
+  );
+
+  assert.equal(writeCalled, false);
+  assert.equal(result.answerSource, "knowledge_miss");
+  assert.equal(result.knowledge.outcome, "miss");
+  assert.equal(result.knowledge.retrievedChunkCount, 0);
+  assert.equal(result.citations.length, 0);
+  assert.equal(result.provider.requestedMode, "deterministic");
+  assert.equal(result.provider.usedMode, "deterministic");
+  assert.match(result.knowledge.reason, /No relevant READY knowledge chunks/i);
+}
+
+async function testKnowledgeUrlSafetyRejectsRestrictedTargets() {
+  const safetyService = KnowledgeUrlSafetyService.createForTest(async (hostname) => {
+    if (hostname === "private.example.com") {
+      return [{ address: "10.0.0.8", family: 4 }];
+    }
+
+    if (hostname === "mixed.example.com") {
+      return [
+        { address: "93.184.216.34", family: 4 },
+        { address: "192.168.1.8", family: 4 }
+      ];
+    }
+
+    return [{ address: "93.184.216.34", family: 4 }];
+  });
+  const blockedUrls = [
+    "http://localhost/support",
+    "http://127.0.0.1/support",
+    "http://[::1]/support",
+    "http://[::ffff:127.0.0.1]/support",
+    "http://10.0.0.8/support",
+    "http://172.16.0.8/support",
+    "http://192.168.1.8/support",
+    "http://169.254.169.254/latest/meta-data",
+    "http://100.100.100.200/latest/meta-data",
+    "http://168.63.129.16/metadata",
+    "http://metadata.google.internal/computeMetadata/v1",
+    "http://private.example.com/support",
+    "http://mixed.example.com/support",
+    "http://user:password@public.example.com/support",
+    "ftp://public.example.com/support"
+  ];
+
+  for (const url of blockedUrls) {
+    await assert.rejects(
+      () => safetyService.resolveSafePublicUrl(url),
+      BadRequestException,
+      `Expected URL import safety to reject ${url}`
+    );
+  }
+
+  assert.equal(isPublicNetworkAddress("93.184.216.34"), true);
+  assert.equal(isPublicNetworkAddress("2606:4700:4700::1111"), true);
+  assert.equal(isPublicNetworkAddress("127.0.0.1"), false);
+  assert.equal(isPublicNetworkAddress("::ffff:127.0.0.1"), false);
+  assert.equal(isPublicNetworkAddress("fc00::1"), false);
+  assert.equal(isPublicNetworkAddress("fe80::1"), false);
+}
+
+async function testKnowledgeUrlImportRejectsRestrictedRedirectTarget() {
+  let metadataRequestCount = 0;
+  const safetyService = KnowledgeUrlSafetyService.createForTest(async (hostname) => {
+    if (hostname === "private.example.com") {
+      return [{ address: "10.0.0.8", family: 4 }];
+    }
+
+    return [{ address: "93.184.216.34", family: 4 }];
+  });
+  const importService = KnowledgeUrlImportService.createForTest(
+    safetyService,
+    async () => {
+      metadataRequestCount += 1;
+
+      return {
+        status: 302,
+        contentType: "text/plain",
+        location: "http://169.254.169.254/latest/meta-data",
+        body: ""
+      };
+    }
+  );
+
+  await assert.rejects(
+    () => importService.fetchContent("https://public.example.com/support"),
+    BadRequestException
+  );
+  assert.equal(metadataRequestCount, 1);
+
+  let privateDnsRequestCount = 0;
+  const privateDnsRedirectService = KnowledgeUrlImportService.createForTest(
+    safetyService,
+    async () => {
+      privateDnsRequestCount += 1;
+
+      return {
+        status: 302,
+        contentType: "text/plain",
+        location: "http://private.example.com/support",
+        body: ""
+      };
+    }
+  );
+
+  await assert.rejects(
+    () => privateDnsRedirectService.fetchContent("https://public.example.com/support"),
+    BadRequestException
+  );
+  assert.equal(privateDnsRequestCount, 1);
+}
+
+async function testKnowledgeUrlImportPreservesSafePublicRedirectAndHtml() {
+  const requestedUrls: string[] = [];
+  const resolvedHostnames: string[] = [];
+  const safetyService = KnowledgeUrlSafetyService.createForTest(async (hostname) => {
+    resolvedHostnames.push(hostname);
+    return [{ address: "93.184.216.34", family: 4 }];
+  });
+  const importService = KnowledgeUrlImportService.createForTest(
+    safetyService,
+    async (resolution) => {
+      requestedUrls.push(resolution.url.toString());
+
+      if (resolution.url.hostname === "public.example.com") {
+        return {
+          status: 302,
+          contentType: "text/plain",
+          location: "https://docs.example.com/support",
+          body: ""
+        };
+      }
+
+      return {
+        status: 200,
+        contentType: "text/html; charset=utf-8",
+        body: "<html><head><title>Support Guide</title></head><body><p>Warranty coverage lasts twelve months for eligible purchases and registered products.</p></body></html>"
+      };
+    }
+  );
+
+  const content = await importService.fetchContent("https://public.example.com/start");
+
+  assert.deepEqual(resolvedHostnames, ["public.example.com", "docs.example.com"]);
+  assert.deepEqual(requestedUrls, [
+    "https://public.example.com/start",
+    "https://docs.example.com/support"
+  ]);
+  assert.equal(content.title, "Support Guide");
+  assert.match(content.content, /Warranty coverage lasts twelve months/);
+}
+
+async function testKnowledgeUrlPinnedLookupSupportsNodeAllMode() {
+  const selectedAddresses = [
+    {
+      address: "2606:2800:220:1:248:1893:25c8:1946",
+      family: 6 as const
+    },
+    {
+      address: "93.184.216.34",
+      family: 4 as const
+    }
+  ];
+  const lookup = createPinnedLookup(selectedAddresses);
+  const addresses = await new Promise<unknown>((resolve, reject) => {
+    lookup("public.example.com", { all: true }, (error, result) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(result);
+    });
+  });
+
+  assert.deepEqual(addresses, selectedAddresses);
+}
+
+async function testKnowledgeUrlImportEnforcesAbsoluteDeadlineDuringSlowTrickle() {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, {
+      "content-type": "text/plain"
+    });
+    response.write("initial response chunk");
+    const trickle = setInterval(() => {
+      response.write(".");
+    }, 5);
+
+    response.on("close", () => {
+      clearInterval(trickle);
+    });
+  });
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  try {
+    const address = server.address() as AddressInfo;
+    const startedAt = Date.now();
+
+    await assert.rejects(
+      () =>
+        requestPinnedPublicUrl(
+          {
+            url: new URL(`http://public.example.test:${address.port}/slow`),
+            addresses: [{ address: "127.0.0.1", family: 4 }]
+          },
+          "url-import-deadline-test",
+          60
+        ),
+      /absolute deadline/i
+    );
+    assert.ok(Date.now() - startedAt < 1_000);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
 }
 
 async function testTenantAiProfileAdminRoutesUseAdminGuard() {
@@ -1247,6 +1624,14 @@ async function run() {
   await testAdminProtectionGuardAcceptsValidTokens();
   await testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed();
   await testAdminRealtimeControllerUsesAdminGuard();
+  await testAnswerDebugControllerUsesAdminGuard();
+  await testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe();
+  await testAnswerDebugKnowledgeMissIsSafeAndNonPersistent();
+  await testKnowledgeUrlSafetyRejectsRestrictedTargets();
+  await testKnowledgeUrlImportRejectsRestrictedRedirectTarget();
+  await testKnowledgeUrlImportPreservesSafePublicRedirectAndHtml();
+  await testKnowledgeUrlPinnedLookupSupportsNodeAllMode();
+  await testKnowledgeUrlImportEnforcesAbsoluteDeadlineDuringSlowTrickle();
   await testTenantAiProfileAdminRoutesUseAdminGuard();
   await testHumanSupportAdminRoutesUseAdminGuard();
   await testTenantAiProfileDefaultsExist();

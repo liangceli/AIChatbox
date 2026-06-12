@@ -50,6 +50,20 @@ Expected success:
 
 This smoke helper is manual-only. Do not add it to normal CI or blocking test scripts while it requires a real external API key.
 
+## Admin Answer Debug Flow
+
+After the real-key smoke succeeds:
+
+1. Start the normal local runtime with `pnpm dev`.
+2. Sign in through `http://localhost:3000/admin/access` using the configured admin-web access token.
+3. Open `/admin`, select the intended tenant, and scroll to Knowledge Base.
+4. Confirm the tenant has a READY knowledge document with a clear test answer.
+5. Run the same knowledge-backed question in Answer Debug.
+6. Confirm requested/used provider shows OpenAI, answer text exists, retrieved chunks and backend citations are visible, safe provider metadata is present, and fallback state is clear.
+7. Confirm the page and browser network response do not contain an OpenAI key, admin token, auth header, raw hidden prompt, tenant ID, or provider secret config.
+
+The user must set real values only in local uncommitted `.env` or a secret manager. Never paste the real values into chat, docs, commits, screenshots, logs, or QA reports. Fake/test tokens and deterministic answers validate only the local path; they are not real OpenAI alpha evidence.
+
 ## Prompt Safety Baseline
 
 The OpenAI prompt must keep these constraints:

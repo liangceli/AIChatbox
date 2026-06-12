@@ -1,5 +1,4 @@
 import { KnowledgeDocumentSourceType, KnowledgeDocumentStatus, Prisma } from "@platform/database";
-import { loadServerEnv } from "@platform/config";
 import type {
   KnowledgeBaseRecord,
   KnowledgeChunkRecord,
@@ -23,6 +22,7 @@ import { CreateKnowledgeBaseDto } from "./dto/create-knowledge-base.dto";
 import { CreateManualKnowledgeDocumentDto } from "./dto/create-manual-knowledge-document.dto";
 import { ImportUrlKnowledgeDocumentDto } from "./dto/import-url-knowledge-document.dto";
 import { KnowledgeChunkingService } from "./knowledge-chunking.service";
+import { KnowledgeUrlImportService } from "./knowledge-url-import.service";
 import {
   toKnowledgeBaseRecord,
   toKnowledgeChunkRecord,
@@ -33,12 +33,13 @@ import {
 @Injectable()
 export class KnowledgeService {
   private readonly logger = new Logger(KnowledgeService.name);
-  private readonly importUserAgent = loadServerEnv(process.env).KNOWLEDGE_IMPORT_USER_AGENT;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeChunkingService)
-    private readonly knowledgeChunkingService: KnowledgeChunkingService
+    private readonly knowledgeChunkingService: KnowledgeChunkingService,
+    @Inject(KnowledgeUrlImportService)
+    private readonly knowledgeUrlImportService: KnowledgeUrlImportService
   ) {}
 
   async listKnowledgeBases(tenant: ResolvedTenant): Promise<KnowledgeBaseRecord[]> {
@@ -207,7 +208,7 @@ export class KnowledgeService {
     await this.ensureKnowledgeBase(tenant, knowledgeBaseId);
 
     const url = input.url.trim();
-    const fetched = await this.fetchUrlContent(url);
+    const fetched = await this.knowledgeUrlImportService.fetchContent(url);
     const title = input.title?.trim() || fetched.title || url;
 
     return this.createManualDocument(tenant, knowledgeBaseId, {
@@ -540,73 +541,4 @@ export class KnowledgeService {
     }
   }
 
-  private async fetchUrlContent(url: string): Promise<{ title: string | null; content: string }> {
-    let response: Response;
-
-    try {
-      response = await fetch(url, {
-        headers: {
-          "user-agent": this.importUserAgent
-        }
-      });
-    } catch (error: unknown) {
-      throw new BadRequestException(
-        `Unable to fetch URL: ${error instanceof Error ? error.message : "Unknown fetch error"}`
-      );
-    }
-
-    if (!response.ok) {
-      throw new BadRequestException(`URL fetch failed with status ${response.status}.`);
-    }
-
-    const contentType = response.headers.get("content-type") ?? "";
-
-    if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
-      throw new BadRequestException(`Unsupported URL content type: ${contentType || "unknown"}.`);
-    }
-
-    const raw = await response.text();
-    const title = this.extractHtmlTitle(raw);
-    const content = contentType.includes("text/html") ? this.extractReadableText(raw) : raw.trim();
-
-    if (!content || content.length < 40) {
-      throw new BadRequestException("Fetched URL did not contain enough readable text.");
-    }
-
-    return {
-      title,
-      content: content.slice(0, 50000)
-    };
-  }
-
-  private extractHtmlTitle(html: string): string | null {
-    const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-
-    return match ? this.decodeHtml(match[1]!).replace(/\s+/g, " ").trim() : null;
-  }
-
-  private extractReadableText(html: string): string {
-    return this.decodeHtml(
-      html
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-        .replace(/<\/(p|div|section|article|li|h1|h2|h3|tr)>/gi, "\n")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n\s+/g, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim()
-    );
-  }
-
-  private decodeHtml(value: string): string {
-    return value
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, "\"")
-      .replace(/&#39;/g, "'");
-  }
 }

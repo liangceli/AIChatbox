@@ -42,6 +42,7 @@ export function toKnowledgeDocumentRecord(document: KnowledgeDocument): Knowledg
     status: mapDocumentStatus(document.status),
     sourceType: mapSourceType(document.sourceType),
     sourceUri: document.sourceUri ?? null,
+    checksum: document.checksum ?? null,
     chunkCount: document.chunkCount,
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),

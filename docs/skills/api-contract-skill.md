@@ -1,5 +1,20 @@
 # API Contract Skill
 
+## 2026-06-12 Knowledge URL Import Safety
+
+- Protected single/batch knowledge URL import accepts only safe public HTTP(S) URLs.
+- URLs with embedded credentials, local/internal/metadata hostnames, restricted/non-public IPs, DNS answers containing a restricted address, or redirects to restricted targets are rejected with a safe 400 response.
+- Safe public redirects are followed up to five hops. Response bodies are limited to 2 MB and each outbound request has a true 15-second absolute deadline from request start, including continuously streaming responses.
+
+## 2026-06-12 Protected Answer Debug
+
+- `POST /v1/chat/answer-debug` is tenant-scoped and protected by `AdminApiGuard`.
+- Body: `{ "question": string }`, length 1-4000.
+- The response includes tenant slug/display name, question, answer, answer source, knowledge hit/miss reason/counts, requested/used provider mode, fallback state, allowlisted provider metadata, retrieved chunk previews/scores, and sanitized citations.
+- The response must not include tenant IDs, raw prompts/hidden instructions, auth headers, API/admin tokens, provider secret config, or citation `sourceLocator`.
+- Admin-web calls this route only through same-origin `/api/admin/chat/answer-debug`.
+- Knowledge document records now include optional `checksum`, which was already stored in the existing Prisma model.
+
 ## 2026-06-10 Tenant Profile Image Sources
 
 - `PATCH /v1/tenants/:tenantSlug/ai-profile` accepts `logoUrl` and `avatarUrl` as either an http/https URL up to 1000 characters or an uploaded PNG/JPEG/WebP/GIF data URL representing an image up to 1 MB.

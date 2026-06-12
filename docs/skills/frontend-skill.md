@@ -1,5 +1,12 @@
 # 前端 Skill
 
+## 2026-06-12 Knowledge Debug And Management UX
+
+- `/admin` Knowledge Base includes an Answer Debug panel that calls protected `/api/admin/chat/answer-debug` through the existing server-side proxy.
+- The panel has idle/loading/error/success states and displays generated answer, knowledge hit/miss reason, retrieved chunk previews/scores, backend citations, fallback state, and safe provider metadata.
+- Knowledge management now exposes document status/source/chunk count/ingested time/checksum, admin-only chunk previews, URL import, and clear reprocess/archive/delete feedback.
+- Browser code never receives `ADMIN_API_TOKEN`, `OPENAI_API_KEY`, raw prompts, or hidden tenant profile rules.
+
 ## 2026-06-12 Chat Restore And Latest-Message UX
 
 - `/chat` is force-dynamic and fetches the public tenant profile server-side with `x-tenant-slug`, then passes it to `CustomerWidget` as `initialProfile`.

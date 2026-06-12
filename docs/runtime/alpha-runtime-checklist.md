@@ -45,4 +45,14 @@ Do not treat the current alpha runtime as production-ready until:
 - Public customer conversation read and realtime only expose the current visitor/conversation.
 - Protected tenant, knowledge, admin conversation, and admin realtime routes reject missing/invalid admin token.
 - Protected tenant AI profile read/update routes reject missing/invalid admin token and accept a valid token.
+- Protected `POST /v1/chat/answer-debug` rejects missing/invalid admin token and accepts a valid token through the admin-web proxy.
 - Protected routes accept a valid admin token through the admin-web server-side proxy.
+
+## Knowledge Answer Quality Smoke
+
+- In `/admin`, inspect a selected knowledge document's source, status, chunk count, ingested time, checksum, and chunk previews.
+- Run a knowledge-backed Answer Debug question and confirm answer, retrieved chunks/scores, backend citations, provider/fallback state, and safe metadata.
+- Run a knowledge-miss question and confirm the result clearly explains that no relevant READY chunk met the threshold.
+- Confirm reprocess/archive/delete actions show clear success or safe error feedback.
+- Confirm Answer Debug does not create customer-visible conversations/messages and does not display secrets, auth headers, raw prompts, hidden rules, tenant IDs, or provider secret config.
+- Before treating real OpenAI as alpha-ready, complete `docs/runtime/openai-enable-checklist.md` using user-managed real secrets and then repeat Answer Debug with a knowledge-backed question.

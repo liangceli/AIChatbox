@@ -1,5 +1,21 @@
 # 后端 Skill
 
+## 2026-06-12 URL Import SSRF Protection
+
+- Knowledge URL import accepts only public HTTP(S) targets and rejects embedded URL credentials.
+- `KnowledgeUrlSafetyService` rejects localhost/private/link-local/reserved/cloud-metadata IPv4 targets, non-public/special IPv6 targets, local/internal/metadata hostnames, and DNS names that resolve to any restricted address.
+- `KnowledgeUrlImportService` handles redirects manually, validates every redirect target, limits redirects to five, pins each request to a previously validated DNS address, limits response size to 2 MB, and applies a true 15-second absolute deadline from request start.
+- The absolute deadline destroys the active request/response even when a remote server continuously trickles data; every resolve/reject path clears its deadline timer.
+- URL import request failures return safe categorized messages instead of raw network errors.
+- Safe public HTML/text import behavior and existing product-neutral `KNOWLEDGE_IMPORT_USER_AGENT` remain unchanged.
+
+## 2026-06-12 Protected Answer Debug Notes
+
+- `AnswerDebugController` exposes protected `POST /v1/chat/answer-debug`; the `/v1/chat` tenant middleware supplies the current tenant and `AdminApiGuard` protects the route.
+- `AnswerDebugService` performs read-only tenant-scoped AgentConfig lookup, knowledge retrieval, and provider generation. It writes no customer/conversation/message records.
+- The response is constructed through explicit allowlists. Provider metadata exposes only name/mode/deterministic/fallback/model/fallback reason/latency/response ID; citations omit `sourceLocator`.
+- `KnowledgeDocumentRecord` now includes the already-stored optional checksum. No Prisma schema or migration changed.
+
 ## 2026-06-10 Tenant Profile Image Validation Notes
 
 - Tenant AI Profile `logoUrl` and `avatarUrl` validation accepts existing http/https URLs or upload-generated PNG/JPEG/WebP/GIF data URLs.

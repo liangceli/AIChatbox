@@ -1,5 +1,12 @@
 # AI Chatbox Skill
 
+## 2026-06-12 Admin Answer Debug Notes
+
+- Admin-only `POST /v1/chat/answer-debug` uses the same tenant profile, retrieval, provider resolver, deterministic fallback, and backend citation paths as customer chat.
+- It is intentionally non-persistent and does not affect customer conversation history or `PENDING_HUMAN`.
+- OpenAI remains opt-in; deterministic remains the default. Automated tests use mocked providers only.
+- Answer Debug never returns raw provider prompts, hidden profile rules, tenant IDs, API keys, admin tokens, auth headers, or provider secret configuration.
+
 ## 2026-06-12 Widget Restore Notes
 
 - The customer widget persists the active conversation ID in tenant-scoped browser localStorage.

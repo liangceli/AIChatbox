@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-06-12 - Add non-persistent protected knowledge answer debug
+
+Decision: Add a protected, tenant-scoped Answer Debug route and admin Knowledge Base debug panel that reuse current retrieval/provider behavior without persisting customer conversations or messages.
+
+Reason: Alpha answer-quality work needs visible retrieval evidence, backend citations, provider/fallback state, and safe metadata before real OpenAI launch testing.
+
+Trade-off: The debug surface exposes bounded admin-only chunk previews and safe provider metadata, but intentionally omits raw prompts, hidden rules, tenant IDs, provider secrets, auth values, and full analytics. Retrieval remains deterministic keyword/phrase search.
+
+Affected areas: API chat debug controller/service/tests, shared types, KnowledgeDocument checksum presenter, admin-web knowledge/debug UI, runtime/QA/AI/backend/frontend/API docs.
+
 ## 2026-06-05 - Add tenant AI profile foundation
 
 Decision: Reuse existing `AgentConfig` storage for tenant AI profile settings, add protected admin profile read/update, add public widget-safe profile read, pass profile context into LLM providers, and update widget/admin surfaces to consume profile basics.

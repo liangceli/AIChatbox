@@ -1,5 +1,235 @@
 # Latest Implementation Handoff
 
+## Latest P1 QA Follow-Up: Absolute URL Import Request Deadline
+
+### Required Fix
+
+- Replace the URL import socket inactivity timeout with a true 15-second absolute request deadline.
+- Terminate requests even when a remote server continuously sends small chunks.
+- Clear the deadline timer on every resolve/reject path and add a focused slow-trickle regression.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/api/src/modules/knowledge/knowledge-url-import.service.ts` | Adds an absolute per-request deadline, single-settle timer cleanup, and request/response destruction on deadline. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds a local slow-trickle HTTP regression proving continuous chunks cannot bypass the total deadline. |
+| `docs/skills/backend-skill.md`, `qa-skill.md`, `api-contract-skill.md`, `current-status.md` | Clarifies that URL import uses an absolute deadline rather than an inactivity timeout. |
+| `docs/ai-handoff/latest-implementation.md` | Adds this P1 follow-up handoff. |
+
+### Behavior Notes
+
+- Every URL import outbound request has a 15-second deadline measured from immediately before the request is sent.
+- Deadline expiry destroys both the active response and request, then returns the existing safe URL-fetch error through `KnowledgeUrlImportService`.
+- Success, request error, response error, size-limit failure, deadline expiry, synchronous request creation failure, and synchronous request-send failure all settle once and clear the deadline timer.
+- Existing URL validation, redirect validation, DNS pinning, response-size limit, API shape, admin protection, tenant scoping, and safe public import behavior remain unchanged.
+
+### Verification
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| `pnpm --filter @platform/api typecheck` | Passed | Absolute deadline implementation compiles. |
+| `pnpm --filter @platform/api lint` | Passed | Current lightweight TypeScript lint/sanity check. |
+| `pnpm --filter @platform/api test` | Passed | Includes slow-trickle absolute-deadline regression. |
+| `pnpm --filter @platform/api build` | Passed | Production API compilation passed. |
+| `pnpm typecheck` | Passed | 11/11 workspace packages. |
+| `pnpm lint` | Passed | 11/11 workspace packages. |
+| `pnpm test` | Passed | 11/11 workspace tasks. |
+| `pnpm build` | Passed | 11/11 workspace packages, including Admin-Web production build. |
+| `git diff --check` | Passed with warnings | No whitespace errors; existing Windows LF-to-CRLF warnings remain. |
+
+### Remaining Manual QA
+
+- Import a known public HTTP(S) HTML/text URL in a normal network environment.
+- Confirm a deliberately slow endpoint returns a safe failure after about 15 seconds.
+
+## Latest P1 QA Fix: Knowledge URL Import SSRF Protection
+
+### Required Fix
+
+- Fix the P1 URL-import SSRF risk identified in `docs/ai-handoff/latest-qa.md`.
+- Validate the initial target and every redirect server-side.
+- Reject loopback/private/link-local/cloud-metadata and other non-public targets while preserving safe public HTTP(S) imports.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/api/src/modules/knowledge/knowledge-url-safety.service.ts` | Adds URL parsing, hostname/DNS validation, restricted IPv4/IPv6 detection, and validated public-address resolution. |
+| `apps/api/src/modules/knowledge/knowledge-url-import.service.ts` | Adds manual redirect handling, per-hop validation, DNS-pinned HTTP(S) requests, response-size/timeout limits, safe errors, and existing HTML/text extraction. |
+| `apps/api/src/modules/knowledge/knowledge.service.ts` | Routes URL import through the new safe import service instead of unrestricted global `fetch`. |
+| `apps/api/src/modules/knowledge/knowledge.module.ts` | Registers the URL safety/import services. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds focused SSRF and safe-public-import regressions. |
+| `docs/skills/backend-skill.md`, `qa-skill.md`, `deployment-skill.md`, `api-contract-skill.md`, `current-status.md` | Records the URL import security contract, regression gate, and current status. |
+| `docs/runtime/alpha-knowledge-qa-checklist.md` | Adds manual public/restricted URL import checks. |
+| `docs/ai-handoff/latest-implementation.md` | Adds this P1 fix handoff. |
+
+### Behavior And Security Notes
+
+- URL import accepts only public `http:` and `https:` URLs and rejects embedded credentials.
+- Initial URL and every redirect target are validated before requesting.
+- Local/internal/metadata hostnames, loopback, RFC1918 private, carrier-grade NAT, link-local/cloud-metadata, reserved/documentation IPv4, non-public/special IPv6, and any DNS hostname returning a restricted address are rejected.
+- Each outbound request is pinned to an address returned by the successful safety validation, avoiding a second unvalidated DNS lookup.
+- Redirects are handled manually and limited to five.
+- URL responses are limited to 2 MB and each outbound request has a true 15-second absolute deadline.
+- Raw network errors are not returned to the caller.
+- Existing safe public HTML/text parsing, URL import API shapes, admin protection, tenant scoping, and product-neutral user-agent remain unchanged.
+- No new dependency, Prisma schema change, or migration was added.
+
+### Focused Regression Coverage
+
+- Rejects localhost, IPv4/IPv6 loopback, IPv4-mapped loopback, RFC1918, carrier-grade NAT, link-local/cloud metadata, Azure platform IP, metadata hostname, private DNS result, mixed public/private DNS result, embedded credentials, and non-HTTP(S).
+- Rejects a public URL redirecting to link-local cloud metadata before sending the restricted request.
+- Preserves a safe public redirect and HTML import.
+- Confirms representative public IPv4/IPv6 remain allowed and restricted IPv4/IPv6 remain blocked.
+- Confirms DNS-pinned requests support Node's all-address lookup mode used by the current runtime.
+
+### Verification
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| Initial focused API typecheck | Failed, then fixed | Node DNS address family needed explicit 4/6 validation/type narrowing; corrected before final verification. |
+| `pnpm --filter @platform/api typecheck` | Passed | New services and integration compile. |
+| `pnpm --filter @platform/api lint` | Passed | Current lightweight TypeScript lint/sanity check. |
+| `pnpm --filter @platform/api test` | Passed | Includes focused SSRF regressions and all existing provider/retrieval/handoff tests. |
+| `pnpm --filter @platform/api build` | Passed | Safe URL import services compile for production. |
+| `pnpm typecheck` | Passed | 11/11 workspace packages. |
+| `pnpm lint` | Passed | 11/11 workspace packages. |
+| `pnpm test` | Passed | 11/11 workspace tasks; several packages remain placeholder tests. |
+| Protected URL-import route smoke | Passed | Protected knowledge-base list returned `200`; importing `http://127.0.0.1:4000/...` was rejected with `400`. No token or response body was printed. |
+| Direct external safe-public import smoke | Blocked by environment | The sandbox denied outbound `https://example.com` with `EACCES`; native `fetch` failed the same way. Safe public redirect/HTML and Node multi-address lookup remain covered by focused regressions. |
+| `git diff --check` | Passed with warnings | No whitespace errors; existing Windows LF-to-CRLF warnings remain. |
+| Full workspace/Admin-Web build | Not run | Active local dev listeners on ports 3000/4000; skipped because this backend-only P1 does not change Admin-Web and to avoid Next `.next` dev/build interference. |
+
+### Remaining Manual QA
+
+- Import a known public HTTP(S) HTML/text URL and confirm normal ingestion.
+- Confirm localhost/private/link-local/metadata and restricted redirect attempts return a safe error.
+- Keep deployment-level egress denial for internal/metadata networks as defense in depth.
+
+## Latest Task: Knowledge Answer Debug Panel And Knowledge Base UX Polish
+
+### Original Task Brief Summary
+
+- Add an admin-protected, tenant-scoped Answer Debug capability that explains current retrieval/provider/citation/fallback behavior without exposing secrets or creating customer-visible conversations.
+- Add a practical Admin-Web Answer Debug panel through the existing server-side `/api/admin/...` proxy.
+- Improve Knowledge Base document/source/status/chunk/action visibility for alpha QA.
+- Keep deterministic as default, OpenAI opt-in, automated OpenAI tests mocked, and existing chat/handoff/customer scope unchanged.
+- Update affected skills, runtime QA docs, and this handoff.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/api/src/modules/chat/answer-debug.controller.ts` | Adds protected `POST /v1/chat/answer-debug`. |
+| `apps/api/src/modules/chat/answer-debug.service.ts` | Adds non-persistent tenant-scoped retrieval/provider debug orchestration and explicit response sanitization. |
+| `apps/api/src/modules/chat/dto/run-answer-debug.dto.ts` | Validates debug question length/content. |
+| `apps/api/src/modules/chat/chat.module.ts` | Registers Answer Debug controller/service and `AdminApiGuard`. |
+| `apps/api/src/modules/knowledge/knowledge.presenter.ts` | Returns the existing document checksum in admin knowledge records. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds guard, tenant-scope, hit/miss, non-persistence, citation, and secret-sanitization regressions. |
+| `packages/types/src/index.ts` | Adds Answer Debug request/result contracts and optional knowledge document checksum. |
+| `apps/admin-web/app/components/answer-debug-panel.tsx` | Adds the practical Answer Debug admin UI with idle/loading/error/success states. |
+| `apps/admin-web/app/components/knowledge-base-panel.tsx` | Adds document list/detail/chunk inspection, URL import, and reprocess/archive/delete feedback. |
+| `apps/admin-web/app/globals.css` | Adds responsive focused styles and interaction feedback for knowledge/debug surfaces. |
+| `apps/admin-web/scripts/admin-access.test.cjs` | Adds lightweight source smoke checks for debug/knowledge UI and browser-secret exclusions. |
+| `docs/runtime/alpha-knowledge-qa-checklist.md` | Adds alpha knowledge and real OpenAI manual QA checklist. |
+| `docs/runtime/openai-enable-checklist.md`, `docs/runtime/alpha-runtime-checklist.md` | Adds Answer Debug real-provider and alpha route/knowledge smoke flow. |
+| `docs/skills/*` affected AI/backend/frontend/API/QA/deployment/status/decision/summary files | Records current Answer Debug, knowledge UX, safety, and manual real-provider gate. |
+| `docs/ai-handoff/latest-implementation.md` | Adds this implementation handoff. |
+
+### Implementation Summary
+
+- `POST /v1/chat/answer-debug` uses the existing `/v1/chat` tenant middleware and class-level `AdminApiGuard`.
+- `AnswerDebugService` reads the resolved tenant's AgentConfig, calls `KnowledgeRetrievalService`, resolves the configured provider through `LlmProviderResolverService`, and generates a test answer using a non-persistent debug conversation context.
+- No customer, conversation, message, or debug database record is created.
+- Provider metadata and citations are rebuilt through explicit allowlists before returning.
+- Debug response includes tenant slug/display name, question, answer, answer source, knowledge hit/miss reason/counts, requested/used provider mode, fallback state, safe provider metadata, bounded chunk previews/scores, and sanitized backend citations.
+- Knowledge document checksum visibility uses the existing Prisma field; no schema or migration changed.
+
+### User-Visible Changes
+
+- `/admin` Knowledge Base now shows selected knowledge base documents with source, status, chunk count, and latest ingestion/update time.
+- Selecting a document shows checksum, lifecycle actions, and admin-only chunk previews.
+- File upload and URL import are explicit supported ingestion choices.
+- Reprocess/archive/delete show loading, success, safe error, empty, and confirmation feedback.
+- Answer Debug lets the admin run a tenant test question and inspect generated answer, knowledge hit/miss reason, chunks/scores, citations, provider mode, fallback state, and safe provider metadata.
+
+### API And Security Notes
+
+- New protected route: `POST /v1/chat/answer-debug`.
+- Admin-Web path: browser calls same-origin `POST /api/admin/chat/answer-debug`; existing server proxy injects backend admin protection server-side.
+- The response intentionally omits tenant IDs, raw prompts, hidden instructions/rules, auth headers, OpenAI/API/admin/access/session tokens, provider secret config, full provider request bodies, and citation `sourceLocator`.
+- Retrieved chunk content is bounded to a 600-character admin-only preview; citation excerpts are bounded to 240 characters.
+- Existing customer chat/widget, customer-scoped realtime/read, provider fallback, citation, tenant profile, handoff, and `PENDING_HUMAN` behavior were not changed.
+
+### External And Manual Requirements
+
+To intentionally verify real OpenAI, the user must set these only in local uncommitted `.env` or a secret manager, never in chat or Git:
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=<real key>
+OPENAI_MODEL=<chosen real model>
+```
+
+Then run:
+
+```bash
+pnpm --filter @platform/api smoke:openai
+```
+
+After smoke success, run a knowledge-backed question in `/admin` Answer Debug and verify OpenAI mode, answer, retrieved chunks, citations, safe metadata, and fallback state. Fake/test/local-only tokens are not alpha acceptance evidence.
+
+The current local runtime Answer Debug smoke returned a successful OpenAI-mode answer with retrieved chunks and citations, without returning configured secrets. The dedicated `smoke:openai` command and final manual real-provider acceptance still remain user/QA actions.
+
+### Verification Results
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| `pnpm typecheck` | Passed | 11/11 workspace packages. |
+| `pnpm lint` | Passed | 11/11 workspace packages; current lint remains TypeScript sanity checks. |
+| `pnpm test` | Passed | 11/11 tasks; API includes new focused Answer Debug regressions, several packages remain placeholders. |
+| `pnpm --filter @platform/api build` | Passed | New controller/service/DTO compile. |
+| `pnpm --filter @platform/types build` | Passed | Shared Answer Debug/checksum contracts compile. |
+| `pnpm --filter @platform/admin-web typecheck` | Passed | Knowledge/debug UI compiles after archive response-shape fix. |
+| `pnpm --filter @platform/admin-web lint` | Passed | Current lightweight lint/TypeScript check. |
+| `pnpm --filter @platform/admin-web test` | Passed | Includes debug panel/knowledge feature source smoke and browser-secret exclusions. |
+| Initial focused API test run | Failed, then fixed | Task-introduced classification order returned `provider_fallback` instead of `knowledge_miss` for a no-chunk deterministic fallback; logic was corrected and final focused/workspace tests pass. |
+| Direct API missing token smoke | Passed | `POST /v1/chat/answer-debug` returned 401. |
+| Direct API valid token smoke | Passed | Returned 201; response comparison found no configured Admin/OpenAI secret. |
+| Admin-Web access/proxy smoke | Passed | Access route returned 200 and `/api/admin/chat/answer-debug` returned 201. |
+| Live debug safe-field smoke | Passed | Answer/chunks/citations/provider fields present; no tenant ID/raw prompt/auth header/configured secret in response. |
+| Live `/admin` HTML smoke | Passed | Returned 200, includes Answer Debug/Knowledge Bases, excludes configured Admin/OpenAI secrets. |
+| `git diff --check` | Passed with warnings | No whitespace errors; existing Windows LF-to-CRLF warnings remain. |
+| Admin-Web/full workspace build | Not run | Ports 3000/4000 had active dev services; skipped to avoid Next dev/build `.next` corruption. |
+| Browser visual smoke | Blocked | In-app browser was unavailable in the current environment. |
+| `pnpm --filter @platform/api smoke:openai` | Not run | Must remain an explicit user/manual real-key acceptance step. |
+
+Two initial local HTTP smoke command forms could not start because root `node` could not resolve `dotenv` and a root `tsx.CMD` shim was absent. The smoke was rerun successfully through `pnpm --filter @platform/api exec tsx`; these were local invocation issues, not application failures.
+
+### Manual QA Suggestions
+
+- On desktop and mobile, open `/admin`, inspect knowledge documents/chunks, and confirm no overlap or broken responsive layout.
+- Test file upload and URL import success/error states.
+- Reprocess a READY document, archive it, confirm it no longer retrieves, and delete a disposable document.
+- Run a deterministic knowledge-hit and knowledge-miss Answer Debug question.
+- Confirm browser network responses never contain admin/OpenAI secrets, raw prompts, hidden rules, tenant IDs, or auth headers.
+- Complete `docs/runtime/alpha-knowledge-qa-checklist.md`.
+- Run the dedicated real OpenAI smoke and repeat a knowledge-backed Answer Debug question under manual QA.
+
+### Risks / Notes
+
+- Retrieval is still deterministic keyword/phrase scoring, not embeddings/vector search/reranking.
+- Chunk previews expose tenant knowledge to admin users by design; production auth/RBAC must replace the alpha token gate before production.
+- Knowledge actions are synchronous and can take time for large documents/URLs.
+- No frontend component/browser automation framework exists; Admin-Web tests remain lightweight and visual/mobile acceptance is manual.
+- Full admin-web production build remains to be rerun after stopping active dev services.
+
+### Docs Update Suggestions
+
+- Affected skills and runtime docs were updated in this task.
+- Codex Chat 3 should review this handoff/current diff, run the manual knowledge checklist, and guide the user through the dedicated real OpenAI smoke without requesting any secret value.
+
 ## Latest P1 QA Follow-Up: Branding Logo Clear And Handoff Activity Time
 
 ### Task Summary

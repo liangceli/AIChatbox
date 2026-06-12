@@ -1,5 +1,22 @@
 # Current Status
 
+## 2026-06-12 Knowledge URL Import SSRF Protection
+
+- URL import now accepts only safe public HTTP(S) targets.
+- Initial URLs and every redirect target are checked against local/internal/metadata hostnames, restricted IPv4/IPv6 ranges, and all DNS results.
+- Outbound requests use DNS-pinned validated public addresses, a five-redirect limit, a true 15-second absolute deadline, and a 2 MB response limit.
+- Continuous slow-trickle responses cannot extend a URL import request beyond the absolute deadline, and deadline timers are cleared on every completion path.
+- Safe public HTML/text import behavior remains supported; no new dependency or migration was added.
+
+## 2026-06-12 Knowledge Answer Debug And Alpha Knowledge UX
+
+- Protected `POST /v1/chat/answer-debug` runs tenant-scoped retrieval and the currently configured provider without creating a customer, conversation, or message.
+- Answer Debug returns only explicit safe fields: tenant slug/display name, question, answer, knowledge hit/miss reason, retrieved chunk previews/scores, backend citations, requested/used provider mode, fallback state, and allowlisted provider metadata.
+- Debug output intentionally omits tenant IDs, raw prompts, hidden instructions, auth headers, API/admin tokens, provider secret config, and citation `sourceLocator`.
+- Admin-web Knowledge Base now shows document source/status/chunk count/ingested time/checksum, document chunk previews, URL import, and clear reprocess/archive/delete feedback.
+- Real OpenAI debug remains user-gated: configure `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` only in local `.env` or a secret manager, run `pnpm --filter @platform/api smoke:openai`, then run a knowledge-backed question in Answer Debug.
+- No Prisma migration, public customer API change, provider default change, or real OpenAI automated test was introduced.
+
 ## 2026-06-12 Latest Commit And QA Reconciliation
 
 - Latest commit: `906440b small fix`.

@@ -1,5 +1,19 @@
 # Deployment Skill
 
+## 2026-06-12 URL Import Network Boundary
+
+- Knowledge URL import is limited to safe public HTTP(S) targets.
+- Runtime import requests validate DNS results and each redirect target, then pin the outbound request to a validated public address.
+- Loopback, private, link-local, cloud metadata, reserved/non-public IP ranges, local/internal hostnames, and mixed public/private DNS answers are rejected.
+- Deployment egress controls should still deny internal/metadata networks as defense in depth; application SSRF validation does not replace network-level egress policy.
+
+## 2026-06-12 Knowledge Debug Alpha Gate
+
+- Answer Debug is an admin-only alpha verification tool and must stay behind `AdminApiGuard` plus the admin-web server-side proxy.
+- Real OpenAI output still requires user-managed `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` in local uncommitted env or a deployment secret manager.
+- After `pnpm --filter @platform/api smoke:openai` passes, run a knowledge-backed question in `/admin` Answer Debug and verify OpenAI mode, citations, retrieved chunks, safe metadata, and no secret display.
+- Do not treat deterministic mode or fake/test tokens as proof of real online OpenAI readiness.
+
 ## Current Deployment State
 
 Production deployment is not defined yet. Current infrastructure is local-development focused.

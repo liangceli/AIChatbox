@@ -1,5 +1,13 @@
 # AI 与数据流 Skill
 
+## 2026-06-12 Answer Debug Notes
+
+- Protected `POST /v1/chat/answer-debug` reuses `KnowledgeRetrievalService` and `LlmProviderResolverService` for an admin test question.
+- The flow is non-persistent: it reads tenant AgentConfig/knowledge, runs retrieval/provider generation, and does not create customer-visible conversations or messages.
+- Returned retrieval data is limited to document/chunk IDs, title, source URI, score, chunk index, and a bounded content preview.
+- Returned citations omit `sourceLocator`; provider metadata is rebuilt from an explicit allowlist.
+- Knowledge hit/miss and fallback reasons are visible in admin-web, but raw prompts, hidden rules, tenant IDs, provider secrets, and auth values are not returned.
+
 ## 2026-06-03 Stabilization Notes
 
 - OpenAI is an explicit provider mode only: `AI_PROVIDER=openai`.

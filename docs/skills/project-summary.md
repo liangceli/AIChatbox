@@ -1,5 +1,9 @@
 # 项目汇总 Skill
 
+## 2026-06-12 Knowledge Answer Debug Note
+
+Admin users can now run a protected, non-persistent tenant answer debug request from the Knowledge Base area. It shows retrieval chunks/scores, backend citations, provider/fallback state, safe metadata, and knowledge hit/miss reason without exposing secrets or raw prompts. Knowledge management also exposes document readiness, checksum, source, chunk previews, and lifecycle actions for alpha QA.
+
 ## 2026-06-04 Product Direction Note
 
 The long-term priority is the user's personal/commercial Level 3 AI customer support + lead capture product. Current Haneco/Kasta references are seed/demo/reference or company-only context and must not define reusable platform core. After the 2026-06-04 alpha-safe access round, the repo is conditionally ready for a personal product repo split when the next work begins Level 3 lead capture, public personal branding, or company-specific integrations.

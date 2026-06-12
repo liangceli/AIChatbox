@@ -93,6 +93,7 @@ export interface KnowledgeDocumentRecord {
   status: string;
   sourceType: string;
   sourceUri?: string | null;
+  checksum?: string | null;
   chunkCount: number;
   createdAt: string;
   updatedAt: string;
@@ -220,6 +221,69 @@ export interface ImportUrlKnowledgeDocumentResult {
 
 export interface ReprocessKnowledgeDocumentRequest {
   content?: string;
+}
+
+export interface AnswerDebugRequest {
+  question: string;
+}
+
+export interface AnswerDebugProviderMetadata {
+  providerName: string;
+  mode: string;
+  deterministic: boolean;
+  usedFallback: boolean;
+  model?: string;
+  fallbackReason?: string;
+  latencyMs?: number;
+  responseId?: string;
+}
+
+export interface AnswerDebugRetrievedChunk {
+  knowledgeDocumentId: string;
+  chunkId: string;
+  title: string;
+  chunkIndex: number;
+  sourceUri?: string | null;
+  relevanceScore?: number;
+  contentPreview: string;
+}
+
+export interface AnswerDebugCitation {
+  knowledgeDocumentId: string;
+  chunkId: string;
+  title: string;
+  chunkIndex: number;
+  sourceUri?: string | null;
+  relevanceScore?: number;
+  excerpt?: string;
+}
+
+export interface AnswerDebugResult {
+  tenant: {
+    slug: string;
+    displayName: string;
+  };
+  question: string;
+  answer: string;
+  answerSource:
+    | "knowledge_hit"
+    | "knowledge_miss"
+    | "provider_fallback"
+    | "retrieval_hit_without_citations";
+  knowledge: {
+    outcome: "hit" | "miss";
+    reason: string;
+    retrievedChunkCount: number;
+    citationCount: number;
+  };
+  provider: {
+    requestedMode: string;
+    usedMode: string;
+    usedFallback: boolean;
+    metadata: AnswerDebugProviderMetadata;
+  };
+  retrievedChunks: AnswerDebugRetrievedChunk[];
+  citations: AnswerDebugCitation[];
 }
 
 export interface RequestConversationHandoffRequest {
