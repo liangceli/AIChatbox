@@ -22,6 +22,22 @@ async function run() {
     },
     agent: {
       displayName: "Smoke Test Assistant",
+      tenantAiProfile: {
+        assistantName: "Smoke Test Assistant",
+        companyDisplayName: "Smoke Test Tenant",
+        businessType: "customer support smoke test",
+        tone: "clear, concise, and careful",
+        welcomeMessage: "Hi, how can I help today?",
+        fallbackMessage:
+          "I do not have enough confirmed information to answer that. I can connect you with the team for help.",
+        handoffMessage: "I can pass this to a team member for support.",
+        safeAnswerInstructions: "Answer only from the provided smoke-test support context.",
+        sensitiveTopicInstructions: "For sensitive or uncertain questions, recommend human support.",
+        doNotAnswerInstructions: "Do not invent unsupported warranty terms or internal details.",
+        primaryColor: null,
+        logoUrl: null,
+        avatarUrl: null
+      },
       handoffEnabled: true
     },
     latestCustomerMessage: "Can you summarize the warranty coverage?",

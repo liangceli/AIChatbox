@@ -1,5 +1,24 @@
 # AI Chatbox Skill
 
+## 2026-06-05 Persistent Human Support Notes
+
+- Handoff now persists as explicit `PENDING_HUMAN` mode until the customer or an admin/agent ends it.
+- While `PENDING_HUMAN`, customer messages are still saved through `POST /v1/chat/messages`, but ChatService returns `assistantMessage: null` and does not call deterministic/OpenAI providers.
+- After saving a customer message, ChatService re-reads the latest persisted conversation status before resolving an AI provider. This prevents an in-flight agent reply or human-mode start from being overwritten by a reply generated from stale pre-handoff state.
+- ChatService also re-reads persisted conversation status after the provider returns and before saving an assistant message. If human mode started during provider generation, the generated reply is discarded, `assistantMessage` remains `null`, and `PENDING_HUMAN` is preserved.
+- The post-provider `PENDING_HUMAN` suppression path returns the latest persisted conversation unchanged, so a newer handoff event `lastMessageAt` is never replaced by an older customer-message timestamp.
+- Widget users can end human support themselves through `POST /v1/conversations/:conversationId/handoff/end`.
+- Admin/agent users can start or end human mode through protected human-support endpoints; agent replies no longer automatically return the conversation to AI.
+
+## 2026-06-05 Tenant AI Profile Notes
+
+- Chat requests now pass a tenant AI profile into the LLM provider request.
+- OpenAI prompt assembly uses assistant name, company display name, business type, tone, safe answer instructions, sensitive topic instructions, and do-not-answer instructions.
+- Platform safety rules stay above tenant profile text and explicitly override conflicting tenant profile instructions.
+- Public widget profile data includes only display-safe fields: assistant name, company display name, welcome/fallback/handoff messages, primary color, logo URL, and avatar URL.
+- Public widget profile data must not expose internal prompt rules, provider settings, tenant IDs, API keys, admin tokens, or hidden metadata.
+- Deterministic fallback still works without OpenAI and can use tenant fallback/handoff display messages.
+
 ## 2026-06-05 Runtime And OpenAI Safety Notes
 
 - OpenAI remains opt-in; `AI_PROVIDER=deterministic` is still the safe default.
@@ -63,7 +82,8 @@
 - API 校验 visitorId 与 conversation customer 匹配。
 - conversation 进入 `PENDING_HUMAN`。
 - 系统写入 `HANDOFF_EVENT` message。
-- Widget 在 pending 状态下禁用继续发送给 AI。
+- Widget 在 pending 状态下仍允许顾客继续发送消息给人工；这些消息不触发 AI。
+- Widget 的 Human 按钮在 pending 状态下变为结束人工支持，由顾客显式恢复 AI。
 
 ## Realtime Flow
 

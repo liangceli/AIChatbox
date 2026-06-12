@@ -1,10 +1,22 @@
-import { loadServerEnv } from "@platform/config";
+import { loadAdminWebEnv, loadWorkspaceEnv } from "@platform/config";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 const SESSION_PREFIX = "v1";
+let hasLoadedWorkspaceEnv = false;
+
+export function loadAdminWebRuntimeEnv(cwd = process.cwd()): void {
+  if (hasLoadedWorkspaceEnv) {
+    return;
+  }
+
+  loadWorkspaceEnv(cwd);
+  hasLoadedWorkspaceEnv = true;
+}
 
 export function getAdminWebConfig() {
-  const env = loadServerEnv(process.env);
+  loadAdminWebRuntimeEnv();
+
+  const env = loadAdminWebEnv(process.env);
   const accessToken = env.ADMIN_WEB_ACCESS_TOKEN?.trim();
   const sessionSecret = env.ADMIN_WEB_SESSION_SECRET?.trim();
   const adminApiToken = env.ADMIN_API_TOKEN?.trim();

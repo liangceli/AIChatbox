@@ -49,7 +49,7 @@ export class AssistantReplyService implements LlmProvider {
     const fallbackLead =
       input.agent.fallbackMessage ?? input.agent.welcomeMessage ?? `I am ${input.agent.displayName}.`;
     const handoffHint = input.agent.handoffEnabled
-      ? " If you need a person to take over, request human support in the chat."
+      ? ` ${input.agent.handoffMessage ?? "If you need a person to take over, request human support in the chat."}`
       : "";
 
     return {

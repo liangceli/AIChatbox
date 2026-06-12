@@ -29,6 +29,35 @@ export interface TenantOverviewRecord {
   updatedAt: string;
 }
 
+export interface TenantAiProfile {
+  assistantName: string;
+  companyDisplayName: string;
+  businessType: string;
+  tone: string;
+  welcomeMessage: string;
+  fallbackMessage: string;
+  handoffMessage: string;
+  safeAnswerInstructions: string;
+  sensitiveTopicInstructions: string;
+  doNotAnswerInstructions: string;
+  primaryColor?: string | null;
+  logoUrl?: string | null;
+  avatarUrl?: string | null;
+}
+
+export type UpdateTenantAiProfileRequest = Partial<TenantAiProfile>;
+
+export interface PublicTenantAiProfile {
+  assistantName: string;
+  companyDisplayName: string;
+  welcomeMessage: string;
+  fallbackMessage: string;
+  handoffMessage: string;
+  primaryColor?: string | null;
+  logoUrl?: string | null;
+  avatarUrl?: string | null;
+}
+
 export interface CreateTenantRequest {
   name: string;
   slug: string;
@@ -155,7 +184,7 @@ export interface SendChatMessageResponse {
   customerId: string;
   conversation: ConversationSummary;
   customerMessage: ChatMessageRecord;
-  assistantMessage: ChatMessageRecord;
+  assistantMessage?: ChatMessageRecord | null;
   messages: ChatMessageRecord[];
 }
 
@@ -195,6 +224,11 @@ export interface ReprocessKnowledgeDocumentRequest {
 
 export interface RequestConversationHandoffRequest {
   visitorId?: string;
+  reason?: string;
+}
+
+export interface UpdateHumanSupportRequest {
+  userId?: string;
   reason?: string;
 }
 

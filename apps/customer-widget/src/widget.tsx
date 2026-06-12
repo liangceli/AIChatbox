@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   ConversationDetail,
   MessageAuthorType,
+  PublicTenantAiProfile,
   SendChatMessageResponse,
   WidgetBootstrapOptions
 } from "@platform/types";
@@ -43,6 +44,9 @@ const brandLockupStyle: CSSProperties = {
 };
 
 const avatarStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   width: 40,
   height: 40,
   borderRadius: 14,
@@ -51,6 +55,15 @@ const avatarStyle: CSSProperties = {
   boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
   objectFit: "contain",
   padding: 6
+};
+
+const avatarInitialStyle: CSSProperties = {
+  ...avatarStyle,
+  objectFit: undefined,
+  padding: 0,
+  color: "#ffffff",
+  fontSize: 14,
+  fontWeight: 800
 };
 
 const titleStyle: CSSProperties = {
@@ -233,14 +246,51 @@ export function CustomerWidget({
   const [draft, setDraft] = useState("");
   const [visitorId, setVisitorId] = useState<string>(initialVisitorId ?? "");
   const [error, setError] = useState<string>();
+  const [profile, setProfile] = useState<PublicTenantAiProfile>();
   const [isSending, setIsSending] = useState(false);
   const [isRequestingHandoff, setIsRequestingHandoff] = useState(false);
+  const [isEndingHandoff, setIsEndingHandoff] = useState(false);
 
   useEffect(() => {
     setVisitorId(resolveAnonymousVisitorId(tenantSlug, initialVisitorId) ?? "");
     setConversation(null);
     setError(undefined);
   }, [initialVisitorId, tenantSlug]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadProfile() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/tenant-profile`, {
+          headers: {
+            "x-tenant-slug": tenantSlug
+          }
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as PublicTenantAiProfile;
+
+        if (isMounted) {
+          setProfile(payload);
+        }
+      } catch {
+        if (isMounted) {
+          setProfile(undefined);
+        }
+      }
+    }
+
+    setProfile(undefined);
+    void loadProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl, tenantSlug]);
 
   useEffect(() => {
     if (!conversation?.id) {
@@ -274,25 +324,36 @@ export function CustomerWidget({
   const messages = conversation?.messages ?? [];
   const statusText = isPendingHuman ? "Human pending" : conversation ? "AI online" : "Ready";
   const visitorLabel = visitorId ? visitorId.slice(0, 8) : "pending";
+  const assistantName = profile?.assistantName ?? theme?.title ?? "AI Support";
+  const companyDisplayName = profile?.companyDisplayName ?? tenantSlug;
+  const avatarUrl = profile?.avatarUrl ?? profile?.logoUrl;
+  const headerBackground =
+    theme?.headerBackground ??
+    (profile?.primaryColor
+      ? `linear-gradient(135deg, ${profile.primaryColor}, #111827)`
+      : headerStyle.background);
 
   const introCopy = useMemo(() => {
     if (!conversation) {
-      return "Hi, I can help answer questions and bring in a support agent when needed.";
+      return profile?.welcomeMessage ?? "Hi, I can help answer questions and bring in a support agent when needed.";
     }
 
     if (isPendingHuman) {
-      return "A support agent has been requested. New replies will appear here automatically.";
+      return (
+        profile?.handoffMessage ??
+        "A support agent is connected. You can keep messaging here or end human support when you are ready."
+      );
     }
 
-    return "I am tracking this conversation securely for the current tenant.";
-  }, [conversation, isPendingHuman]);
+    return `I am tracking this conversation securely for ${companyDisplayName}.`;
+  }, [conversation, isPendingHuman, profile?.welcomeMessage, profile?.handoffMessage, companyDisplayName]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const message = draft.trim();
 
-    if (!message || isSending || !visitorId || isPendingHuman) {
+    if (!message || isSending || !visitorId) {
       return;
     }
 
@@ -380,6 +441,42 @@ export function CustomerWidget({
     }
   }
 
+  async function endHandoff() {
+    if (!conversation?.id || !visitorId || !isPendingHuman || isEndingHandoff) {
+      return;
+    }
+
+    setError(undefined);
+    setIsEndingHandoff(true);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/conversations/${conversation.id}/handoff/end`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-tenant-slug": tenantSlug
+        },
+        body: JSON.stringify({
+          visitorId,
+          reason: "Customer ended human support from the widget."
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`End handoff request failed with status ${response.status}`);
+      }
+
+      const payload = (await response.json()) as ConversationDetail;
+      setConversation(payload);
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error ? requestError.message : "Unable to end human support."
+      );
+    } finally {
+      setIsEndingHandoff(false);
+    }
+  }
+
   async function loadConversationDetail(conversationId: string) {
     try {
       const response = await fetch(
@@ -409,15 +506,21 @@ export function CustomerWidget({
       <header
         style={{
           ...headerStyle,
-          background: theme?.headerBackground ?? headerStyle.background
+          background: headerBackground
         }}
       >
         <div style={headerTopStyle}>
           <div style={brandLockupStyle}>
-            <img style={avatarStyle} src="/images/logo.png" alt="" aria-hidden="true" />
+            {avatarUrl ? (
+              <img style={avatarStyle} src={avatarUrl} alt="" aria-hidden="true" />
+            ) : (
+              <span style={avatarInitialStyle} aria-hidden="true">
+                {getInitials(assistantName)}
+              </span>
+            )}
             <div style={{ minWidth: 0 }}>
-              <strong style={titleStyle}>{theme?.title ?? "AI Support"}</strong>
-              <div style={subtitleStyle}>Tenant-aware customer assistance</div>
+              <strong style={titleStyle}>{assistantName}</strong>
+              <div style={subtitleStyle}>{companyDisplayName}</div>
             </div>
           </div>
 
@@ -430,7 +533,7 @@ export function CustomerWidget({
 
       <div style={bodyStyle}>
         <div style={contextBarStyle}>
-          <span>Workspace: {tenantSlug}</span>
+          <span>Workspace: {companyDisplayName}</span>
           <span>Visitor: {visitorLabel}</span>
         </div>
 
@@ -487,13 +590,14 @@ export function CustomerWidget({
         <form onSubmit={handleSubmit} style={composerStyle}>
           <textarea
             aria-label="Message"
-            placeholder={isPendingHuman ? "Human support is pending." : "Type your question..."}
+            placeholder={
+              isPendingHuman ? "Message the support agent..." : "Type your question..."
+            }
             style={{
               ...textareaStyle,
-              opacity: isPendingHuman ? 0.65 : 1
+              opacity: 1
             }}
             value={draft}
-            disabled={isPendingHuman}
             onChange={(event) => setDraft(event.target.value)}
           />
 
@@ -502,29 +606,41 @@ export function CustomerWidget({
               type="submit"
               style={{
                 ...buttonStyle,
-                opacity: isSending || !visitorId || isPendingHuman ? 0.56 : 1,
-                cursor: isSending || !visitorId || isPendingHuman ? "not-allowed" : "pointer"
+                opacity: isSending || !visitorId ? 0.56 : 1,
+                cursor: isSending || !visitorId ? "not-allowed" : "pointer"
               }}
-              disabled={isSending || !visitorId || isPendingHuman}
+              disabled={isSending || !visitorId}
             >
               {isSending ? "Sending..." : "Send message"}
             </button>
 
-            <button
-              type="button"
-              style={{
-                ...secondaryButtonStyle,
-                opacity: !conversation?.id || isRequestingHandoff || isPendingHuman ? 0.56 : 1,
-                cursor:
-                  !conversation?.id || isRequestingHandoff || isPendingHuman
-                    ? "not-allowed"
-                    : "pointer"
-              }}
-              disabled={!conversation?.id || isRequestingHandoff || isPendingHuman}
-              onClick={requestHandoff}
-            >
-              {isRequestingHandoff ? "..." : "Human"}
-            </button>
+            {isPendingHuman ? (
+              <button
+                type="button"
+                style={{
+                  ...secondaryButtonStyle,
+                  opacity: !conversation?.id || isEndingHandoff ? 0.56 : 1,
+                  cursor: !conversation?.id || isEndingHandoff ? "not-allowed" : "pointer"
+                }}
+                disabled={!conversation?.id || isEndingHandoff}
+                onClick={endHandoff}
+              >
+                {isEndingHandoff ? "..." : "End human"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                style={{
+                  ...secondaryButtonStyle,
+                  opacity: !conversation?.id || isRequestingHandoff ? 0.56 : 1,
+                  cursor: !conversation?.id || isRequestingHandoff ? "not-allowed" : "pointer"
+                }}
+                disabled={!conversation?.id || isRequestingHandoff}
+                onClick={requestHandoff}
+              >
+                {isRequestingHandoff ? "..." : "Human"}
+              </button>
+            )}
 
           </div>
         </form>
@@ -539,4 +655,18 @@ export function CustomerWidget({
       </div>
     </section>
   );
+}
+
+function getInitials(value: string): string {
+  const words = value.trim().split(/\s+/).filter(Boolean);
+
+  if (words.length === 0) {
+    return "AI";
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
 }

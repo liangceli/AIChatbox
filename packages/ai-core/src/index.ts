@@ -1,4 +1,4 @@
-import type { Citation, MessageAuthorType } from "@platform/types";
+import type { Citation, MessageAuthorType, TenantAiProfile } from "@platform/types";
 import type { TenantRuntimeConfig } from "@platform/tenant-core";
 
 export type LlmProviderMode = "deterministic" | "disabled" | "openai";
@@ -13,7 +13,9 @@ export interface LlmAgentContext {
   displayName: string;
   welcomeMessage?: string | null;
   fallbackMessage?: string | null;
+  handoffMessage?: string | null;
   handoffEnabled?: boolean;
+  tenantAiProfile?: TenantAiProfile;
 }
 
 export interface LlmConversationContext {

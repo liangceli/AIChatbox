@@ -1,5 +1,26 @@
 # API Contract Skill
 
+## 2026-06-10 Tenant Profile Image Sources
+
+- `PATCH /v1/tenants/:tenantSlug/ai-profile` accepts `logoUrl` and `avatarUrl` as either an http/https URL up to 1000 characters or an uploaded PNG/JPEG/WebP/GIF data URL representing an image up to 1 MB.
+- `PATCH /v1/tenants/:tenantSlug/ai-profile` treats explicit `logoUrl: null` or `avatarUrl: null` as a clear operation; omitted fields remain unchanged.
+- Explicit media `null` also stops all older media fallback sources, including tenant branding Logo fallback; missing/`undefined` values may continue fallback.
+- Other data URL MIME types, unsafe schemes, oversized sources, and malformed values are rejected.
+- The route remains admin-protected and uses the existing admin-web server-side proxy.
+
+## 2026-06-05 Persistent Human Support Mode
+
+- `PENDING_HUMAN` is an explicit human-support mode, not a one-reply pause.
+- `POST /v1/chat/messages` accepts customer messages during `PENDING_HUMAN`, saves them for the agent, returns updated `messages`, sets `assistantMessage: null`, and does not call the AI provider.
+- If a conversation changes to `PENDING_HUMAN` while a provider call is already running, `POST /v1/chat/messages` discards that provider result, persists no assistant message, and returns `assistantMessage: null`.
+- That provider-time suppression path preserves the latest persisted conversation activity timestamp; it must not move `lastMessageAt` backwards.
+- `SendChatMessageResponse.assistantMessage` is nullable/optional when human support is active.
+- Agent replies keep the conversation in `PENDING_HUMAN` until the customer or an admin/agent explicitly ends human support.
+- Public customer end-human endpoint: `POST /v1/conversations/:conversationId/handoff/end` with `visitorId` and optional `reason`.
+- Protected admin/agent controls:
+  - `POST /v1/conversations/:conversationId/human-support/start`
+  - `POST /v1/conversations/:conversationId/human-support/end`
+
 ## 2026-06-04 Admin Protection Header
 
 Protected admin/agent/platform endpoints require one of:
@@ -15,6 +36,30 @@ Route map smoke expectation:
 - Public customer/widget endpoints, including customer chat, customer handoff, customer-scoped conversation detail/messages, and customer-scoped realtime SSE, must remain reachable without an admin token under the current alpha contract.
 - `GET /v1/realtime/conversations` is admin-protected and returns tenant-scoped conversation snapshots containing the conversation list, `pendingHumanCount`, and `activeConversation` detail.
 - `GET /v1/realtime/customer-conversation` is public but requires tenant slug, conversationId, and visitorId, and only returns that customer conversation snapshot.
+
+## 2026-06-05 Tenant AI Profile Endpoints
+
+Protected admin endpoints:
+
+- `GET /v1/tenants/:tenantSlug/ai-profile`: returns full `TenantAiProfile`, including internal prompt guidance. Requires admin protection.
+- `PATCH /v1/tenants/:tenantSlug/ai-profile`: updates profile fields. Requires admin protection. Validates trimmed strings, length limits, `#RRGGBB` primary color, and safe http/https or uploaded image sources for logo/avatar.
+
+Public customer/widget endpoint:
+
+- `GET /v1/tenant-profile`: tenant-scoped through `x-tenant-slug`, returns `PublicTenantAiProfile`.
+
+Public profile fields:
+
+- `assistantName`
+- `companyDisplayName`
+- `welcomeMessage`
+- `fallbackMessage`
+- `handoffMessage`
+- `primaryColor`
+- `logoUrl`
+- `avatarUrl`
+
+Public profile must not return safe answer instructions, sensitive topic instructions, do-not-answer instructions, provider settings, tenant IDs, admin tokens, OpenAI keys, or hidden metadata.
 
 ## 基础规则
 
@@ -69,14 +114,14 @@ Response: `SendChatMessageResponse`
 - `customerId`
 - `conversation`
 - `customerMessage`
-- `assistantMessage`
+- `assistantMessage` (`null` when human support mode is active)
 - `messages`
 
 规则：
 
 - 空消息返回 400。
 - 如果传入 conversationId，但不属于当前 tenant + visitor，返回 404。
-- 如果 conversation 为 `PENDING_HUMAN`，不再生成 AI reply，返回 400。
+- 如果 conversation 为 `PENDING_HUMAN`，保存 customer message，不生成 AI reply，返回 `assistantMessage: null` 和最新 messages。
 
 ## Conversations
 
@@ -90,6 +135,9 @@ Response: `SendChatMessageResponse`
 - `GET /v1/conversations/:conversationId/messages`: admin-protected，返回 `ChatMessageRecord[]`。
 - `GET /v1/conversations/:conversationId/customer-messages?visitorId=...`: public customer-scoped，返回 `ChatMessageRecord[]`。
 - `POST /v1/conversations/:conversationId/handoff`: 请求人工。
+- `POST /v1/conversations/:conversationId/handoff/end`: customer-scoped 结束人工支持。
+- `POST /v1/conversations/:conversationId/human-support/start`: admin-protected 开启人工模式。
+- `POST /v1/conversations/:conversationId/human-support/end`: admin-protected 结束人工模式。
 - `POST /v1/conversations/:conversationId/assign`: 分配 support user。
 - `POST /v1/conversations/:conversationId/agent-replies`: 发送人工回复。
 - `DELETE /v1/conversations/:conversationId/messages`: 清空消息并重置 conversation 状态。
@@ -108,6 +156,11 @@ Agent reply body:
 
 - `userId`: string
 - `message`: string, 1-4000
+
+Human support control body:
+
+- `userId?`: string
+- `reason?`: string, max 500
 
 ## Knowledge Bases
 

@@ -2,9 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ChatMessageRecord,
   ConversationDetail,
   ConversationListItem,
-  SupportUserRecord
+  SupportUserRecord,
+  UpdateHumanSupportRequest
 } from "@platform/types";
 
 const customerAvatarUrl =
@@ -13,14 +15,12 @@ const customerAvatarUrl =
 export function ConversationOpsPanel({
   apiBaseUrl,
   tenantSlug,
-  allowAssignment = true,
-  messagesNewestFirst = false
+  allowAssignment = true
 }: {
   apiBaseUrl: string;
   tenantSlug: string;
   allowAssignment?: boolean;
   allowAdminDeletes?: boolean;
-  messagesNewestFirst?: boolean;
 }) {
   const [filter, setFilter] = useState<string>("pending_human");
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
@@ -32,6 +32,7 @@ export function ConversationOpsPanel({
   const [error, setError] = useState<string>();
   const [isLoading, setIsLoading] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
+  const [isUpdatingHumanSupport, setIsUpdatingHumanSupport] = useState(false);
   const conversationsSignatureRef = useRef("");
   const detailSignatureRef = useRef("");
 
@@ -113,12 +114,16 @@ export function ConversationOpsPanel({
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId]
   );
-  const visibleMessages = useMemo(() => {
+  const chronologicalMessages = useMemo(() => {
     const messages = conversationDetail?.messages ?? [];
 
-    return messagesNewestFirst ? [...messages].reverse() : messages;
-  }, [conversationDetail?.messages, messagesNewestFirst]);
-  const latestMessage = visibleMessages.at(-1)?.content ?? "";
+    return [...messages].sort(
+      (firstMessage, secondMessage) =>
+        new Date(firstMessage.createdAt).getTime() - new Date(secondMessage.createdAt).getTime()
+    );
+  }, [conversationDetail?.messages]);
+  const latestMessage = chronologicalMessages.at(-1)?.content ?? "";
+  const isHumanModeActive = conversationDetail?.status === "pending_human";
 
   async function loadSupportUsers() {
     try {
@@ -232,6 +237,54 @@ export function ConversationOpsPanel({
     }
   }
 
+  async function updateHumanSupportMode(nextEnabled: boolean) {
+    if (!conversationDetail?.id || isUpdatingHumanSupport) {
+      return;
+    }
+
+    setIsUpdatingHumanSupport(true);
+    setError(undefined);
+
+    try {
+      const body: UpdateHumanSupportRequest = {
+        ...(selectedUserId ? { userId: selectedUserId } : {}),
+        reason: nextEnabled
+          ? "Agent enabled human support from the console."
+          : "Agent ended human support from the console."
+      };
+      const response = await fetch(
+        `${apiBaseUrl}/conversations/${conversationDetail.id}/human-support/${nextEnabled ? "start" : "end"}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-tenant-slug": tenantSlug
+          },
+          body: JSON.stringify(body)
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `Human support ${nextEnabled ? "start" : "end"} failed with status ${response.status}`
+        );
+      }
+
+      const payload = (await response.json()) as ConversationDetail;
+      detailSignatureRef.current = createDetailSignature(payload);
+      setConversationDetail(payload);
+      await loadConversations(filter);
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to update human support mode."
+      );
+    } finally {
+      setIsUpdatingHumanSupport(false);
+    }
+  }
+
   return (
     <section className="conversation-grid">
       <div className="chat-list-panel">
@@ -331,21 +384,78 @@ export function ConversationOpsPanel({
           </div>
         </div>
 
+        <div className="handoff-control-card glass-card">
+          <div className="handoff-control-heading">
+            <div>
+              <h3>Human Mode</h3>
+              <p>
+                {isHumanModeActive
+                  ? "AI is paused for this conversation until a customer or agent ends human support."
+                  : "AI can reply to customer messages unless human support is enabled."}
+              </p>
+            </div>
+            <Icon name={isHumanModeActive ? "support_agent" : "smart_toy"} />
+          </div>
+          <button
+            type="button"
+            className={isHumanModeActive ? "handoff-toggle active" : "handoff-toggle"}
+            disabled={!conversationDetail || isUpdatingHumanSupport}
+            onClick={() => updateHumanSupportMode(!isHumanModeActive)}
+          >
+            <Icon name={isHumanModeActive ? "toggle_off" : "toggle_on"} />
+            <span>
+              {isUpdatingHumanSupport
+                ? "Updating..."
+                : isHumanModeActive
+                  ? "End human support"
+                  : "Start human support"}
+            </span>
+          </button>
+        </div>
+
         <form className="human-reply-card" onSubmit={handleAgentReply}>
           <h3>
             <Icon name="record_voice_over" />
             Human Reply
           </h3>
-          <p>Intervene now to override AI and assist the user directly.</p>
+          <p>
+            Full customer, AI, agent, and system history is shown here for the selected conversation.
+          </p>
+          <div className="human-reply-history" aria-live="polite">
+            <div className="human-reply-history-heading">
+              <strong>Conversation History</strong>
+              <span>
+                {conversationDetail
+                  ? `${chronologicalMessages.length} messages`
+                  : "No conversation selected"}
+              </span>
+            </div>
+            <div className="conversation-history-list">
+              {!conversationDetail ? (
+                <div className="conversation-history-empty">
+                  Select a conversation to view its complete message history.
+                </div>
+              ) : chronologicalMessages.length === 0 ? (
+                <div className="conversation-history-empty">
+                  No messages have been recorded for this conversation.
+                </div>
+              ) : (
+                chronologicalMessages.map((message) => (
+                  <MessageHistoryItem key={message.id} message={message} />
+                ))
+              )}
+            </div>
+          </div>
           <textarea
             value={replyDraft}
             onChange={(event) => setReplyDraft(event.target.value)}
-            placeholder="Type response..."
+            placeholder={conversationDetail ? "Type response..." : "Select a conversation first"}
+            disabled={!conversationDetail}
           />
           <button
             type="submit"
             className="primary-btn"
-            disabled={isReplying || !selectedUserId || !replyDraft.trim()}
+            disabled={isReplying || !conversationDetail || !selectedUserId || !replyDraft.trim()}
           >
             <Icon name="send" />
             <span>{isReplying ? "Sending..." : "Send Reply"}</span>
@@ -360,6 +470,54 @@ export function ConversationOpsPanel({
 
 function Icon({ name }: { name: string }) {
   return <span className="material-symbols-outlined">{name}</span>;
+}
+
+function MessageHistoryItem({ message }: { message: ChatMessageRecord }) {
+  const role = getMessageRole(message);
+
+  return (
+    <article className={`history-message ${message.authorType}`}>
+      <div className="history-message-meta">
+        <span className={`history-role-pill ${message.authorType}`}>{role.label}</span>
+        <time dateTime={message.createdAt}>{formatTimestamp(message.createdAt)}</time>
+      </div>
+      <div className="history-message-content">{message.content}</div>
+      {message.authorName ? <div className="history-author">By {message.authorName}</div> : null}
+      {message.messageType !== "text" ? (
+        <div className="history-message-type">{formatMessageType(message.messageType)}</div>
+      ) : null}
+      {message.citations?.length ? (
+        <div className="history-citations">
+          <strong>Sources</strong>
+          {message.citations.map((citation) => (
+            <div key={`${message.id}-${citation.chunkId}-${citation.chunkIndex}`} className="history-citation">
+              <span>{citation.title}</span>
+              <small>
+                chunk {citation.chunkIndex}
+                {citation.sourceUri ? ` - ${citation.sourceUri}` : ""}
+              </small>
+              {citation.excerpt ? <em>{citation.excerpt}</em> : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function getMessageRole(message: ChatMessageRecord) {
+  switch (message.authorType) {
+    case "customer":
+      return { label: "Customer" };
+    case "assistant":
+      return { label: "Assistant" };
+    case "agent":
+      return { label: "Agent" };
+    case "system":
+      return { label: message.messageType === "handoff_event" ? "Handoff" : "System" };
+    default:
+      return { label: "Message" };
+  }
 }
 
 function getCustomerName(conversation: ConversationListItem): string {
@@ -398,6 +556,25 @@ function formatRelativeTime(value?: string | null): string {
   }
 
   return `${Math.round(diffMinutes / 60)}h`;
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Unknown time";
+  }
+
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatMessageType(value: string): string {
+  return value.replace(/_/g, " ");
 }
 
 function getConversationDisplayStatus(conversation: ConversationListItem) {

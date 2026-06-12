@@ -16,6 +16,10 @@ export async function POST(request: Request, context: RouteContext) {
   return proxyAdminRequest(request, context);
 }
 
+export async function PATCH(request: Request, context: RouteContext) {
+  return proxyAdminRequest(request, context);
+}
+
 export async function DELETE(request: Request, context: RouteContext) {
   return proxyAdminRequest(request, context);
 }

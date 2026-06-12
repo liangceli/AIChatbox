@@ -89,7 +89,14 @@ Tenant-specific assistant settings:
 
 Current deterministic reply uses display/fallback/welcome/handoff fields, but not a real LLM system prompt.
 
+Tenant AI profile foundation:
+
+- Profile storage reuses `AgentConfig`; no new table or migration is required.
+- `displayName`, `welcomeMessage`, and `fallbackMessage` store core display messages.
+- `widgetSettings` stores widget-safe profile display fields such as title/company display name, handoff message, primary color, logo URL, and avatar URL.
+- `metadata.aiProfile` stores full profile guidance, including business type, tone, safe answer instructions, sensitive topic instructions, and do-not-answer instructions.
+- Public widget profile responses must be derived from safe display fields and must not expose `metadata.aiProfile` internal prompt guidance.
+
 ## Seed Data
 
 `packages/database/prisma/seed.ts` creates/upserts a `kasta` demo tenant, support admin user, role, AgentConfig, and default knowledge base. Kasta must remain seed/demo data only, not platform core logic.
-

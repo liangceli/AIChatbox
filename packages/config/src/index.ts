@@ -75,6 +75,18 @@ export const serverEnvSchema = z
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
 
+export const adminWebEnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  API_INTERNAL_BASE_URL: z.string().min(1).default("http://localhost:4000/v1"),
+  ADMIN_API_TOKEN: z.string().optional(),
+  ADMIN_WEB_ACCESS_TOKEN: z.string().optional(),
+  ADMIN_WEB_SESSION_COOKIE_NAME: z.string().min(1).default("platform_admin_session"),
+  ADMIN_WEB_SESSION_SECRET: z.string().optional(),
+  ADMIN_WEB_SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(43200)
+});
+
+export type AdminWebEnv = z.infer<typeof adminWebEnvSchema>;
+
 export function loadWorkspaceEnv(cwd = process.cwd()): void {
   const candidates = [resolve(cwd, ".env"), resolve(cwd, "../../.env")];
 
@@ -90,4 +102,8 @@ export function loadWorkspaceEnv(cwd = process.cwd()): void {
 
 export function loadServerEnv(source: Record<string, string | undefined>): ServerEnv {
   return serverEnvSchema.parse(source);
+}
+
+export function loadAdminWebEnv(source: Record<string, string | undefined>): AdminWebEnv {
+  return adminWebEnvSchema.parse(source);
 }

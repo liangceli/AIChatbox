@@ -8,6 +8,7 @@ This repo is a reusable white-label platform. Runtime env examples must stay pro
 - `.env.local.example`: local development and local QA. The `test-*` tokens in this file are local-only placeholders.
 - `.env.staging.example`: production-like staging/alpha. Do not use local QA tokens.
 - `.env.production.example`: production reference. Store real secrets in the deployment secret manager.
+- `docs/runtime/local-dev-checklist.md`: normal local startup, URL map, admin-web proxy path, and troubleshooting.
 
 Do not edit or commit a real `.env` with secrets.
 
@@ -64,6 +65,8 @@ Admin web uses a server-side proxy/access gate:
 - `ADMIN_WEB_SESSION_TTL_SECONDS`
 
 Never expose these through `NEXT_PUBLIC_*`, bundled browser code, local storage, API responses, or logs.
+
+Admin-web server routes load the repository-root `.env` before validating these access/proxy keys. Local `/admin/access` should work predictably when the root `.env` contains matching values, for example `ADMIN_WEB_ACCESS_TOKEN=test-web-token` in local placeholder QA.
 
 ## Product-Neutral Runtime Values
 

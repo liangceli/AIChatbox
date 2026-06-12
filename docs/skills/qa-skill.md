@@ -9,12 +9,14 @@ Use from repository root.
 - Start local infra: `docker compose -f infra/docker-compose.yml up -d`
 - Apply migrations: `pnpm --filter @platform/database exec dotenv -e ../../.env -- prisma migrate deploy`
 - Seed database: `pnpm db:seed`
+- Start local dev servers manually when browser QA is needed: `pnpm dev` from the repository root. Admin-web runs on `http://localhost:3000`; API runs on `http://localhost:4000/v1`.
 - Typecheck workspace: `pnpm typecheck`
 - Lint workspace: `pnpm lint`
 - Build workspace: `pnpm build`
 - Workspace tests: `pnpm test`
 - API provider/retrieval tests: `pnpm --filter @platform/api test`
 - Manual OpenAI real-key smoke helper: `pnpm --filter @platform/api smoke:openai`
+- Local admin-web access smoke: `powershell -ExecutionPolicy Bypass -File scripts/smoke-admin-web-access.ps1`; expected output `admin-access-status=200` and no token value. The smoke uses deterministic requested-port behavior; pass `-Port <free-port>` when intentionally testing a non-3000 admin-web port.
 
 Current scripts are still lightweight. API now has provider behavior tests, while some other packages still use placeholders.
 
@@ -48,10 +50,18 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Admin realtime SSE rejects missing/invalid admin token and accepts valid admin token.
 - Customer realtime SSE remains reachable without admin token but only returns one visitor/conversation snapshot.
 - Admin-web local alpha testing must not expose `ADMIN_API_TOKEN` in browser code. Use `/admin/access` and same-origin `/api/admin/...` proxy with httpOnly cookie.
+- Admin-web local access must load the repository-root `.env`; `/admin/access` should not return 500 when `API_INTERNAL_BASE_URL`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, and `ADMIN_WEB_SESSION_SECRET` are present. With local placeholder config, `ADMIN_WEB_ACCESS_TOKEN=test-web-token` must accept `test-web-token`.
 - Tenant-scoped endpoints reject missing `x-tenant-slug`.
 - Tenant-scoped reads/writes never expose another tenant's records.
 - `POST /chat/messages` refuses empty messages and max-length violations.
 - Existing `PENDING_HUMAN` conversation cannot receive another AI reply.
+- Existing `PENDING_HUMAN` conversation should still accept customer messages, save them for the agent, return `assistantMessage: null`, and avoid provider calls.
+- Agent replies must keep the conversation in `PENDING_HUMAN`; the next customer message must not be answered by AI until human support is explicitly ended.
+- Regression coverage must simulate an initial stale non-human status followed by the latest `PENDING_HUMAN` status after an agent reply; the customer message must be saved, provider resolution must not run, and `assistantMessage` must be null.
+- Regression coverage must also simulate human mode starting while the provider call is in progress; after provider completion, no assistant message may be persisted and `PENDING_HUMAN` must remain active.
+- Provider-time handoff regression coverage must use a handoff event newer than the customer message and assert the suppression branch does not update the conversation or move `lastMessageAt` backwards.
+- Customer widget should show an End human action during `pending_human`; after ending, the next customer message can receive AI again.
+- Admin/agent Human Mode controls should start and end `PENDING_HUMAN` through protected proxy calls.
 - Chat provider resolution returns deterministic provider by default and does not require external API keys.
 - `AI_PROVIDER=openai` requires `OPENAI_API_KEY` and `OPENAI_MODEL`; config validation should fail clearly when missing.
 - OpenAI enablement follows `docs/runtime/openai-enable-checklist.md`; smoke output must not print API keys, auth headers, or raw env dumps.
@@ -68,6 +78,22 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - `case` should not match `showcase` by substring alone; current Kasta manual smoke can still return real `Case Studies` citations when independent case evidence exists.
 - OpenAI smoke helper is not part of normal tests and requires explicit OpenAI env.
 - OpenAI provider failure falls back to deterministic content/citations behavior and records fallback metadata.
+- Tenant AI profile defaults exist for new/empty profiles.
+- Protected tenant AI profile read/update routes require admin protection.
+- Tenant AI profile update rejects invalid display inputs such as non-hex primary colors, unsafe/non-image logo/avatar sources, and oversized uploaded images.
+- Public widget-safe tenant profile does not expose safe answer instructions, sensitive topic instructions, do-not-answer instructions, provider settings, tenant IDs, or secrets.
+- OpenAI prompt assembly includes tenant assistant identity, company display name, business type, tone, and profile guidance while keeping platform safety rules higher priority.
+- Widget displays tenant profile basics without changing visitorId persistence, chat send, handoff, customer-scoped realtime, or agent reply display.
+- Admin/agent selected conversations of every status should show complete history inside the Human Reply box, including citations when present.
+- Admin drawer navigation should scroll/focus Dashboard, Knowledge Base, Conversations, and Settings; unimplemented items should show coming-soon feedback.
+- Admin topbar should remain fixed at the viewport top while the page scrolls on desktop and mobile; opening the navigation drawer or focusing/scanning lower sections must not move it, and content must not render beneath it.
+- Main admin modules and interactive rows/buttons should provide visible hover/active feedback without layout overlap; reduced-motion preference should disable meaningful animation.
+- Selecting any conversation status should render the complete chronological customer/AI/agent/system history inside the Human Reply card.
+- AI Profile Primary Color should expose a visible current-color preview, clickable preset swatches, native custom picker, and editable hex value; all color controls should stay synchronized.
+- AI Profile Avatar/Logo upload should remain the primary action and should preview/save/remove PNG/JPEG/WebP/GIF files up to 1 MB; the always-visible URL fallback should remain usable.
+- AI Profile Avatar/Logo removal must send explicit `null`; save and reload must not restore the previously persisted media.
+- Media-clear regression coverage must include a tenant branding Logo and assert explicit `logoUrl: null` remains null after persistence and reload instead of falling back to branding.
+- Tenant profile image validation should reject non-image data URLs, unsafe schemes, unsupported types, and oversized image sources.
 - Handoff rejects mismatched visitorId.
 - Public handoff rejects missing/blank visitorId.
 - Public handoff succeeds with the correct visitorId.
@@ -104,3 +130,15 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Smoke helper requires `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL`; missing env fails clearly without printing API keys.
 - Smoke helper success summary reports provider mode, real OpenAI attempt, assistant text, citations, provider metadata presence, and fallback state.
 - Manual real-key smoke test remains pending until an OpenAI API key is available.
+
+## Tenant Profile Real OpenAI Manual Gate
+
+- User must configure only in local `.env` or a secret-managed environment:
+  - `AI_PROVIDER=openai`
+  - `OPENAI_API_KEY=<real key set by user>`
+  - `OPENAI_MODEL=<chosen real model>`
+- User must not paste the key, auth header, raw env, admin token, or session secret into chat.
+- After setting env, run `pnpm --filter @platform/api smoke:openai`.
+- Expected success: provider mode is OpenAI, real OpenAI attempt occurred, assistant text exists, citations exist when retrieved chunks exist, provider metadata exists, fallback state is visible, and no secret values print.
+- Then configure a distinctive tenant AI Profile, ask a knowledge-based question, and confirm the real model reflects the tenant profile while staying grounded and preserving citations.
+- Fake/test/local-only tokens are not online/alpha acceptance evidence.

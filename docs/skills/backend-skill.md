@@ -1,5 +1,38 @@
 # 后端 Skill
 
+## 2026-06-10 Tenant Profile Image Validation Notes
+
+- Tenant AI Profile `logoUrl` and `avatarUrl` validation accepts existing http/https URLs or upload-generated PNG/JPEG/WebP/GIF data URLs.
+- Tenant AI Profile `logoUrl` and `avatarUrl` updates use explicit `null` to clear saved media; omitted/`undefined` fields continue to mean no update.
+- Tenant profile media resolution distinguishes explicit `null` from `undefined`: `null` stops older AgentConfig/widget/tenant-branding media fallback, while `undefined` may continue fallback.
+- Uploaded image sources are capped at the encoded size corresponding to a 1 MB frontend file limit.
+- API JSON and urlencoded request parsing uses a bounded 2 MB limit so accepted image data URLs can reach DTO validation instead of failing at the framework default body-size limit.
+- Unsafe schemes, non-image data URLs, unsupported image MIME types, and oversized sources remain rejected.
+- No object-storage dependency or Prisma migration was added.
+
+## 2026-06-05 Persistent Human Support Notes
+
+- `PENDING_HUMAN` means explicit human-support mode. It stays active until the customer or an admin/agent ends it.
+- `ChatService.sendMessage` saves customer messages during `PENDING_HUMAN`, returns `assistantMessage: null`, and does not call deterministic/OpenAI providers.
+- `ChatService.sendMessage` re-reads the latest conversation status after saving the customer message, preventing stale pre-handoff state from generating an AI reply after an agent reply or human-mode start.
+- `ChatService.sendMessage` re-checks persisted status again after provider completion and before assistant persistence. A provider result must not be saved or change status when the conversation became `PENDING_HUMAN` during generation.
+- Post-provider human-mode suppression must preserve the latest persisted conversation unchanged; in particular, `lastMessageAt` must not move backwards from a newer handoff event to an earlier customer message.
+- `ConversationsService.sendAgentReply` keeps the conversation in `PENDING_HUMAN`; an agent reply no longer releases the next customer message back to AI.
+- Public customer endpoint `POST /v1/conversations/:conversationId/handoff/end` ends human support with tenant + visitor scope.
+- Protected admin/agent endpoints `POST /v1/conversations/:conversationId/human-support/start|end` control human mode through `AdminApiGuard`.
+
+## 2026-06-05 Tenant AI Profile Notes
+
+- Tenant AI profile storage reuses `AgentConfig`; no Prisma migration was added.
+- Admin protected routes:
+  - `GET /v1/tenants/:tenantSlug/ai-profile`
+  - `PATCH /v1/tenants/:tenantSlug/ai-profile`
+- Public widget-safe route:
+  - `GET /v1/tenant-profile`
+- `GET /v1/tenant-profile` is tenant-scoped through tenant resolution and returns only display-safe fields.
+- Internal prompt rules live in `AgentConfig.metadata.aiProfile` and are used for backend prompt assembly only.
+- OpenAI prompt assembly keeps platform safety rules first and marks tenant profile instructions as lower priority.
+
 ## 2026-06-05 Runtime Env And OpenAI Safety Notes
 
 - Env templates are split into neutral reference, local QA, staging, and production examples.
@@ -109,7 +142,7 @@ API 启动入口：
 
 注意：
 
-- 如果 conversation 已经 `PENDING_HUMAN`，客户不能继续让 AI 回复。
+- 如果 conversation 已经 `PENDING_HUMAN`，客户消息会继续保存给人工处理，但不会触发 AI provider；response 中 `assistantMessage` 为 `null`。
 - 默认 active provider 是 deterministic/template，不会调用外部 LLM API。
 - OpenAI provider 已实现，使用 OpenAI Responses API；仅在 `AI_PROVIDER=openai` 且 env validation 通过时启用。
 - `ChatService` 应保持编排层，不应承载 raw prompt、provider HTTP 逻辑或 provider selection 细节。
@@ -165,6 +198,9 @@ API 启动入口：
 - `GET /v1/conversations/:conversationId/messages`
 - `GET /v1/conversations/:conversationId/customer-messages?visitorId=...`
 - `POST /v1/conversations/:conversationId/handoff`
+- `POST /v1/conversations/:conversationId/handoff/end`
+- `POST /v1/conversations/:conversationId/human-support/start`
+- `POST /v1/conversations/:conversationId/human-support/end`
 - `POST /v1/conversations/:conversationId/assign`
 - `POST /v1/conversations/:conversationId/agent-replies`
 - `DELETE /v1/conversations/:conversationId/messages`
@@ -176,7 +212,7 @@ API 启动入口：
 - customer detail/messages 需要 tenant + visitorId + conversationId，不返回其他 visitor 的 conversation。
 - handoff 可校验 visitorId，防止客户访问不属于自己的 conversation。
 - assign/reply 前必须 `ensureTenantUser`，即 user 需要有当前 tenant Role。
-- agent reply 会把 conversation 移到 `AWAITING_CUSTOMER`。
+- agent reply 会保持 conversation 为 `PENDING_HUMAN`，直到 customer 或 admin/agent 显式结束人工模式。
 
 ### Realtime
 

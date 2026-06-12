@@ -32,6 +32,7 @@ Environment templates and runtime checklists:
 - `.env.local.example`: local development/local QA. `test-admin-token`, `test-web-token`, and `test-session-secret-for-local-qa` are local-only placeholders.
 - `.env.staging.example`: production-like staging/alpha. Do not use local QA tokens.
 - `.env.production.example`: production reference. Store real secrets in the deployment secret manager.
+- `docs/runtime/local-dev-checklist.md`: normal local startup, URL map, admin-web proxy path, and troubleshooting.
 - `docs/runtime/env-setup.md`
 - `docs/runtime/openai-enable-checklist.md`
 - `docs/runtime/alpha-runtime-checklist.md`
@@ -71,6 +72,8 @@ New neutral env examples should use `NEXT_PUBLIC_DEFAULT_TENANT_SLUG=demo` and `
 
 Admin-web protected UI uses a server-side proxy. Configure `API_INTERNAL_BASE_URL`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, and `ADMIN_WEB_SESSION_SECRET` as non-public server env. Do not expose these values through `NEXT_PUBLIC_*`.
 
+Admin-web server routes now load the repository-root `.env` before validating admin-web access/proxy keys. Local `/admin/access` should accept the exact configured `ADMIN_WEB_ACCESS_TOKEN`; with local placeholder config, `test-web-token` is the expected form value. The normal local startup path is repository root `pnpm dev` after one-time Corepack/pnpm setup, with admin-web on `http://localhost:3000` and API on `http://localhost:4000/v1`. On Windows without Program Files write permission, enable Corepack shims into `$env:APPDATA\npm`. Local admin access smoke: `powershell -ExecutionPolicy Bypass -File scripts/smoke-admin-web-access.ps1`, expected output `admin-access-status=200`; pass `-Port <free-port>` when testing a non-3000 admin-web port.
+
 `KNOWLEDGE_IMPORT_USER_AGENT` defaults to `PlatformKnowledgeImporter/0.1 knowledge-import` and can be customized without hardcoding product/company names in runtime code.
 
 ## Dependency Reproducibility
@@ -92,6 +95,15 @@ Manual OpenAI smoke test, only when a real key is available. This helper is manu
 - `AI_PROVIDER=openai OPENAI_API_KEY=... OPENAI_MODEL=... pnpm --filter @platform/api smoke:openai`
 
 Expected success: real assistant text, preserved backend citation, provider mode summary, fallback state, and provider metadata without secrets. Missing OpenAI env should fail clearly and should not print the API key. Real-key smoke remains pending/non-blocking until a valid key is available.
+
+Real OpenAI tenant-profile activation requires user-managed secrets only:
+
+- Set `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` only in local `.env` or a deployment secret manager.
+- Run `pnpm --filter @platform/api smoke:openai`.
+- Then configure a recognizable tenant AI Profile in admin-web and ask a knowledge-grounded question through `/chat` or the widget.
+- Confirm the answer reflects tenant tone/profile, preserves citations, and does not invent unsupported details.
+- Never paste the OpenAI key, auth headers, raw env values, admin tokens, or session secrets into chat or docs.
+- Fake/test/local-only tokens are local QA evidence only, not online/alpha acceptance evidence.
 
 Do not treat `pnpm dev` or package `dev` scripts as blocking deployment verification because they are long-running watch servers.
 

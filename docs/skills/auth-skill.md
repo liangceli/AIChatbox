@@ -14,9 +14,12 @@
 - Missing protection returns 401; invalid protection returns 403.
 - `apps/admin-web` now has an alpha server-side access path. Browser code calls same-origin `/api/admin/...`; the Next route handler checks an httpOnly admin-web session cookie and injects `x-admin-api-token` server-side.
 - Admin-web access env keys: `API_INTERNAL_BASE_URL`, `ADMIN_WEB_ACCESS_TOKEN`, `ADMIN_WEB_SESSION_COOKIE_NAME`, `ADMIN_WEB_SESSION_SECRET`, `ADMIN_WEB_SESSION_TTL_SECONDS`.
+- Admin-web server routes load the repository-root `.env` before validating access/proxy config. Local login should accept the exact configured `ADMIN_WEB_ACCESS_TOKEN`, for example `test-web-token` only in local placeholder QA.
 - Do not expose `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, or `ADMIN_WEB_SESSION_SECRET` through `NEXT_PUBLIC_*`, bundled browser code, local storage, responses, or logs.
 - `.env.local.example` may use `test-admin-token`, `test-web-token`, and `test-session-secret-for-local-qa` only as local QA placeholders. Staging/production must use strong secret-manager values.
 - `GET /v1/realtime/conversations` is now admin-protected and returns tenant-wide conversation list, `pendingHumanCount`, and active conversation detail only for admin/agent paths.
+- Tenant AI profile admin read/update routes are admin-protected and should be accessed by admin-web through `/api/admin/...`.
+- Public `GET /v1/tenant-profile` remains reachable without admin token but returns only widget-safe display fields.
 - Public customer chat, customer handoff, customer conversation detail/read, and customer realtime remain public but are tenant + visitor/conversation scoped.
 - This is not production auth/RBAC. Browser-exposed permanent admin tokens are not production-ready.
 

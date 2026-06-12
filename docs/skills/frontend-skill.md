@@ -1,5 +1,24 @@
 # 前端 Skill
 
+## 2026-06-10 Admin Interaction And Profile Media Notes
+
+- Admin topbar is a viewport-fixed sibling of the scrolling `.admin-screen`, not nested inside it; both use the shared `--admin-topbar-height` value so the menu remains fixed and content is not covered.
+- Main dashboard modules, cards, conversation rows, history messages, controls, and agent surfaces provide hover/active/entry feedback while respecting `prefers-reduced-motion`.
+- The selected conversation's complete chronological customer/AI/agent/system history renders inside the Human Reply card for every conversation status, not only during handoff.
+- AI Profile Primary Color uses a visible current-color preview, eight clickable preset swatches, a native custom color picker, and an editable hex value.
+- AI Profile Avatar and Logo are upload-first controls with preview/remove actions; an always-visible http/https URL input remains available as a secondary option.
+- AI Profile Avatar/Logo Remove keeps an empty form value locally and sends explicit `null` on save so previously persisted media is actually cleared after reload.
+- Explicit media removal remains cleared even when older widget settings or tenant branding contain a Logo/Avatar fallback.
+- Frontend image uploads accept PNG/JPEG/WebP/GIF up to 1 MB and send a data image URL through the existing protected AI Profile save path.
+
+## 2026-06-05 Persistent Human Support UI Notes
+
+- Customer widget no longer disables the composer during `pending_human`; customer messages continue to send to `POST /v1/chat/messages`, are saved for the agent, and do not receive an AI reply.
+- During `pending_human`, the widget Human button becomes an explicit `End human` action that calls `POST /v1/conversations/:conversationId/handoff/end` with the current `visitorId`.
+- `/chat` local demo mirrors the widget behavior for manual QA.
+- `ConversationOpsPanel` exposes a Human Mode control for `/admin` and `/agent`; it calls protected `/api/admin/conversations/:conversationId/human-support/start|end` through the existing admin-web server-side proxy.
+- Agent replies keep human mode active until the customer or an admin/agent ends it.
+
 ## 前端组成
 
 前端由两个主要 surface 组成：
@@ -28,6 +47,8 @@ Admin protection:
 - `/admin/access?next=...` only accepts safe same-origin relative paths such as `/admin` and `/agent`; protocol-relative, absolute, and backslash URLs fall back to `/admin`.
 - The Next route handler injects `x-admin-api-token` server-side. Browser code must not receive or send `ADMIN_API_TOKEN`.
 - Required non-public env for proxy/gate: `API_INTERNAL_BASE_URL`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, `ADMIN_WEB_SESSION_SECRET`; optional `ADMIN_WEB_SESSION_COOKIE_NAME`, `ADMIN_WEB_SESSION_TTL_SECONDS`.
+- Tenant AI Profile management lives in `app/components/tenant-ai-profile-panel.tsx` and calls protected `/api/admin/tenants/:tenantSlug/ai-profile` through the server-side proxy.
+- The AI Profile panel supports loading, save success, and save failure states for assistant identity, company display name, tone/business fields, messages, safety instructions, and basic color/logo/avatar fields.
 
 核心组件：
 
@@ -61,6 +82,8 @@ Admin protection:
 ## Customer Widget
 
 Current realtime note: admin/agent `GET /v1/realtime/conversations` goes through the protected admin-web proxy and returns tenant-wide snapshots. Customer widget realtime uses `GET /v1/realtime/customer-conversation` with tenant slug, conversationId, and visitorId, and only receives that visitor's conversation detail.
+
+Tenant profile note: the customer widget fetches `GET /v1/tenant-profile` with `x-tenant-slug` and uses only widget-safe profile fields for assistant name, company display name, welcome/handoff messaging, primary color, and avatar/logo. Internal prompt/safety rules are never returned to the widget.
 
 核心文件：
 
@@ -97,6 +120,12 @@ Widget 行为：
 
 ## Admin Dashboard Visual Shell
 
-- The admin dashboard currently follows the Solaris AI `code.html` design reference: pale `#fbf8ff` background, white/glass surfaces, golden `#fec931` highlights, black primary text/buttons, sticky topbar, mobile drawer, statistics cards, knowledge table, ingest card, active chats, metadata, and human reply panels.
+- The admin dashboard currently follows the Solaris AI `code.html` design reference: pale `#fbf8ff` background, white/glass surfaces, golden `#fec931` highlights, black primary text/buttons, fixed topbar, mobile drawer, statistics cards, knowledge table, ingest card, active chats, metadata, and human reply panels.
 - Do not use the old `/images/logo.png` mark in the admin dashboard shell; the current design uses the `Solaris AI` wordmark text and tenant initials/profile imagery instead.
 - Keep future admin UI changes consistent with this responsive pattern unless a new design brief replaces it.
+
+## 2026-06-05 Admin Handoff UX Notes
+
+- `ConversationOpsPanel` renders selected conversation history inside the Human Reply card. History is chronological and includes customer, assistant, agent, system/handoff messages, message type labels, author names when available, and citations.
+- `/admin` drawer navigation is feedback-driven: Dashboard, Knowledge Base, Conversations, and Settings scroll/focus existing page sections.
+- Unimplemented drawer actions such as Analytics, Support, Account, and New Chatbot should remain non-destructive and show coming-soon feedback instead of navigating to a dead anchor.

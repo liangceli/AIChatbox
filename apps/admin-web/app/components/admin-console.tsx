@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TenantOverviewRecord } from "@platform/types";
 import { ConversationOpsPanel } from "./conversation-ops-panel";
 import { KnowledgeBasePanel } from "./knowledge-base-panel";
+import { TenantAiProfilePanel } from "./tenant-ai-profile-panel";
 
 const drawerNavigationItems = [
-  { label: "Dashboard", icon: "dashboard", active: true },
-  { label: "Knowledge Base", icon: "database" },
-  { label: "Conversations", icon: "chat" },
-  { label: "Analytics", icon: "bar_chart" },
-  { label: "Settings", icon: "settings" },
-  { label: "Support", icon: "help", separated: true },
-  { label: "Account", icon: "account_circle" }
+  { label: "Dashboard", icon: "dashboard", target: "dashboard" },
+  { label: "Knowledge Base", icon: "database", target: "knowledge" },
+  { label: "Conversations", icon: "chat", target: "conversations" },
+  { label: "Analytics", icon: "bar_chart", comingSoon: true },
+  { label: "Settings", icon: "settings", target: "settings" },
+  { label: "Support", icon: "help", separated: true, comingSoon: true },
+  { label: "Account", icon: "account_circle", comingSoon: true }
 ];
 
 const profileImageUrl =
@@ -30,6 +31,12 @@ export function AdminConsole({
   const [error, setError] = useState<string>();
   const [isLoadingTenants, setIsLoadingTenants] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [activeNavigationItem, setActiveNavigationItem] = useState("Dashboard");
+  const [navigationNotice, setNavigationNotice] = useState<string>();
+  const dashboardRef = useRef<HTMLElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const knowledgeRef = useRef<HTMLDivElement>(null);
+  const conversationsRef = useRef<HTMLDivElement>(null);
 
   async function loadTenants(nextSelectedSlug?: string) {
     setIsLoadingTenants(true);
@@ -67,6 +74,16 @@ export function AdminConsole({
   useEffect(() => {
     void loadTenants();
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!navigationNotice) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => setNavigationNotice(undefined), 2600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [navigationNotice]);
 
   const selectedTenant = tenants.find((tenant) => tenant.slug === selectedTenantSlug);
   const fallbackTenant: TenantOverviewRecord = {
@@ -107,6 +124,50 @@ export function AdminConsole({
       tone: "muted"
     }
   ];
+
+  function handleNavigationItemClick(item: (typeof drawerNavigationItems)[number]) {
+    if (item.comingSoon || !item.target) {
+      showNavigationNotice(`${item.label} is coming soon.`);
+      return;
+    }
+
+    const section = getNavigationSection(item.target);
+
+    if (!section) {
+      showNavigationNotice(`${item.label} is not available yet.`);
+      return;
+    }
+
+    setActiveNavigationItem(item.label);
+    section.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+    section.focus({
+      preventScroll: true
+    });
+    showNavigationNotice(`Focused ${item.label}.`);
+    setIsMobileMenuOpen(false);
+  }
+
+  function getNavigationSection(target: string): HTMLElement | null {
+    switch (target) {
+      case "dashboard":
+        return dashboardRef.current;
+      case "settings":
+        return settingsRef.current;
+      case "knowledge":
+        return knowledgeRef.current;
+      case "conversations":
+        return conversationsRef.current;
+      default:
+        return null;
+    }
+  }
+
+  function showNavigationNotice(message: string) {
+    setNavigationNotice(message);
+  }
 
   return (
     <main className="admin-dashboard">
@@ -156,28 +217,39 @@ export function AdminConsole({
 
         <nav className="drawer-nav">
           {drawerNavigationItems.map((item) => (
-            <a
+            <button
               key={item.label}
-              className={`${item.active ? "active" : ""} ${item.separated ? "separated" : ""}`}
-              href="#workspace"
-              onClick={() => setIsMobileMenuOpen(false)}
+              type="button"
+              className={`${activeNavigationItem === item.label ? "active" : ""} ${item.separated ? "separated" : ""} ${item.comingSoon ? "disabled" : ""}`}
+              aria-disabled={item.comingSoon ? "true" : undefined}
+              onClick={() => handleNavigationItemClick(item)}
             >
               <Icon name={item.icon} />
               <span>{item.label}</span>
-            </a>
+              {item.comingSoon ? <small>Soon</small> : null}
+            </button>
           ))}
         </nav>
 
+        {navigationNotice ? (
+          <div className="drawer-feedback" role="status">
+            {navigationNotice}
+          </div>
+        ) : null}
+
         <div className="drawer-footer">
-          <button type="button" className="drawer-primary-button primary-btn">
+          <button
+            type="button"
+            className="drawer-primary-button primary-btn"
+            onClick={() => showNavigationNotice("New Chatbot is coming soon.")}
+          >
             <Icon name="add" />
             <span>New Chatbot</span>
           </button>
         </div>
       </aside>
 
-      <div className="admin-screen">
-        <header className="admin-topbar">
+      <header className="admin-topbar">
           <div className="topbar-left">
             <button
               type="button"
@@ -205,10 +277,16 @@ export function AdminConsole({
             <button type="button" className="deploy-button primary-btn">Deploy</button>
             <img alt="User Profile" className="profile-avatar" src={profileImageUrl} />
           </div>
-        </header>
+      </header>
 
+      <div className="admin-screen">
         <main className="admin-page-content" id="workspace">
-          <section className="stats-grid" aria-label="Tenant statistics">
+          <section
+            ref={dashboardRef}
+            className="stats-grid nav-section"
+            aria-label="Tenant statistics"
+            tabIndex={-1}
+          >
             {metricCards.map((metric) => (
               <article key={metric.label} className={`stat-card glass-card ${metric.tone}`}>
                 <span className="stat-icon">
@@ -223,18 +301,27 @@ export function AdminConsole({
             ))}
           </section>
 
-          <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+          <div ref={settingsRef} className="nav-section" tabIndex={-1}>
+            <TenantAiProfilePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+          </div>
 
-          <ConversationOpsPanel
-            apiBaseUrl={apiBaseUrl}
-            tenantSlug={selectedTenantSlug}
-            allowAssignment
-            allowAdminDeletes
-          />
+          <div ref={knowledgeRef} className="nav-section" tabIndex={-1}>
+            <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+          </div>
+
+          <div ref={conversationsRef} className="nav-section" tabIndex={-1}>
+            <ConversationOpsPanel
+              apiBaseUrl={apiBaseUrl}
+              tenantSlug={selectedTenantSlug}
+              allowAssignment
+              allowAdminDeletes
+            />
+          </div>
         </main>
       </div>
 
       {error ? <div className="toast-error">{error}</div> : null}
+      {navigationNotice ? <div className="toast-info">{navigationNotice}</div> : null}
     </main>
   );
 }

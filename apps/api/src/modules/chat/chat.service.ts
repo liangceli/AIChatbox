@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { KnowledgeRetrievalService } from "../knowledge/knowledge-retrieval.service";
+import { buildTenantAiProfile } from "../tenants/tenant-ai-profile";
 import type { SendChatMessageDto } from "./dto/send-chat-message.dto";
 import { toChatMessageRecord, toConversationSummary } from "./chat.presenter";
 import { LlmProviderResolverService } from "./llm-provider-resolver.service";
@@ -80,12 +81,6 @@ export class ChatService {
         throw new NotFoundException("Conversation not found for this tenant and visitor.");
       }
 
-      if (existingConversation?.status === ConversationStatus.PENDING_HUMAN) {
-        throw new BadRequestException(
-          "This conversation is waiting for a human agent. Refresh the conversation for updates."
-        );
-      }
-
       const conversation =
         existingConversation ??
         (await tx.conversation.create({
@@ -108,11 +103,60 @@ export class ChatService {
         }
       });
 
+      // Handoff or an agent reply can change the status while a customer send is in flight.
+      const latestConversation = await tx.conversation.findUnique({
+        where: {
+          id_tenantId: {
+            id: conversation.id,
+            tenantId: tenant.id
+          }
+        }
+      });
+
+      if (!latestConversation) {
+        throw new NotFoundException("Conversation not found for this tenant and visitor.");
+      }
+
+      if (latestConversation.status === ConversationStatus.PENDING_HUMAN) {
+        const updatedConversation = await tx.conversation.update({
+          where: {
+            id_tenantId: {
+              id: conversation.id,
+              tenantId: tenant.id
+            }
+          },
+          data: {
+            status: ConversationStatus.PENDING_HUMAN,
+            lastMessageAt: customerMessage.createdAt
+          }
+        });
+
+        const messages = await tx.message.findMany({
+          where: {
+            tenantId: tenant.id,
+            conversationId: conversation.id
+          },
+          orderBy: {
+            createdAt: "asc"
+          }
+        });
+
+        return {
+          visitorId,
+          customerId: customer.id,
+          conversation: toConversationSummary(updatedConversation),
+          customerMessage: toChatMessageRecord(customerMessage),
+          assistantMessage: null,
+          messages: messages.map(toChatMessageRecord)
+        };
+      }
+
       const agentConfig = await tx.agentConfig.findUnique({
         where: {
           tenantId: tenant.id
         }
       });
+      const tenantAiProfile = buildTenantAiProfile(tenant, agentConfig);
 
       const llmProvider = this.llmProviderResolver.resolveProvider();
       const assistantReply = await llmProvider.generateReply({
@@ -125,14 +169,51 @@ export class ChatService {
           id: conversation.id
         },
         agent: {
-          displayName: agentConfig?.displayName ?? `${tenant.name} Assistant`,
-          welcomeMessage: agentConfig?.welcomeMessage,
-          fallbackMessage: agentConfig?.fallbackMessage,
-          handoffEnabled: agentConfig?.handoffEnabled ?? false
+          displayName: tenantAiProfile.assistantName,
+          welcomeMessage: tenantAiProfile.welcomeMessage,
+          fallbackMessage: tenantAiProfile.fallbackMessage,
+          handoffMessage: tenantAiProfile.handoffMessage,
+          handoffEnabled: agentConfig?.handoffEnabled ?? false,
+          tenantAiProfile
         },
         latestCustomerMessage: customerMessage.content,
         retrievedChunks
       });
+
+      // Human support may start while the provider is generating a reply.
+      const conversationAfterProvider = await tx.conversation.findUnique({
+        where: {
+          id_tenantId: {
+            id: conversation.id,
+            tenantId: tenant.id
+          }
+        }
+      });
+
+      if (!conversationAfterProvider) {
+        throw new NotFoundException("Conversation not found for this tenant and visitor.");
+      }
+
+      if (conversationAfterProvider.status === ConversationStatus.PENDING_HUMAN) {
+        const messages = await tx.message.findMany({
+          where: {
+            tenantId: tenant.id,
+            conversationId: conversation.id
+          },
+          orderBy: {
+            createdAt: "asc"
+          }
+        });
+
+        return {
+          visitorId,
+          customerId: customer.id,
+          conversation: toConversationSummary(conversationAfterProvider),
+          customerMessage: toChatMessageRecord(customerMessage),
+          assistantMessage: null,
+          messages: messages.map(toChatMessageRecord)
+        };
+      }
 
       const assistantMessage = await tx.message.create({
         data: {

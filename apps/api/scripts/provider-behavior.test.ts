@@ -1,6 +1,8 @@
 import { ConversationStatus } from "@platform/database";
-import { loadServerEnv, type ServerEnv } from "@platform/config";
+import { loadAdminWebEnv, loadServerEnv, type ServerEnv } from "@platform/config";
 import assert from "node:assert/strict";
+import { plainToInstance } from "class-transformer";
+import { validateSync } from "class-validator";
 import {
   BadRequestException,
   ForbiddenException,
@@ -14,10 +16,20 @@ import { AssistantReplyService } from "../src/modules/chat/assistant-reply.servi
 import { ChatService } from "../src/modules/chat/chat.service";
 import { LlmProviderResolverService } from "../src/modules/chat/llm-provider-resolver.service";
 import { OpenAiLlmProviderService } from "../src/modules/chat/openai-llm-provider.service";
+import { buildOpenAiPrompt } from "../src/modules/chat/openai-prompt";
+import { ConversationsController } from "../src/modules/conversations/conversations.controller";
 import { ConversationsService } from "../src/modules/conversations/conversations.service";
 import { KnowledgeRetrievalService } from "../src/modules/knowledge/knowledge-retrieval.service";
 import { RealtimeController } from "../src/modules/realtime/realtime.controller";
 import { RealtimeService } from "../src/modules/realtime/realtime.service";
+import { TenantsController } from "../src/modules/tenants/tenants.controller";
+import { UpdateTenantAiProfileDto } from "../src/modules/tenants/dto/update-tenant-ai-profile.dto";
+import {
+  buildAgentConfigPersistence,
+  buildTenantAiProfile,
+  mergeTenantAiProfile,
+  toPublicTenantAiProfile
+} from "../src/modules/tenants/tenant-ai-profile";
 
 const baseInput = {
   tenant: {
@@ -170,6 +182,32 @@ async function testAdminProtectionConfigRequiresExplicitDevDisable() {
   assert.equal(env.ADMIN_API_PROTECTION_MODE, "disabled");
 }
 
+async function testAdminWebConfigUsesOnlyAdminWebRuntimeKeys() {
+  const env = loadAdminWebEnv({
+    AI_PROVIDER: "openai",
+    API_INTERNAL_BASE_URL: "http://localhost:4000/v1",
+    ADMIN_API_TOKEN: "test-admin-token",
+    ADMIN_WEB_ACCESS_TOKEN: "test-web-token",
+    ADMIN_WEB_SESSION_SECRET: "test-session-secret-for-local-qa"
+  });
+
+  assert.equal(env.API_INTERNAL_BASE_URL, "http://localhost:4000/v1");
+  assert.equal(env.ADMIN_API_TOKEN, "test-admin-token");
+  assert.equal(env.ADMIN_WEB_ACCESS_TOKEN, "test-web-token");
+  assert.equal(env.ADMIN_WEB_SESSION_COOKIE_NAME, "platform_admin_session");
+  assert.equal(env.ADMIN_WEB_SESSION_TTL_SECONDS, 43200);
+}
+
+async function testAdminWebConfigRejectsInvalidSessionTtl() {
+  assert.throws(
+    () =>
+      loadAdminWebEnv({
+        ADMIN_WEB_SESSION_TTL_SECONDS: "0"
+      }),
+    /ADMIN_WEB_SESSION_TTL_SECONDS/
+  );
+}
+
 async function testAdminProtectionGuardRejectsMissingAndInvalidTokens() {
   const guard = AdminApiGuard.createForTest(
     loadServerEnv({
@@ -225,6 +263,153 @@ async function testAdminRealtimeControllerUsesAdminGuard() {
     Reflect.getMetadata(GUARDS_METADATA, RealtimeController.prototype.streamConversations) ?? [];
 
   assert.ok(guards.includes(AdminApiGuard));
+}
+
+async function testTenantAiProfileAdminRoutesUseAdminGuard() {
+  const guards = Reflect.getMetadata(GUARDS_METADATA, TenantsController) ?? [];
+
+  assert.ok(guards.includes(AdminApiGuard));
+}
+
+async function testHumanSupportAdminRoutesUseAdminGuard() {
+  const startGuards =
+    Reflect.getMetadata(GUARDS_METADATA, ConversationsController.prototype.startHumanSupport) ??
+    [];
+  const endGuards =
+    Reflect.getMetadata(GUARDS_METADATA, ConversationsController.prototype.endHumanSupport) ?? [];
+
+  assert.ok(startGuards.includes(AdminApiGuard));
+  assert.ok(endGuards.includes(AdminApiGuard));
+}
+
+async function testTenantAiProfileDefaultsExist() {
+  const profile = buildTenantAiProfile(
+    {
+      name: "Demo Company"
+    },
+    null
+  );
+
+  assert.equal(profile.assistantName, "AI Support Assistant");
+  assert.equal(profile.companyDisplayName, "Demo Company");
+  assert.equal(profile.tone, "helpful, concise, professional");
+  assert.match(profile.fallbackMessage, /not have enough confirmed information/i);
+}
+
+async function testTenantAiProfileValidationRejectsUnsafeDisplayInputs() {
+  const invalidProfile = plainToInstance(UpdateTenantAiProfileDto, {
+    assistantName: "Profile Bot",
+    primaryColor: "red",
+    avatarUrl: "javascript:alert(1)"
+  });
+  const validProfile = plainToInstance(UpdateTenantAiProfileDto, {
+    assistantName: "Profile Bot",
+    primaryColor: "#123abc",
+    avatarUrl: "https://example.test/avatar.png"
+  });
+  const validUploadedProfile = plainToInstance(UpdateTenantAiProfileDto, {
+    logoUrl: "data:image/png;base64,iVBORw0KGgo="
+  });
+  const invalidUploadedProfile = plainToInstance(UpdateTenantAiProfileDto, {
+    logoUrl: "data:text/html;base64,PHNjcmlwdD4="
+  });
+
+  assert.ok(validateSync(invalidProfile).length >= 2);
+  assert.equal(validateSync(validProfile).length, 0);
+  assert.equal(validateSync(validUploadedProfile).length, 0);
+  assert.ok(validateSync(invalidUploadedProfile).length >= 1);
+}
+
+async function testTenantAiProfileMediaCanBeExplicitlyCleared() {
+  const clearMediaProfile = plainToInstance(UpdateTenantAiProfileDto, {
+    logoUrl: null,
+    avatarUrl: null
+  });
+  const tenantWithBrandingLogo = {
+    name: "Demo Company",
+    branding: {
+      logoUrl: "https://example.test/tenant-branding-logo.png"
+    }
+  };
+  const fallbackProfile = buildTenantAiProfile(tenantWithBrandingLogo, null);
+  const currentProfile = {
+    ...fallbackProfile,
+    logoUrl: "https://example.test/logo.png",
+    avatarUrl: "https://example.test/avatar.png"
+  };
+  const updatedProfile = mergeTenantAiProfile(currentProfile, {
+    logoUrl: null,
+    avatarUrl: null
+  });
+  const persistence = buildAgentConfigPersistence(updatedProfile);
+  const reloadedProfile = buildTenantAiProfile(tenantWithBrandingLogo, persistence);
+  const publicReloadedProfile = toPublicTenantAiProfile(reloadedProfile);
+
+  assert.equal(validateSync(clearMediaProfile).length, 0);
+  assert.equal(fallbackProfile.logoUrl, "https://example.test/tenant-branding-logo.png");
+  assert.equal(updatedProfile.logoUrl, null);
+  assert.equal(updatedProfile.avatarUrl, null);
+  assert.equal(persistence.widgetSettings.logoUrl, null);
+  assert.equal(persistence.widgetSettings.avatarUrl, null);
+  assert.equal(persistence.metadata.aiProfile.logoUrl, null);
+  assert.equal(persistence.metadata.aiProfile.avatarUrl, null);
+  assert.equal(publicReloadedProfile.logoUrl, null);
+  assert.equal(publicReloadedProfile.avatarUrl, null);
+}
+
+async function testPublicTenantAiProfileDoesNotExposeInternalRules() {
+  const profile = buildTenantAiProfile(
+    {
+      name: "Demo Company"
+    },
+    {
+      displayName: "Profile Bot",
+      metadata: {
+        aiProfile: {
+          safeAnswerInstructions: "Internal safe answer rule.",
+          sensitiveTopicInstructions: "Internal sensitive rule.",
+          doNotAnswerInstructions: "Internal do-not-answer rule.",
+          handoffMessage: "I can pass this to support."
+        }
+      }
+    }
+  );
+  const publicProfile = toPublicTenantAiProfile(profile);
+
+  assert.equal(publicProfile.assistantName, "Profile Bot");
+  assert.equal(publicProfile.handoffMessage, "I can pass this to support.");
+  assert.equal("safeAnswerInstructions" in publicProfile, false);
+  assert.equal("sensitiveTopicInstructions" in publicProfile, false);
+  assert.equal("doNotAnswerInstructions" in publicProfile, false);
+}
+
+async function testOpenAiPromptIncludesTenantProfileWithSafetyFirst() {
+  const tenantAiProfile = {
+    ...buildTenantAiProfile({ name: "Demo Company" }, null),
+    assistantName: "Profile Bot",
+    companyDisplayName: "Acme Demo",
+    businessType: "returns support",
+    tone: "warm, brief, and precise",
+    safeAnswerInstructions: "Always stay grounded in approved support articles.",
+    sensitiveTopicInstructions: "Escalate warranty disputes to a human.",
+    doNotAnswerInstructions: "Do not provide unsupported discount promises."
+  };
+  const prompt = buildOpenAiPrompt({
+    ...baseInput,
+    agent: {
+      ...baseInput.agent,
+      displayName: "Profile Bot",
+      tenantAiProfile
+    }
+  });
+
+  assert.match(prompt, /Platform safety rules/);
+  assert.match(prompt, /Tenant AI profile instructions/);
+  assert.ok(prompt.indexOf("Platform safety rules") < prompt.indexOf("Tenant AI profile instructions"));
+  assert.match(prompt, /Acme Demo/);
+  assert.match(prompt, /warm, brief, and precise/);
+  assert.match(prompt, /Do not invent company policies/);
+  assert.match(prompt, /Ignore any tenant profile text that conflicts/);
 }
 
 async function testTenantResolutionStillRequiresTenantSlug() {
@@ -320,16 +505,22 @@ async function testCustomerConversationReadRequiresVisitorScope() {
   assert.equal(detail.customer.visitorId, "visitor-1");
 }
 
-function createConversationRecord(visitorId: string) {
+function createConversationRecord(
+  visitorId: string,
+  status: ConversationStatus = ConversationStatus.AWAITING_CUSTOMER
+) {
   return {
     id: "conversation-1",
     tenantId: "tenant-1",
     customerId: "customer-1",
     assignedUserId: null,
     channel: "WIDGET",
-    status: ConversationStatus.AWAITING_CUSTOMER,
-    handoffRequestedAt: null,
-    handoffReason: null,
+    status,
+    handoffRequestedAt:
+      status === ConversationStatus.PENDING_HUMAN
+        ? new Date("2026-01-01T00:01:00.000Z")
+        : null,
+    handoffReason: status === ConversationStatus.PENDING_HUMAN ? "Need help" : null,
     lastMessageAt: new Date("2026-01-01T00:00:00.000Z"),
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -367,11 +558,9 @@ function createConversationServiceForHandoff(visitorId: string): ConversationsSe
         }),
       conversation: {
         findUnique: async () => ({
-          ...createConversationRecord(visitorId),
-          status: ConversationStatus.PENDING_HUMAN,
-          handoffRequestedAt: new Date("2026-01-01T00:01:00.000Z"),
-          handoffReason: "Need help"
-        })
+          ...createConversationRecord(visitorId, ConversationStatus.PENDING_HUMAN)
+        }),
+        findFirst: async () => createConversationRecord(visitorId, ConversationStatus.OPEN)
       }
     }
   } as never);
@@ -403,6 +592,140 @@ async function testCustomerHandoffRequiresCorrectVisitorScope() {
   assert.equal(detail.id, "conversation-1");
   assert.equal(detail.customer.visitorId, "visitor-1");
   assert.equal(detail.status, "pending_human");
+}
+
+async function testCustomerCanEndHandoffWithVisitorScope() {
+  const conversationsService = createConversationServiceForHandoff("visitor-1");
+
+  await assert.rejects(
+    () => conversationsService.endCustomerHandoff(baseInput.tenant, "conversation-1", undefined),
+    BadRequestException
+  );
+  await assert.rejects(
+    () => conversationsService.endCustomerHandoff(baseInput.tenant, "conversation-1", "visitor-2"),
+    ForbiddenException
+  );
+
+  const detail = await conversationsService.endCustomerHandoff(
+    baseInput.tenant,
+    "conversation-1",
+    "visitor-1"
+  );
+
+  assert.equal(detail.id, "conversation-1");
+  assert.equal(detail.customer.visitorId, "visitor-1");
+  assert.equal(detail.status, "open");
+}
+
+function createConversationServiceForAdminHumanMode(initialStatus: ConversationStatus) {
+  let currentStatus = initialStatus;
+  const updateData: unknown[] = [];
+
+  const service = new ConversationsService({
+    client: {
+      role: {
+        findUnique: async () => ({
+          id: "role-1",
+          tenantId: "tenant-1",
+          userId: "user-1",
+          name: "agent"
+        })
+      },
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          conversation: {
+            findUnique: async () => ({
+              id: "conversation-1",
+              status: currentStatus,
+              handoffRequestedAt:
+                currentStatus === ConversationStatus.PENDING_HUMAN
+                  ? new Date("2026-01-01T00:01:00.000Z")
+                  : null,
+              handoffReason: currentStatus === ConversationStatus.PENDING_HUMAN ? "Need help" : null
+            }),
+            update: async ({ data }: { data: { status?: ConversationStatus } }) => {
+              updateData.push(data);
+
+              if (data.status) {
+                currentStatus = data.status;
+              }
+
+              return {};
+            }
+          },
+          message: {
+            create: async () => ({
+              id: "message-1",
+              createdAt: new Date("2026-01-01T00:02:00.000Z")
+            })
+          }
+        }),
+      conversation: {
+        findUnique: async () => ({
+          ...createConversationRecord("visitor-1", currentStatus),
+          assignedUser:
+            updateData.some((data) => JSON.stringify(data).includes("user-1"))
+              ? {
+                  id: "user-1",
+                  email: "agent@example.test",
+                  name: "Agent",
+                  isPlatformAdmin: false,
+                  metadata: null,
+                  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+                  updatedAt: new Date("2026-01-01T00:00:00.000Z")
+                }
+              : null,
+          messages: []
+        })
+      }
+    }
+  } as never);
+
+  return {
+    service,
+    getUpdateData: () => updateData
+  };
+}
+
+async function testAgentReplyKeepsHumanModeActive() {
+  const { service, getUpdateData } = createConversationServiceForAdminHumanMode(
+    ConversationStatus.PENDING_HUMAN
+  );
+
+  const detail = await service.sendAgentReply(
+    baseInput.tenant,
+    "conversation-1",
+    "user-1",
+    "I can help with that."
+  );
+
+  assert.equal(detail.status, "pending_human");
+  assert.equal(
+    getUpdateData().some((data) => JSON.stringify(data).includes("PENDING_HUMAN")),
+    true
+  );
+}
+
+async function testAdminCanStartAndEndHumanSupportMode() {
+  const { service } = createConversationServiceForAdminHumanMode(ConversationStatus.OPEN);
+
+  const started = await service.startHumanSupport(
+    baseInput.tenant,
+    "conversation-1",
+    "user-1",
+    "Agent is taking over."
+  );
+
+  assert.equal(started.status, "pending_human");
+
+  const ended = await service.endHumanSupport(
+    baseInput.tenant,
+    "conversation-1",
+    "user-1",
+    "Back to AI."
+  );
+
+  assert.equal(ended.status, "open");
 }
 
 async function testCustomerRealtimeSnapshotDoesNotExposeTenantList() {
@@ -669,8 +992,26 @@ async function testRetrievalChangesPreserveDeterministicCitations() {
   assert.equal(response.citations?.[0]?.chunkId, "chunk-warranty");
 }
 
-async function testPendingHumanGuardPreventsProviderCall() {
+async function testDeterministicFallbackUsesTenantHandoffMessage() {
+  const response = new AssistantReplyService().generateReply({
+    ...baseInput,
+    agent: {
+      ...baseInput.agent,
+      fallbackMessage: "Tenant fallback.",
+      handoffMessage: "Tenant handoff message.",
+      handoffEnabled: true
+    },
+    latestCustomerMessage: "unknown support topic",
+    retrievedChunks: []
+  });
+
+  assert.match(response.content, /Tenant fallback/);
+  assert.match(response.content, /Tenant handoff message/);
+}
+
+async function testLatestHumanModeStatusBlocksAiAfterAgentReply() {
   let providerCalled = false;
+  let savedCustomerMessage = false;
   const prisma = {
     client: {
       $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
@@ -681,8 +1022,77 @@ async function testPendingHumanGuardPreventsProviderCall() {
           conversation: {
             findFirst: async () => ({
               id: "conversation-1",
-              status: ConversationStatus.PENDING_HUMAN
+              tenantId: "tenant-1",
+              customerId: "customer-1",
+              assignedUserId: null,
+              channel: "WIDGET",
+              status: ConversationStatus.AWAITING_CUSTOMER,
+              handoffRequestedAt: null,
+              handoffReason: null,
+              lastMessageAt: new Date("2026-01-01T00:00:00.000Z"),
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:00:00.000Z")
+            }),
+            findUnique: async () => ({
+              id: "conversation-1",
+              tenantId: "tenant-1",
+              customerId: "customer-1",
+              assignedUserId: "user-1",
+              channel: "WIDGET",
+              status: ConversationStatus.PENDING_HUMAN,
+              handoffRequestedAt: new Date("2026-01-01T00:01:00.000Z"),
+              handoffReason: "Agent joined the conversation.",
+              lastMessageAt: new Date("2026-01-01T00:00:00.000Z"),
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:00:00.000Z")
+            }),
+            update: async () => ({
+              id: "conversation-1",
+              tenantId: "tenant-1",
+              customerId: "customer-1",
+              assignedUserId: null,
+              channel: "WIDGET",
+              status: ConversationStatus.PENDING_HUMAN,
+              handoffRequestedAt: new Date("2026-01-01T00:01:00.000Z"),
+              handoffReason: "Need help",
+              lastMessageAt: new Date("2026-01-01T00:02:00.000Z"),
+              createdAt: new Date("2026-01-01T00:00:00.000Z"),
+              updatedAt: new Date("2026-01-01T00:02:00.000Z")
             })
+          },
+          message: {
+            create: async () => {
+              savedCustomerMessage = true;
+
+              return {
+                id: "message-1",
+                tenantId: "tenant-1",
+                conversationId: "conversation-1",
+                authorUserId: null,
+                authorType: "CUSTOMER",
+                messageType: "TEXT",
+                content: "hello",
+                citations: null,
+                payload: null,
+                metadata: null,
+                createdAt: new Date("2026-01-01T00:02:00.000Z")
+              };
+            },
+            findMany: async () => [
+              {
+                id: "message-1",
+                tenantId: "tenant-1",
+                conversationId: "conversation-1",
+                authorUserId: null,
+                authorType: "CUSTOMER",
+                messageType: "TEXT",
+                content: "hello",
+                citations: null,
+                payload: null,
+                metadata: null,
+                createdAt: new Date("2026-01-01T00:02:00.000Z")
+              }
+            ]
           }
         })
     }
@@ -698,23 +1108,132 @@ async function testPendingHumanGuardPreventsProviderCall() {
   };
   const chatService = new ChatService(prisma as never, knowledgeRetrieval as never, providerResolver as never);
 
-  await assert.rejects(
-    () =>
-      chatService.sendMessage(
-        {
-          id: "tenant-1",
-          slug: "demo",
-          name: "Demo"
-        },
-        {
-          conversationId: "conversation-1",
-          visitorId: "visitor-1",
-          message: "hello"
-        }
-      ),
-    BadRequestException
+  const response = await chatService.sendMessage(
+    {
+      id: "tenant-1",
+      slug: "demo",
+      name: "Demo"
+    },
+    {
+      conversationId: "conversation-1",
+      visitorId: "visitor-1",
+      message: "hello"
+    }
   );
+
   assert.equal(providerCalled, false);
+  assert.equal(savedCustomerMessage, true);
+  assert.equal(response.conversation.status, "pending_human");
+  assert.equal(response.customerMessage.content, "hello");
+  assert.equal(response.assistantMessage, null);
+}
+
+async function testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence() {
+  let conversationStatus = ConversationStatus.AWAITING_CUSTOMER;
+  let assistantMessageSaved = false;
+  let conversationUpdatedAfterProvider = false;
+  const handoffLastMessageAt = new Date("2026-01-01T00:03:00.000Z");
+  const conversationRecord = () => ({
+    id: "conversation-1",
+    tenantId: "tenant-1",
+    customerId: "customer-1",
+    assignedUserId: conversationStatus === ConversationStatus.PENDING_HUMAN ? "user-1" : null,
+    channel: "WIDGET",
+    status: conversationStatus,
+    handoffRequestedAt:
+      conversationStatus === ConversationStatus.PENDING_HUMAN
+        ? new Date("2026-01-01T00:01:00.000Z")
+        : null,
+    handoffReason:
+      conversationStatus === ConversationStatus.PENDING_HUMAN
+        ? "Agent joined during provider call."
+        : null,
+    lastMessageAt:
+      conversationStatus === ConversationStatus.PENDING_HUMAN
+        ? handoffLastMessageAt
+        : new Date("2026-01-01T00:00:00.000Z"),
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z")
+  });
+  const customerMessage = {
+    id: "message-customer",
+    tenantId: "tenant-1",
+    conversationId: "conversation-1",
+    authorUserId: null,
+    authorType: "CUSTOMER",
+    messageType: "TEXT",
+    content: "hello",
+    citations: null,
+    payload: null,
+    metadata: null,
+    createdAt: new Date("2026-01-01T00:02:00.000Z")
+  };
+  const prisma = {
+    client: {
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          customer: {
+            upsert: async () => ({ id: "customer-1" })
+          },
+          conversation: {
+            findFirst: async () => conversationRecord(),
+            findUnique: async () => conversationRecord(),
+            update: async () => {
+              conversationUpdatedAfterProvider = true;
+
+              return conversationRecord();
+            }
+          },
+          message: {
+            create: async ({ data }: { data: { authorType: string } }) => {
+              if (data.authorType === "ASSISTANT") {
+                assistantMessageSaved = true;
+              }
+
+              return customerMessage;
+            },
+            findMany: async () => [customerMessage]
+          },
+          agentConfig: {
+            findUnique: async () => null
+          }
+        })
+    }
+  };
+  const providerResolver = {
+    resolveProvider: () => ({
+      generateReply: async (input: Parameters<AssistantReplyService["generateReply"]>[0]) => {
+        await Promise.resolve();
+        conversationStatus = ConversationStatus.PENDING_HUMAN;
+
+        return new AssistantReplyService().generateReply(input);
+      }
+    })
+  };
+  const chatService = new ChatService(
+    prisma as never,
+    { retrieveRelevantChunks: async () => [] } as never,
+    providerResolver as never
+  );
+
+  const response = await chatService.sendMessage(
+    {
+      id: "tenant-1",
+      slug: "demo",
+      name: "Demo"
+    },
+    {
+      conversationId: "conversation-1",
+      visitorId: "visitor-1",
+      message: "hello"
+    }
+  );
+
+  assert.equal(assistantMessageSaved, false);
+  assert.equal(conversationUpdatedAfterProvider, false);
+  assert.equal(response.conversation.status, "pending_human");
+  assert.equal(response.conversation.lastMessageAt, handoffLastMessageAt.toISOString());
+  assert.equal(response.assistantMessage, null);
 }
 
 async function run() {
@@ -722,13 +1241,25 @@ async function run() {
   await testDeterministicConfigDoesNotNeedOpenAi();
   await testOpenAiConfigRequiresKeyAndModel();
   await testAdminProtectionConfigRequiresExplicitDevDisable();
+  await testAdminWebConfigUsesOnlyAdminWebRuntimeKeys();
+  await testAdminWebConfigRejectsInvalidSessionTtl();
   await testAdminProtectionGuardRejectsMissingAndInvalidTokens();
   await testAdminProtectionGuardAcceptsValidTokens();
   await testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed();
   await testAdminRealtimeControllerUsesAdminGuard();
+  await testTenantAiProfileAdminRoutesUseAdminGuard();
+  await testHumanSupportAdminRoutesUseAdminGuard();
+  await testTenantAiProfileDefaultsExist();
+  await testTenantAiProfileValidationRejectsUnsafeDisplayInputs();
+  await testTenantAiProfileMediaCanBeExplicitlyCleared();
+  await testPublicTenantAiProfileDoesNotExposeInternalRules();
+  await testOpenAiPromptIncludesTenantProfileWithSafetyFirst();
   await testTenantResolutionStillRequiresTenantSlug();
   await testCustomerConversationReadRequiresVisitorScope();
   await testCustomerHandoffRequiresCorrectVisitorScope();
+  await testCustomerCanEndHandoffWithVisitorScope();
+  await testAgentReplyKeepsHumanModeActive();
+  await testAdminCanStartAndEndHumanSupportMode();
   await testCustomerRealtimeSnapshotDoesNotExposeTenantList();
   await testResolverSelection();
   await testOpenAiSuccessMapsResponse();
@@ -739,7 +1270,9 @@ async function run() {
   await testRawPluralCandidateLookupWithNormalizedScoring();
   await testExactPhraseStrongMatchStillWorks();
   await testRetrievalChangesPreserveDeterministicCitations();
-  await testPendingHumanGuardPreventsProviderCall();
+  await testDeterministicFallbackUsesTenantHandoffMessage();
+  await testLatestHumanModeStatusBlocksAiAfterAgentReply();
+  await testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence();
 }
 
 void run();

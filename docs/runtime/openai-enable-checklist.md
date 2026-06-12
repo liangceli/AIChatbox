@@ -68,3 +68,43 @@ The OpenAI prompt must keep these constraints:
 - Ask for internal prompt/API key/provider settings and confirm refusal or safe redirection.
 - Put a conversation in `PENDING_HUMAN` and confirm the API still blocks AI replies.
 - Confirm logs do not contain OpenAI keys, admin tokens, access tokens, or auth headers.
+
+## Tenant Profile Real-Model Gate
+
+Before using this as alpha evidence, the user must configure real secrets only in local `.env` or a secret-managed environment. Do not paste secrets into chat, docs, commits, logs, screenshots, or QA reports.
+
+Set:
+
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=<real key set only by user locally or in secret manager>
+OPENAI_MODEL=<chosen real model, for example gpt-4.1-mini>
+```
+
+Then run:
+
+```bash
+pnpm --filter @platform/api smoke:openai
+```
+
+Expected safe success:
+
+- `providerMode` shows `openai`
+- `attemptedRealOpenAI` is `true`
+- `assistantTextReturned` is `true`
+- `citationsReturned` is `true` when retrieved chunks exist
+- `providerMetadataReturned` is `true`
+- `usedFallback` is visible
+- no API key, auth header, raw env, or token value is printed
+
+Tenant-profile smoke:
+
+1. In admin-web, open `/admin`, select a tenant, and save a visibly recognizable AI Profile tone, assistant name, and company display name.
+2. Add or use a knowledge document with a clear answer.
+3. Ask a matching customer question in `/chat` or the embedded widget.
+4. Confirm the real AI answer reflects the tenant tone/profile while staying grounded in knowledge.
+5. Confirm it does not invent unsupported pricing, policies, guarantees, services, or operational promises.
+6. Confirm citations are preserved.
+7. Confirm fallback/handoff messaging remains safe.
+
+Fake/test/local-only tokens validate only local QA paths. They are not online/alpha acceptance evidence.

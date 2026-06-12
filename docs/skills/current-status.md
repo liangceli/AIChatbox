@@ -1,5 +1,33 @@
 # Current Status
 
+## 2026-06-05 Persistent Human Support Mode
+
+- Human handoff is now an explicit persistent mode: `PENDING_HUMAN` remains active after agent replies.
+- Customer messages during `PENDING_HUMAN` are saved for the agent and return `assistantMessage: null`; deterministic/OpenAI providers are not called.
+- Customers can end human support from the widget/local chat when they want AI to resume.
+- Admin/agent consoles can start or end human mode through protected human-support endpoints via the admin-web proxy.
+
+## 2026-06-05 Local Dev Startup And Admin Access Ergonomics
+
+- Admin-web server routes now load the repository-root `.env` before validating admin access/proxy config.
+- Admin-web uses an admin-web-specific env parser for `/admin/access` and `/api/admin/...`, so unrelated API/OpenAI env validation does not block local admin login.
+- `apps/admin-web` explicitly declares `@platform/config` as a workspace dependency.
+- Local placeholder QA remains token-gated: if `ADMIN_WEB_ACCESS_TOKEN=test-web-token`, entering `test-web-token` at `/admin/access` should unlock the admin UI.
+- Production security goals are unchanged: browser code must not receive `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, or `ADMIN_WEB_SESSION_SECRET`; protected backend calls still go through the server-side proxy.
+- `docs/runtime/local-dev-checklist.md` documents the normal root `pnpm dev` path, Corepack setup if `pnpm` is not on PATH, URL map, required env keys, and troubleshooting.
+
+## 2026-06-05 Tenant AI Profile Implementation
+
+- Tenant AI profile settings are implemented on top of existing `AgentConfig` storage: display fields use existing columns/widget settings, and internal prompt guidance is stored in `metadata.aiProfile`.
+- No Prisma schema change or migration was introduced for the profile foundation.
+- Protected admin routes: `GET /v1/tenants/:tenantSlug/ai-profile` and `PATCH /v1/tenants/:tenantSlug/ai-profile`.
+- Public widget-safe route: `GET /v1/tenant-profile` with tenant resolution. It returns display fields only and does not expose safe answer rules, sensitive topic rules, do-not-answer rules, provider settings, tenant IDs, or secrets.
+- Admin-web now includes an AI Profile form that uses the existing `/api/admin/...` server-side proxy. Browser code still does not receive `ADMIN_API_TOKEN`.
+- Customer widget loads public tenant profile basics and displays assistant name, company display name, welcome/handoff messaging, primary color, and avatar/logo when configured.
+- OpenAI prompt assembly now combines platform safety rules with tenant profile identity, business type, tone, and internal guidance. Platform safety rules remain explicitly higher priority than tenant profile text.
+- Deterministic fallback remains default and uses tenant fallback/handoff messaging where low-risk.
+- Real OpenAI activation remains a manual user action: configure `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` only in local `.env` or a secret manager, then run `pnpm --filter @platform/api smoke:openai`.
+
 ## 2026-06-05 Runtime Env, OpenAI Enablement, And Safe Answer Baseline
 
 - Latest commit reviewed: `bcaa940 Add runtime env templates and OpenAI safety docs`.

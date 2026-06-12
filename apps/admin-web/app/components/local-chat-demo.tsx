@@ -74,6 +74,7 @@ export function LocalChatDemo({
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isRequestingHandoff, setIsRequestingHandoff] = useState(false);
+  const [isEndingHandoff, setIsEndingHandoff] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -92,7 +93,7 @@ export function LocalChatDemo({
     }
 
     if (isPendingHuman) {
-      return "Human handoff is pending. Refresh to check for an agent reply.";
+      return "Human support is active. Customer messages are saved for the agent and AI stays paused until human support ends.";
     }
 
     return "Conversation is persisted through the API and Prisma.";
@@ -101,7 +102,7 @@ export function LocalChatDemo({
   async function sendMessage() {
     const message = draft.trim();
 
-    if (!message || isSending || !visitorId || isPendingHuman) {
+    if (!message || isSending || !visitorId) {
       return;
     }
 
@@ -222,6 +223,42 @@ export function LocalChatDemo({
     }
   }
 
+  async function endHandoff() {
+    if (!conversation?.id || !visitorId || !isPendingHuman || isEndingHandoff) {
+      return;
+    }
+
+    setIsEndingHandoff(true);
+    setError(undefined);
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/conversations/${conversation.id}/handoff/end`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-tenant-slug": tenantSlug
+        },
+        body: JSON.stringify({
+          visitorId,
+          reason: "Customer ended human support from the local demo."
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`End handoff request failed with status ${response.status}`);
+      }
+
+      const payload = (await response.json()) as ConversationDetail;
+      setConversation(payload);
+    } catch (requestError: unknown) {
+      setError(
+        requestError instanceof Error ? requestError.message : "Unable to end human support."
+      );
+    } finally {
+      setIsEndingHandoff(false);
+    }
+  }
+
   return (
     <section style={shellStyle}>
       <div
@@ -323,8 +360,7 @@ export function LocalChatDemo({
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        placeholder={isPendingHuman ? "Human support is pending." : "Ask a support question"}
-        disabled={isPendingHuman}
+        placeholder={isPendingHuman ? "Message the support agent" : "Ask a support question"}
         style={{
           minHeight: "92px",
           borderRadius: "18px",
@@ -334,7 +370,7 @@ export function LocalChatDemo({
           font: "inherit",
           lineHeight: 1.45,
           outline: "none",
-          opacity: isPendingHuman ? 0.65 : 1
+          opacity: 1
         }}
       />
 
@@ -342,20 +378,31 @@ export function LocalChatDemo({
         <button
           type="button"
           onClick={sendMessage}
-          disabled={isSending || !visitorId || isPendingHuman}
+          disabled={isSending || !visitorId}
           style={controlButtonStyle}
         >
           {isSending ? "Sending..." : "Send test message"}
         </button>
 
-        <button
-          type="button"
-          onClick={requestHandoff}
-          disabled={!conversation?.id || isRequestingHandoff || isPendingHuman}
-          style={secondaryButtonStyle}
-        >
-          {isRequestingHandoff ? "Requesting..." : "Talk to human"}
-        </button>
+        {isPendingHuman ? (
+          <button
+            type="button"
+            onClick={endHandoff}
+            disabled={!conversation?.id || isEndingHandoff}
+            style={secondaryButtonStyle}
+          >
+            {isEndingHandoff ? "Ending..." : "End human support"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={requestHandoff}
+            disabled={!conversation?.id || isRequestingHandoff}
+            style={secondaryButtonStyle}
+          >
+            {isRequestingHandoff ? "Requesting..." : "Talk to human"}
+          </button>
+        )}
 
         <button
           type="button"

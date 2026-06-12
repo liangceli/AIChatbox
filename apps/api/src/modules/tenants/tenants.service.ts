@@ -1,8 +1,16 @@
-import { ConversationStatus, TenantStatus } from "@platform/database";
-import type { TenantOverviewRecord } from "@platform/types";
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConversationStatus, Prisma, TenantStatus } from "@platform/database";
+import type { PublicTenantAiProfile, TenantAiProfile, TenantOverviewRecord } from "@platform/types";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
+import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import type { CreateTenantDto } from "./dto/create-tenant.dto";
+import type { UpdateTenantAiProfileDto } from "./dto/update-tenant-ai-profile.dto";
+import {
+  buildAgentConfigPersistence,
+  buildTenantAiProfile,
+  mergeTenantAiProfile,
+  toPublicTenantAiProfile
+} from "./tenant-ai-profile";
 
 @Injectable()
 export class TenantsService {
@@ -83,12 +91,36 @@ export class TenantsService {
       await tx.agentConfig.create({
         data: {
           tenantId: createdTenant.id,
-          displayName: `${createdTenant.name} Support Assistant`,
-          welcomeMessage: "Hi, I can help with quick support questions.",
-          fallbackMessage: "I received your message and will help with the next step.",
+          displayName: "AI Support Assistant",
+          welcomeMessage: "Hi, how can I help today?",
+          fallbackMessage:
+            "I do not have enough confirmed information to answer that. I can connect you with the team for help.",
           handoffEnabled: true,
           widgetSettings: {
-            title: `${createdTenant.name} Support`
+            title: "AI Support Assistant",
+            companyDisplayName: createdTenant.name,
+            welcomeMessage: "Hi, how can I help today?",
+            fallbackMessage:
+              "I do not have enough confirmed information to answer that. I can connect you with the team for help.",
+            handoffMessage: "I can pass this to a team member for support."
+          },
+          metadata: {
+            aiProfile: {
+              assistantName: "AI Support Assistant",
+              companyDisplayName: createdTenant.name,
+              businessType: "customer support",
+              tone: "helpful, concise, professional",
+              handoffMessage: "I can pass this to a team member for support.",
+              safeAnswerInstructions:
+                "Use confirmed support knowledge and safe general guidance. If information is missing, say that clearly.",
+              sensitiveTopicInstructions:
+                "For sensitive or uncertain topics, avoid guessing and recommend human support when appropriate.",
+              doNotAnswerInstructions:
+                "Do not answer with unsupported prices, policies, guarantees, private data, credentials, or internal system details.",
+              primaryColor: null,
+              logoUrl: null,
+              avatarUrl: null
+            }
           }
         }
       });
@@ -140,5 +172,85 @@ export class TenantsService {
       createdAt: tenant.createdAt.toISOString(),
       updatedAt: tenant.updatedAt.toISOString()
     };
+  }
+
+  async getTenantAiProfile(tenantSlug: string): Promise<TenantAiProfile> {
+    const tenant = await this.prisma.client.tenant.findUnique({
+      where: {
+        slug: tenantSlug.trim()
+      },
+      include: {
+        agentConfig: true
+      }
+    });
+
+    if (!tenant) {
+      throw new NotFoundException(`Tenant not found for slug: ${tenantSlug}`);
+    }
+
+    return buildTenantAiProfile(tenant, tenant.agentConfig);
+  }
+
+  async updateTenantAiProfile(
+    tenantSlug: string,
+    input: UpdateTenantAiProfileDto
+  ): Promise<TenantAiProfile> {
+    const tenant = await this.prisma.client.tenant.findUnique({
+      where: {
+        slug: tenantSlug.trim()
+      },
+      include: {
+        agentConfig: true
+      }
+    });
+
+    if (!tenant) {
+      throw new NotFoundException(`Tenant not found for slug: ${tenantSlug}`);
+    }
+
+    const currentProfile = buildTenantAiProfile(tenant, tenant.agentConfig);
+    const nextProfile = mergeTenantAiProfile(currentProfile, input);
+    const persistence = buildAgentConfigPersistence(nextProfile, tenant.agentConfig);
+
+    await this.prisma.client.agentConfig.upsert({
+      where: {
+        tenantId: tenant.id
+      },
+      update: {
+        displayName: persistence.displayName,
+        welcomeMessage: persistence.welcomeMessage,
+        fallbackMessage: persistence.fallbackMessage,
+        widgetSettings: persistence.widgetSettings as Prisma.InputJsonValue,
+        metadata: persistence.metadata as Prisma.InputJsonValue
+      },
+      create: {
+        tenantId: tenant.id,
+        displayName: persistence.displayName,
+        welcomeMessage: persistence.welcomeMessage,
+        fallbackMessage: persistence.fallbackMessage,
+        handoffEnabled: true,
+        widgetSettings: persistence.widgetSettings as Prisma.InputJsonValue,
+        metadata: persistence.metadata as Prisma.InputJsonValue
+      }
+    });
+
+    return nextProfile;
+  }
+
+  async getPublicTenantAiProfile(tenant: ResolvedTenant): Promise<PublicTenantAiProfile> {
+    const record = await this.prisma.client.tenant.findUnique({
+      where: {
+        id: tenant.id
+      },
+      include: {
+        agentConfig: true
+      }
+    });
+
+    if (!record) {
+      throw new NotFoundException(`Tenant not found for slug: ${tenant.slug}`);
+    }
+
+    return toPublicTenantAiProfile(buildTenantAiProfile(record, record.agentConfig));
   }
 }

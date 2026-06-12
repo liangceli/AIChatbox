@@ -29,7 +29,6 @@ export function AgentConsole({
           tenantSlug={tenantSlug}
           allowAssignment={false}
           allowAdminDeletes={false}
-          messagesNewestFirst
         />
       </section>
     </main>

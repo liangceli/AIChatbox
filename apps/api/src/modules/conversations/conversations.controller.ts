@@ -13,6 +13,7 @@ import { AssignConversationDto } from "./dto/assign-conversation.dto";
 import { ListConversationsQueryDto } from "./dto/list-conversations-query.dto";
 import { RequestHandoffDto } from "./dto/request-handoff.dto";
 import { SendAgentReplyDto } from "./dto/send-agent-reply.dto";
+import { UpdateHumanSupportDto } from "./dto/update-human-support.dto";
 import { ConversationsService } from "./conversations.service";
 
 @Controller("conversations")
@@ -91,6 +92,50 @@ export class ConversationsController {
       tenant,
       conversationId,
       body.visitorId,
+      body.reason
+    );
+  }
+
+  @Post(":conversationId/handoff/end")
+  async endCustomerHandoff(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("conversationId") conversationId: string,
+    @Body() body: RequestHandoffDto
+  ): Promise<ConversationDetail> {
+    return this.conversationsService.endCustomerHandoff(
+      tenant,
+      conversationId,
+      body.visitorId,
+      body.reason
+    );
+  }
+
+  @Post(":conversationId/human-support/start")
+  @UseGuards(AdminApiGuard)
+  async startHumanSupport(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("conversationId") conversationId: string,
+    @Body() body: UpdateHumanSupportDto
+  ): Promise<ConversationDetail> {
+    return this.conversationsService.startHumanSupport(
+      tenant,
+      conversationId,
+      body.userId,
+      body.reason
+    );
+  }
+
+  @Post(":conversationId/human-support/end")
+  @UseGuards(AdminApiGuard)
+  async endHumanSupport(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("conversationId") conversationId: string,
+    @Body() body: UpdateHumanSupportDto
+  ): Promise<ConversationDetail> {
+    return this.conversationsService.endHumanSupport(
+      tenant,
+      conversationId,
+      body.userId,
       body.reason
     );
   }

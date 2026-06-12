@@ -1,5 +1,15 @@
 # Decision Log
 
+## 2026-06-05 - Add tenant AI profile foundation
+
+Decision: Reuse existing `AgentConfig` storage for tenant AI profile settings, add protected admin profile read/update, add public widget-safe profile read, pass profile context into LLM providers, and update widget/admin surfaces to consume profile basics.
+
+Reason: The platform needs tenant-specific assistant identity, tone, safety guidance, and widget display without introducing Level 3 lead capture, full theme building, or a new auth system.
+
+Trade-off: Profile data is stored in existing `AgentConfig` JSON fields rather than new explicit columns. This avoids a migration and keeps the change small, but future reporting/searching over individual profile fields may require schema promotion.
+
+Affected areas: `packages/types`, `packages/ai-core`, API tenants/chat/OpenAI prompt, admin-web AI Profile panel, customer widget profile display, provider tests, runtime/OpenAI/QA/backend/frontend/API/data-model docs.
+
 ## 2026-06-05 - Add runtime env templates and OpenAI enablement baseline
 
 Decision: Add product-neutral env templates for local/staging/production, document local-only test tokens and seed/demo tenant slug handling, add runtime checklists, tighten OpenAI prompt safety rules, and make the OpenAI smoke helper print a clearer secret-safe summary.

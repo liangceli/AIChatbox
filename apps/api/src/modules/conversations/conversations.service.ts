@@ -261,6 +261,261 @@ export class ConversationsService {
     return this.getConversationDetail(tenant, conversationId);
   }
 
+  async endCustomerHandoff(
+    tenant: ResolvedTenant,
+    conversationId: string,
+    visitorId?: string,
+    reason?: string
+  ): Promise<ConversationDetail> {
+    const normalizedVisitorId = visitorId?.trim();
+
+    if (!normalizedVisitorId) {
+      throw new BadRequestException("visitorId is required to end customer handoff.");
+    }
+
+    const normalizedReason = reason?.trim() || null;
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const conversation = await tx.conversation.findUnique({
+        where: {
+          id_tenantId: {
+            id: conversationId,
+            tenantId: tenant.id
+          }
+        },
+        include: {
+          customer: {
+            select: {
+              visitorId: true
+            }
+          }
+        }
+      });
+
+      if (!conversation) {
+        throw new NotFoundException("Conversation not found.");
+      }
+
+      if (conversation.customer.visitorId !== normalizedVisitorId) {
+        throw new ForbiddenException("Conversation does not belong to this visitor.");
+      }
+
+      if (conversation.status !== ConversationStatus.PENDING_HUMAN) {
+        return;
+      }
+
+      const eventMessage = await tx.message.create({
+        data: {
+          tenantId: tenant.id,
+          conversationId: conversation.id,
+          authorType: MessageAuthor.SYSTEM,
+          messageType: MessageType.HANDOFF_EVENT,
+          content: normalizedReason
+            ? `Customer ended human support. Reason: ${normalizedReason}`
+            : "Customer ended human support. AI support can resume.",
+          payload: {
+            endedBy: "customer",
+            reason: normalizedReason
+          }
+        }
+      });
+
+      await tx.conversation.update({
+        where: {
+          id_tenantId: {
+            id: conversation.id,
+            tenantId: tenant.id
+          }
+        },
+        data: {
+          status: ConversationStatus.OPEN,
+          handoffRequestedAt: null,
+          handoffReason: null,
+          lastMessageAt: eventMessage.createdAt
+        }
+      });
+    });
+
+    return this.getCustomerConversationDetail(tenant, conversationId, normalizedVisitorId);
+  }
+
+  async startHumanSupport(
+    tenant: ResolvedTenant,
+    conversationId: string,
+    userId?: string,
+    reason?: string
+  ): Promise<ConversationDetail> {
+    const normalizedUserId = userId?.trim();
+
+    if (normalizedUserId) {
+      await this.ensureTenantUser(tenant.id, normalizedUserId);
+    }
+
+    const normalizedReason = reason?.trim() || null;
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const conversation = await tx.conversation.findUnique({
+        where: {
+          id_tenantId: {
+            id: conversationId,
+            tenantId: tenant.id
+          }
+        },
+        select: {
+          id: true,
+          status: true
+        }
+      });
+
+      if (!conversation) {
+        throw new NotFoundException("Conversation not found.");
+      }
+
+      if (conversation.status === ConversationStatus.PENDING_HUMAN) {
+        const data: Prisma.ConversationUpdateInput = {
+          ...(normalizedUserId ? { assignedUser: { connect: { id: normalizedUserId } } } : {}),
+          ...(normalizedReason ? { handoffReason: normalizedReason } : {})
+        };
+
+        if (Object.keys(data).length > 0) {
+          await tx.conversation.update({
+            where: {
+              id_tenantId: {
+                id: conversation.id,
+                tenantId: tenant.id
+              }
+            },
+            data
+          });
+        }
+
+        return;
+      }
+
+      const eventMessage = await tx.message.create({
+        data: {
+          tenantId: tenant.id,
+          conversationId: conversation.id,
+          authorType: MessageAuthor.SYSTEM,
+          messageType: MessageType.HANDOFF_EVENT,
+          content: normalizedReason
+            ? `Agent enabled human support. Reason: ${normalizedReason}`
+            : "Agent enabled human support.",
+          payload: {
+            requestedBy: "agent",
+            userId: normalizedUserId ?? null,
+            reason: normalizedReason
+          }
+        }
+      });
+
+      await tx.conversation.update({
+        where: {
+          id_tenantId: {
+            id: conversation.id,
+            tenantId: tenant.id
+          }
+        },
+        data: {
+          ...(normalizedUserId ? { assignedUserId: normalizedUserId } : {}),
+          status: ConversationStatus.PENDING_HUMAN,
+          handoffRequestedAt: eventMessage.createdAt,
+          handoffReason: normalizedReason,
+          lastMessageAt: eventMessage.createdAt
+        }
+      });
+    });
+
+    return this.getConversationDetail(tenant, conversationId);
+  }
+
+  async endHumanSupport(
+    tenant: ResolvedTenant,
+    conversationId: string,
+    userId?: string,
+    reason?: string
+  ): Promise<ConversationDetail> {
+    const normalizedUserId = userId?.trim();
+
+    if (normalizedUserId) {
+      await this.ensureTenantUser(tenant.id, normalizedUserId);
+    }
+
+    const normalizedReason = reason?.trim() || null;
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const conversation = await tx.conversation.findUnique({
+        where: {
+          id_tenantId: {
+            id: conversationId,
+            tenantId: tenant.id
+          }
+        },
+        select: {
+          id: true,
+          status: true
+        }
+      });
+
+      if (!conversation) {
+        throw new NotFoundException("Conversation not found.");
+      }
+
+      if (conversation.status !== ConversationStatus.PENDING_HUMAN) {
+        if (normalizedUserId) {
+          await tx.conversation.update({
+            where: {
+              id_tenantId: {
+                id: conversation.id,
+                tenantId: tenant.id
+              }
+            },
+            data: {
+              assignedUserId: normalizedUserId
+            }
+          });
+        }
+
+        return;
+      }
+
+      const eventMessage = await tx.message.create({
+        data: {
+          tenantId: tenant.id,
+          conversationId: conversation.id,
+          authorType: MessageAuthor.SYSTEM,
+          messageType: MessageType.HANDOFF_EVENT,
+          content: normalizedReason
+            ? `Agent ended human support. Reason: ${normalizedReason}`
+            : "Agent ended human support. AI support can resume.",
+          payload: {
+            endedBy: "agent",
+            userId: normalizedUserId ?? null,
+            reason: normalizedReason
+          }
+        }
+      });
+
+      await tx.conversation.update({
+        where: {
+          id_tenantId: {
+            id: conversation.id,
+            tenantId: tenant.id
+          }
+        },
+        data: {
+          ...(normalizedUserId ? { assignedUserId: normalizedUserId } : {}),
+          status: ConversationStatus.OPEN,
+          handoffRequestedAt: null,
+          handoffReason: null,
+          lastMessageAt: eventMessage.createdAt
+        }
+      });
+    });
+
+    return this.getConversationDetail(tenant, conversationId);
+  }
+
   async assignConversation(
     tenant: ResolvedTenant,
     conversationId: string,
@@ -322,7 +577,9 @@ export class ConversationsService {
           }
         },
         select: {
-          id: true
+          id: true,
+          handoffRequestedAt: true,
+          handoffReason: true
         }
       });
 
@@ -350,7 +607,9 @@ export class ConversationsService {
         },
         data: {
           assignedUserId: userId,
-          status: ConversationStatus.AWAITING_CUSTOMER,
+          status: ConversationStatus.PENDING_HUMAN,
+          handoffRequestedAt: conversation.handoffRequestedAt ?? agentMessage.createdAt,
+          handoffReason: conversation.handoffReason ?? "Agent joined the conversation.",
           lastMessageAt: agentMessage.createdAt
         }
       });
