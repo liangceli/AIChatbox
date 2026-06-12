@@ -1,13 +1,16 @@
 "use client";
 
 import { CustomerWidget } from "@platform/customer-widget";
+import type { PublicTenantAiProfile } from "@platform/types";
 
 export function CustomerChatSurface({
   apiBaseUrl,
-  tenantSlug
+  tenantSlug,
+  initialProfile
 }: {
   apiBaseUrl: string;
   tenantSlug: string;
+  initialProfile?: PublicTenantAiProfile;
 }) {
   return (
     <main className="chat-page">
@@ -15,6 +18,7 @@ export function CustomerChatSurface({
         <CustomerWidget
           apiBaseUrl={apiBaseUrl}
           tenantSlug={tenantSlug}
+          initialProfile={initialProfile}
           theme={{
             title: "Support"
           }}

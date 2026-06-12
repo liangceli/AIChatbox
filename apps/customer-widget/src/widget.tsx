@@ -1,5 +1,5 @@
 import type { CSSProperties, FormEvent } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ConversationDetail,
   MessageAuthorType,
@@ -240,16 +240,20 @@ export function CustomerWidget({
   tenantSlug,
   apiBaseUrl,
   visitorId: initialVisitorId,
-  theme
-}: WidgetBootstrapOptions) {
+  theme,
+  initialProfile
+}: WidgetBootstrapOptions & {
+  initialProfile?: PublicTenantAiProfile;
+}) {
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [draft, setDraft] = useState("");
   const [visitorId, setVisitorId] = useState<string>(initialVisitorId ?? "");
   const [error, setError] = useState<string>();
-  const [profile, setProfile] = useState<PublicTenantAiProfile>();
+  const [profile, setProfile] = useState<PublicTenantAiProfile | undefined>(initialProfile);
   const [isSending, setIsSending] = useState(false);
   const [isRequestingHandoff, setIsRequestingHandoff] = useState(false);
   const [isEndingHandoff, setIsEndingHandoff] = useState(false);
+  const messageListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setVisitorId(resolveAnonymousVisitorId(tenantSlug, initialVisitorId) ?? "");
@@ -268,14 +272,12 @@ export function CustomerWidget({
           }
         });
 
-        if (!response.ok) {
-          return;
-        }
+        if (response.ok) {
+          const payload = (await response.json()) as PublicTenantAiProfile;
 
-        const payload = (await response.json()) as PublicTenantAiProfile;
-
-        if (isMounted) {
-          setProfile(payload);
+          if (isMounted) {
+            setProfile(payload);
+          }
         }
       } catch {
         if (isMounted) {
@@ -284,13 +286,67 @@ export function CustomerWidget({
       }
     }
 
-    setProfile(undefined);
     void loadProfile();
 
     return () => {
       isMounted = false;
     };
   }, [apiBaseUrl, tenantSlug]);
+
+  useEffect(() => {
+    if (!visitorId) {
+      return;
+    }
+
+    const storedConversationId = readConversationId(tenantSlug);
+
+    if (!storedConversationId) {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function restoreConversation() {
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/conversations/${storedConversationId}/customer-detail?visitorId=${encodeURIComponent(visitorId)}`,
+          {
+            headers: {
+              "x-tenant-slug": tenantSlug
+            }
+          }
+        );
+
+        if (!response.ok) {
+          if (response.status === 403 || response.status === 404) {
+            removeConversationId(tenantSlug);
+          }
+
+          return;
+        }
+
+        const payload = (await response.json()) as ConversationDetail;
+
+        if (isMounted) {
+          setConversation(payload);
+        }
+      } catch {
+        // Keep the stored conversation id so a later refresh can retry.
+      }
+    }
+
+    void restoreConversation();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl, tenantSlug, visitorId]);
+
+  useEffect(() => {
+    if (conversation?.id) {
+      persistConversationId(tenantSlug, conversation.id);
+    }
+  }, [conversation?.id, tenantSlug]);
 
   useEffect(() => {
     if (!conversation?.id) {
@@ -332,6 +388,24 @@ export function CustomerWidget({
     (profile?.primaryColor
       ? `linear-gradient(135deg, ${profile.primaryColor}, #111827)`
       : headerStyle.background);
+  const latestMessageId = messages.at(-1)?.id;
+
+  useEffect(() => {
+    const messageList = messageListRef.current;
+
+    if (!messageList) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      messageList.scrollTo({
+        top: messageList.scrollHeight,
+        behavior: "smooth"
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [latestMessageId, messages.length, conversation?.status]);
 
   const introCopy = useMemo(() => {
     if (!conversation) {
@@ -537,7 +611,7 @@ export function CustomerWidget({
           <span>Visitor: {visitorLabel}</span>
         </div>
 
-        <div style={messageListStyle}>
+        <div ref={messageListRef} style={messageListStyle}>
           <div style={systemBubbleStyle}>{introCopy}</div>
 
           {messages.map((message) => {
@@ -669,4 +743,28 @@ function getInitials(value: string): string {
     .map((word) => word[0])
     .join("")
     .toUpperCase();
+}
+
+function getConversationStorageKey(tenantSlug: string): string {
+  return `customer-widget:${tenantSlug}:conversation-id`;
+}
+
+function readConversationId(tenantSlug: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(getConversationStorageKey(tenantSlug));
+}
+
+function persistConversationId(tenantSlug: string, conversationId: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(getConversationStorageKey(tenantSlug), conversationId);
+  }
+}
+
+function removeConversationId(tenantSlug: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(getConversationStorageKey(tenantSlug));
+  }
 }

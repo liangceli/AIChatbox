@@ -35,6 +35,7 @@ export function ConversationOpsPanel({
   const [isUpdatingHumanSupport, setIsUpdatingHumanSupport] = useState(false);
   const conversationsSignatureRef = useRef("");
   const detailSignatureRef = useRef("");
+  const conversationHistoryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void loadSupportUsers();
@@ -123,7 +124,22 @@ export function ConversationOpsPanel({
     );
   }, [conversationDetail?.messages]);
   const latestMessage = chronologicalMessages.at(-1)?.content ?? "";
+  const latestMessageId = chronologicalMessages.at(-1)?.id;
   const isHumanModeActive = conversationDetail?.status === "pending_human";
+
+  useEffect(() => {
+    const history = conversationHistoryRef.current;
+
+    if (!history) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      history.scrollTop = history.scrollHeight;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedConversationId, latestMessageId, chronologicalMessages.length]);
 
   async function loadSupportUsers() {
     try {
@@ -430,7 +446,7 @@ export function ConversationOpsPanel({
                   : "No conversation selected"}
               </span>
             </div>
-            <div className="conversation-history-list">
+            <div ref={conversationHistoryRef} className="conversation-history-list">
               {!conversationDetail ? (
                 <div className="conversation-history-empty">
                   Select a conversation to view its complete message history.
