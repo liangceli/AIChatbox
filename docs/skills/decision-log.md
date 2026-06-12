@@ -1,5 +1,13 @@
 # Decision Log
 
+## 2026-06-12 - RAG quality hardening
+
+Decision: Harden current deterministic RAG for alpha with safer URL cleaning, repeated-block chunk cleanup, support synonym retrieval, source diversity, Answer Debug RAG indicators, architecture audit docs, and a deferred RAG 2.0 path.
+
+Reason: These are low-risk, testable improvements that improve answer quality without introducing embeddings, vector infrastructure, new dependencies, migrations, or real-provider CI coupling.
+
+Affected areas: API knowledge import/chunking/retrieval/debug tests, shared Answer Debug types, admin Answer Debug UI, architecture docs, and RAG-related skills.
+
 ## 2026-06-12 - Add non-persistent protected knowledge answer debug
 
 Decision: Add a protected, tenant-scoped Answer Debug route and admin Knowledge Base debug panel that reuse current retrieval/provider behavior without persisting customer conversations or messages.

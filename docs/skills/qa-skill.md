@@ -1,5 +1,14 @@
 # QA Skill
 
+## 2026-06-12 RAG Quality Regression Gate
+
+- URL import cleaning must remove common page chrome/noise and duplicate lines while preserving useful title/heading/content.
+- Chunking must not create extra chunks for repeated identical blocks.
+- Chunking tests must prove reliable source locators slice back to persisted document content and that locators are omitted when repeated-block cleanup would make offsets unreliable.
+- Retrieval must preserve raw plural candidate lookup, avoid substring-only weak matches, support common support synonyms such as refund/return, and apply source diversity when multiple documents match.
+- Answer Debug must show safe retrieval confidence/source diversity/warnings and must not persist customer/conversation/message records.
+- Manual alpha QA should use direct, short keyword, synonym, phrase, miss, sensitive, noisy URL, and archived-document questions.
+
 ## 2026-06-12 URL Import SSRF Regression Gate
 
 - URL import must reject `localhost`, loopback, RFC1918 private ranges, carrier-grade NAT, link-local/cloud metadata targets, reserved/documentation addresses, non-public IPv6, embedded credentials, and hostnames resolving to any restricted address.

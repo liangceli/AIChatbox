@@ -4,7 +4,7 @@ export interface ChunkedKnowledgeContent {
   chunkIndex: number;
   content: string;
   tokenCount: number;
-  sourceLocator: {
+  sourceLocator?: {
     startOffset: number;
     endOffset: number;
   };
@@ -17,13 +17,16 @@ export class KnowledgeChunkingService {
   private readonly overlapSize = 160;
 
   chunkText(content: string): ChunkedKnowledgeContent[] {
-    const normalized = content.replace(/\r\n/g, "\n").trim();
+    const originalNormalized = content.replace(/\r\n/g, "\n").trim();
+    const normalized = this.dedupeRepeatedBlocks(originalNormalized).trim();
+    const canUseSourceOffsets = normalized === originalNormalized;
 
     if (!normalized) {
       return [];
     }
 
     const chunks: ChunkedKnowledgeContent[] = [];
+    const seenChunkKeys = new Set<string>();
     let start = 0;
     let chunkIndex = 0;
 
@@ -41,6 +44,23 @@ export class KnowledgeChunkingService {
       const rawChunk = normalized.slice(start, end).trim();
 
       if (rawChunk) {
+        const chunkKey = this.normalizeChunkKey(rawChunk);
+
+        if (seenChunkKeys.has(chunkKey)) {
+          if (end >= normalized.length) {
+            break;
+          }
+
+          start = this.findOverlapStart(normalized, start, end);
+
+          while (start < normalized.length && /\s/.test(normalized[start] ?? "")) {
+            start += 1;
+          }
+
+          continue;
+        }
+
+        seenChunkKeys.add(chunkKey);
         const trimmedStartOffset = normalized.indexOf(rawChunk, start);
         const trimmedEndOffset = trimmedStartOffset + rawChunk.length;
 
@@ -48,10 +68,13 @@ export class KnowledgeChunkingService {
           chunkIndex,
           content: rawChunk,
           tokenCount: rawChunk.split(/\s+/).filter(Boolean).length,
-          sourceLocator: {
-            startOffset: trimmedStartOffset,
-            endOffset: trimmedEndOffset
-          }
+          sourceLocator:
+            canUseSourceOffsets && trimmedStartOffset >= 0
+              ? {
+                  startOffset: trimmedStartOffset,
+                  endOffset: trimmedEndOffset
+                }
+              : undefined
         });
         chunkIndex += 1;
       }
@@ -68,6 +91,30 @@ export class KnowledgeChunkingService {
     }
 
     return chunks;
+  }
+
+  private normalizeChunkKey(chunk: string): string {
+    return chunk.replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  private dedupeRepeatedBlocks(content: string): string {
+    const blocks = content.split(/\n{2,}/);
+    const seenBlocks = new Set<string>();
+    const cleanedBlocks: string[] = [];
+
+    for (const block of blocks) {
+      const preservedBlock = block.trim();
+      const key = preservedBlock.replace(/\s+/g, " ").trim().toLowerCase();
+
+      if (!key || seenBlocks.has(key)) {
+        continue;
+      }
+
+      seenBlocks.add(key);
+      cleanedBlocks.push(preservedBlock);
+    }
+
+    return cleanedBlocks.join("\n\n");
   }
 
   private findBoundary(content: string, start: number, end: number): number {

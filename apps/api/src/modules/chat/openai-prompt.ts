@@ -10,8 +10,10 @@ function formatKnowledgeContext(input: LlmProviderRequest): string {
       [
         `Source ${index + 1}: ${chunk.title}`,
         `Chunk ID: ${chunk.chunkId}`,
+        chunk.sourceUri ? `Source URL: ${chunk.sourceUri}` : null,
+        typeof chunk.relevanceScore === "number" ? `Retrieval score: ${chunk.relevanceScore}` : null,
         `Content: ${chunk.content.trim()}`
-      ].join("\n")
+      ].filter(Boolean).join("\n")
     )
     .join("\n\n");
 }

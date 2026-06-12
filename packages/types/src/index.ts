@@ -272,9 +272,12 @@ export interface AnswerDebugResult {
     | "retrieval_hit_without_citations";
   knowledge: {
     outcome: "hit" | "miss";
+    retrievalConfidence: "strong" | "weak" | "none";
     reason: string;
     retrievedChunkCount: number;
     citationCount: number;
+    sourceDiversity: number;
+    warnings: string[];
   };
   provider: {
     requestedMode: string;

@@ -97,8 +97,10 @@ export function AnswerDebugPanel({
             <DebugFact label="Requested provider" value={result.provider.requestedMode} />
             <DebugFact label="Used provider" value={result.provider.usedMode} />
             <DebugFact label="Fallback" value={result.provider.usedFallback ? "Yes" : "No"} />
+            <DebugFact label="Confidence" value={result.knowledge.retrievalConfidence} />
             <DebugFact label="Retrieved chunks" value={String(result.knowledge.retrievedChunkCount)} />
             <DebugFact label="Citations" value={String(result.knowledge.citationCount)} />
+            <DebugFact label="Source diversity" value={String(result.knowledge.sourceDiversity)} />
           </div>
 
           <article className="debug-answer-card">
@@ -108,6 +110,13 @@ export function AnswerDebugPanel({
             </div>
             <p>{result.answer}</p>
             <small>{result.knowledge.reason}</small>
+            {result.knowledge.warnings.length > 0 ? (
+              <ul className="debug-warning-list">
+                {result.knowledge.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            ) : null}
           </article>
 
           <div className="debug-detail-grid">

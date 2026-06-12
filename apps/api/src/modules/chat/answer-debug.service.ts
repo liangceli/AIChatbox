@@ -78,6 +78,7 @@ export class AnswerDebugService {
   ): AnswerDebugResult {
     const citations = this.sanitizeCitations(response.citations);
     const hasKnowledge = retrievedChunks.length > 0;
+    const retrievalConfidence = this.resolveRetrievalConfidence(retrievedChunks, citations.length);
 
     return {
       tenant: {
@@ -89,9 +90,12 @@ export class AnswerDebugService {
       answerSource: this.resolveAnswerSource(hasKnowledge, citations.length, response.metadata),
       knowledge: {
         outcome: hasKnowledge ? "hit" : "miss",
+        retrievalConfidence,
         reason: this.resolveKnowledgeReason(hasKnowledge, citations.length, response.metadata),
         retrievedChunkCount: retrievedChunks.length,
-        citationCount: citations.length
+        citationCount: citations.length,
+        sourceDiversity: new Set(retrievedChunks.map((chunk) => chunk.knowledgeDocumentId)).size,
+        warnings: this.buildKnowledgeWarnings(retrievedChunks, citations.length, response.metadata)
       },
       provider: {
         requestedMode,
@@ -173,5 +177,56 @@ export class AnswerDebugService {
     }
 
     return "Relevant tenant-scoped knowledge was retrieved and mapped to backend citations.";
+  }
+
+  private resolveRetrievalConfidence(
+    retrievedChunks: LlmRetrievedKnowledgeChunk[],
+    citationCount: number
+  ): AnswerDebugResult["knowledge"]["retrievalConfidence"] {
+    if (retrievedChunks.length === 0) {
+      return "none";
+    }
+
+    const bestScore = Math.max(...retrievedChunks.map((chunk) => chunk.relevanceScore ?? 0));
+
+    if (bestScore >= 12 && citationCount > 0) {
+      return "strong";
+    }
+
+    return "weak";
+  }
+
+  private buildKnowledgeWarnings(
+    retrievedChunks: LlmRetrievedKnowledgeChunk[],
+    citationCount: number,
+    metadata: LlmProviderMetadata
+  ): string[] {
+    const warnings: string[] = [];
+
+    if (retrievedChunks.length === 0) {
+      warnings.push("No READY knowledge chunks met the retrieval threshold.");
+      return warnings;
+    }
+
+    const sourceDiversity = new Set(retrievedChunks.map((chunk) => chunk.knowledgeDocumentId)).size;
+    const bestScore = Math.max(...retrievedChunks.map((chunk) => chunk.relevanceScore ?? 0));
+
+    if (bestScore < 12) {
+      warnings.push("Retrieved evidence is weak; verify the answer before relying on it.");
+    }
+
+    if (sourceDiversity === 1 && retrievedChunks.length > 1) {
+      warnings.push("Retrieved chunks come from one document; consider adding broader source coverage.");
+    }
+
+    if (citationCount === 0) {
+      warnings.push("No backend citations were attached to the generated answer.");
+    }
+
+    if (metadata.usedFallback) {
+      warnings.push("Provider fallback was used for this answer.");
+    }
+
+    return warnings;
   }
 }

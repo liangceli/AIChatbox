@@ -24,18 +24,22 @@ interface SafeHttpResponse {
 
 type SafeHttpRequester = (
   resolution: SafeUrlResolution,
-  userAgent: string
+  userAgent: string,
+  deadlineMs: number
 ) => Promise<SafeHttpResponse>;
 
 const MAX_REDIRECTS = 5;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
+const URL_IMPORT_FLOW_TIMEOUT_MS = 45_000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 @Injectable()
 export class KnowledgeUrlImportService {
   private readonly importUserAgent = loadServerEnv(process.env).KNOWLEDGE_IMPORT_USER_AGENT;
   private requester: SafeHttpRequester = requestPinnedPublicUrl;
+  private requestDeadlineMs = REQUEST_TIMEOUT_MS;
+  private flowDeadlineMs = URL_IMPORT_FLOW_TIMEOUT_MS;
 
   constructor(
     @Inject(KnowledgeUrlSafetyService)
@@ -44,23 +48,32 @@ export class KnowledgeUrlImportService {
 
   static createForTest(
     urlSafetyService: KnowledgeUrlSafetyService,
-    requester: SafeHttpRequester
+    requester: SafeHttpRequester,
+    options?: { requestDeadlineMs?: number; flowDeadlineMs?: number }
   ): KnowledgeUrlImportService {
     const service = new KnowledgeUrlImportService(urlSafetyService);
     service.requester = requester;
+    service.requestDeadlineMs = options?.requestDeadlineMs ?? service.requestDeadlineMs;
+    service.flowDeadlineMs = options?.flowDeadlineMs ?? service.flowDeadlineMs;
 
     return service;
   }
 
   async fetchContent(rawUrl: string): Promise<ImportedUrlContent> {
     let currentUrl = rawUrl;
+    const flowStartedAt = Date.now();
 
     for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+      const remainingFlowMs = this.getRemainingFlowDeadlineMs(flowStartedAt);
       const resolution = await this.urlSafetyService.resolveSafePublicUrl(currentUrl);
       let response: SafeHttpResponse;
 
       try {
-        response = await this.requester(resolution, this.importUserAgent);
+        response = await this.requester(
+          resolution,
+          this.importUserAgent,
+          Math.min(this.requestDeadlineMs, remainingFlowMs)
+        );
       } catch {
         throw new BadRequestException("Unable to fetch URL safely.");
       }
@@ -93,6 +106,16 @@ export class KnowledgeUrlImportService {
     throw new BadRequestException(`URL import exceeded ${MAX_REDIRECTS} redirects.`);
   }
 
+  private getRemainingFlowDeadlineMs(flowStartedAt: number): number {
+    const remainingMs = this.flowDeadlineMs - (Date.now() - flowStartedAt);
+
+    if (remainingMs <= 0) {
+      throw new BadRequestException("URL import exceeded the overall import deadline.");
+    }
+
+    return remainingMs;
+  }
+
   private parseResponse(response: SafeHttpResponse): ImportedUrlContent {
     const contentType = response.contentType.toLowerCase();
 
@@ -108,7 +131,7 @@ export class KnowledgeUrlImportService {
     const title = this.extractHtmlTitle(response.body);
     const content = contentType.includes("text/html")
       ? this.extractReadableText(response.body)
-      : response.body.trim();
+      : this.normalizeReadableText(response.body);
 
     if (!content || content.length < 40) {
       throw new BadRequestException("Fetched URL did not contain enough readable text.");
@@ -127,18 +150,46 @@ export class KnowledgeUrlImportService {
   }
 
   private extractReadableText(html: string): string {
-    return this.decodeHtml(
-      html
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
-        .replace(/<\/(p|div|section|article|li|h1|h2|h3|tr)>/gi, "\n")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/[ \t]+/g, " ")
-        .replace(/\n\s+/g, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim()
+    const withoutNoise = html
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+      .replace(/<(nav|footer|header|aside|form|button|svg|canvas)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<[^>]+(?:hidden|aria-hidden=["']?true["']?)[^>]*>[\s\S]*?<\/[^>]+>/gi, " ");
+
+    return this.normalizeReadableText(
+      this.decodeHtml(
+        withoutNoise
+          .replace(/<\/(h1|h2|h3|h4)>/gi, "\n")
+          .replace(/<\/(p|div|section|article|li|tr)>/gi, "\n")
+          .replace(/<[^>]+>/g, " ")
+      )
     );
+  }
+
+  private normalizeReadableText(value: string): string {
+    const lines = value
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .split("\n")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    const normalizedLines: string[] = [];
+    const seenLines = new Set<string>();
+
+    for (const line of lines) {
+      const key = line.toLowerCase();
+
+      if (seenLines.has(key)) {
+        continue;
+      }
+
+      seenLines.add(key);
+      normalizedLines.push(line);
+    }
+
+    return normalizedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
   private decodeHtml(value: string): string {

@@ -1317,6 +1317,14 @@ button:active:not(:disabled) {
   line-height: 1.45;
 }
 
+.debug-warning-list {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .debug-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -1,5 +1,14 @@
 # 后端 Skill
 
+## 2026-06-12 RAG Quality Hardening Notes
+
+- URL import cleaning removes scripts/styles/noscript, common nav/footer/header/aside/form/button/svg/canvas noise, hidden/aria-hidden blocks, comments, duplicate lines, and malformed whitespace.
+- Chunking removes repeated blocks before splitting and retains chunk source offsets against the cleaned normalized content.
+- Chunk `sourceLocator` is emitted only when offsets remain reliable against persisted `KnowledgeDocument.content`; when repeated-block cleanup changes the chunking text, locator is omitted instead of returning misleading offsets.
+- Retrieval expands common support synonyms for candidate lookup/scoring while preserving raw plural candidates and exact normalized-token final scoring.
+- Retrieval applies a per-document diversity cap so one document cannot fill all top chunks when other matching sources exist.
+- Answer Debug knowledge output includes `retrievalConfidence`, `sourceDiversity`, and safe warnings.
+
 ## 2026-06-12 URL Import SSRF Protection
 
 - Knowledge URL import accepts only public HTTP(S) targets and rejects embedded URL credentials.

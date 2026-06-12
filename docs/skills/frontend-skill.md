@@ -1,5 +1,11 @@
 # 前端 Skill
 
+## 2026-06-12 Answer Debug RAG Indicators
+
+- Admin Answer Debug shows safe retrieval confidence, source diversity, and warning text from the backend.
+- Do not expose raw prompts, hidden rules, provider secrets, tenant IDs, `sourceLocator`, admin tokens, or OpenAI keys in the browser.
+- Keep the Knowledge/Answer Debug UI practical; do not redesign the dashboard for RAG diagnostics.
+
 ## 2026-06-12 Knowledge Debug And Management UX
 
 - `/admin` Knowledge Base includes an Answer Debug panel that calls protected `/api/admin/chat/answer-debug` through the existing server-side proxy.

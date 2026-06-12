@@ -1,5 +1,11 @@
 # Deployment Skill
 
+## 2026-06-12 RAG Alpha Deployment Notes
+
+- Real alpha readiness requires real OpenAI env, production/staging admin secrets, database/Redis wiring, allowed domains/CORS, and deployment egress denial for internal/metadata networks.
+- Do not treat local placeholder tokens, mocked OpenAI tests, or deterministic-only checks as online alpha acceptance.
+- RAG 2.0 infrastructure such as vector storage and async ingestion jobs remains deferred until deployment basics are stable.
+
 ## 2026-06-12 URL Import Network Boundary
 
 - Knowledge URL import is limited to safe public HTTP(S) targets.

@@ -1,5 +1,13 @@
 # Current Status
 
+## 2026-06-12 RAG Quality Hardening
+
+- Knowledge URL import now removes common HTML noise, hidden blocks, duplicate lines, and preserves heading breaks before chunking.
+- Chunking removes repeated blocks before splitting and still uses paragraph/sentence/overlap boundaries.
+- Retrieval keeps raw plural candidate lookup, normalized exact-token final scoring, common support synonym matching, title weighting, and a per-document diversity cap.
+- Answer Debug now exposes safe retrieval confidence, source diversity, and warnings without raw prompts, tenant IDs, secrets, or `sourceLocator`.
+- Architecture docs `docs/architecture/rag-quality-audit.md` and `docs/architecture/rag-2-upgrade-path.md` record alpha gaps and deferred RAG 2.0 work.
+
 ## 2026-06-12 Knowledge URL Import SSRF Protection
 
 - Latest commit: `8db4939 feat: add secure knowledge answer debug and URL import`.

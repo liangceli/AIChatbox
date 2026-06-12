@@ -1,5 +1,134 @@
 # Latest Implementation Handoff
 
+## Latest P1 QA Follow-Up: Backend Citation SourceLocator Omission
+
+### Required Fix
+
+- Fix remaining backend citation omission issue from QA.
+- `buildBackendCitations()` must only include `sourceLocator` when `chunk.sourceLocator` exists.
+- Citation objects that may be persisted as Prisma JSON must not contain `sourceLocator: undefined`.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/api/src/modules/chat/citation-builder.ts` | Builds citation objects without a `sourceLocator` key by default, then conditionally adds it only when the retrieved chunk has a locator. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds focused regression asserting `"sourceLocator" in citation === false` for chunks without reliable locators. |
+| `docs/ai-handoff/latest-implementation.md` | Adds this P1 follow-up handoff. |
+
+### Behavior Notes
+
+- Reliable locators are still preserved when present on retrieved chunks.
+- Unreliable/missing locators are now truly omitted from backend citation objects instead of represented as `sourceLocator: undefined`.
+- This avoids Prisma JSON persistence risk from nested `undefined` values and matches the reliable-only locator contract.
+
+### Verification
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| `pnpm --filter @platform/api typecheck` | Passed | Backend citation helper compiles. |
+| `pnpm --filter @platform/api test` | Passed | Includes backend citation omission regression; existing mocked OpenAI fallback warning remains non-fatal. |
+
+## Latest P1 QA Fix: Citation Source Locator Reliability
+
+### Required Fix
+
+- Fix citation `sourceLocator` reliability after repeated-block chunk dedupe.
+- Preserve locator accuracy against persisted `KnowledgeDocument.content`, or omit `sourceLocator` when offsets are not reliable.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/api/src/modules/knowledge/knowledge-chunking.service.ts` | Emits `sourceLocator` only when chunk offsets still map to the persisted input content; omits locator after repeated-block dedupe changes the chunking text. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds focused regressions for accurate locator slicing and locator omission after duplicate block cleanup. |
+| `docs/skills/backend-skill.md`, `ai-data-skill.md`, `qa-skill.md` | Records the optional/reliable-only locator contract. |
+| `docs/runtime/alpha-knowledge-qa-checklist.md` | Adds manual QA note for optional citation locators. |
+| `docs/ai-handoff/latest-implementation.md` | Adds this P1 handoff. |
+
+### Behavior Notes
+
+- For normal content where chunk text is not deduped/reordered, `sourceLocator` remains present and slices back to the persisted document content.
+- When repeated-block cleanup changes the text used for chunking, chunks still dedupe correctly but `sourceLocator` is omitted so customer/admin citations do not point to the wrong persisted offset.
+- Backend citations remain tied to retrieved chunk IDs and still include excerpts; only unreliable locators are suppressed.
+
+### Verification
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| `pnpm --filter @platform/api typecheck` | Passed | Optional locator implementation compiles. |
+| `pnpm --filter @platform/api test` | Passed | Includes source locator reliability regressions. |
+
+## Latest Task: Knowledge Intelligence Audit And RAG Quality Hardening
+
+### Original Task Brief Summary
+
+- Audit the knowledge ingestion, cleaning, chunking, retrieval, citation, OpenAI context, and Answer Debug pipeline before alpha.
+- Implement low-risk RAG quality hardening where practical.
+- Keep OpenAI manual/opt-in, preserve SSRF protection, avoid embeddings/vector DB/frameworks/migrations, and do not expose secrets or internal debug data.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/api/src/modules/knowledge/knowledge-url-import.service.ts` | Adds overall URL import flow deadline and stronger HTML noise/duplicate-line cleaning. |
+| `apps/api/src/modules/knowledge/knowledge-chunking.service.ts` | Removes repeated blocks before chunking and keeps chunk-level duplicate protection. |
+| `apps/api/src/modules/knowledge/knowledge-retrieval.service.ts` | Adds common support synonym matching and per-document source diversity while preserving raw plural candidate lookup and exact normalized final scoring. |
+| `apps/api/src/modules/chat/openai-prompt.ts` | Adds safe source URL and retrieval score to OpenAI knowledge context. |
+| `apps/api/src/modules/chat/answer-debug.service.ts` | Adds safe retrieval confidence, source diversity, and warnings. |
+| `packages/types/src/index.ts` | Extends Answer Debug result contract with safe RAG quality fields. |
+| `apps/admin-web/app/components/answer-debug-panel.tsx`, `app/globals.css` | Displays safe confidence/source diversity/warnings without broad redesign. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds cleaning, chunking, synonym retrieval, diversity, deadline, citation/debug safety, and non-persistence regressions. |
+| `docs/architecture/rag-quality-audit.md` | Adds concrete current-pipeline audit and alpha QA question set. |
+| `docs/architecture/rag-2-upgrade-path.md` | Adds deferred RAG 2.0 plan. |
+| `docs/runtime/alpha-knowledge-qa-checklist.md` | Adds RAG manual QA checks. |
+| `docs/skills/*` relevant RAG/backend/frontend/API/QA/deployment/status/decision docs | Records current behavior and boundaries. |
+
+### Implementation Summary
+
+- URL import cleaning now strips common page chrome/noise and duplicate lines before text length validation.
+- URL import keeps per-request 15-second deadline and adds an overall 45-second flow deadline across redirects.
+- Chunking removes repeated document blocks before splitting, reducing duplicate evidence.
+- Retrieval keeps deterministic lexical matching but expands common support synonyms such as refund/return and applies source diversity so one document cannot dominate all top chunks when another matching source exists.
+- OpenAI context now includes safe source URL and retrieval score alongside title, chunk ID, and content.
+- Answer Debug now returns and Admin-Web displays `retrievalConfidence`, `sourceDiversity`, and safe `warnings`.
+- Answer Debug non-persistence tests now monitor common customer/conversation/message write APIs.
+
+### RAG Audit Findings
+
+- Strengths: tenant-scoped ingestion/retrieval, backend-controlled citations, READY-only retrieval, archived chunk deletion, SSRF-safe URL import, and safe Answer Debug visibility.
+- Must fix before alpha: real env/secrets/deployment/CORS/egress setup and manual QA with real tenant knowledge.
+- Should fix soon after alpha: async ingestion, stronger browser/UI tests, richer document quality reports.
+- RAG 2.0: embeddings/hybrid retrieval, reranking, freshness scoring, async jobs, and crawler/sitemap ingestion.
+- Deferred now: vector DB, LangChain/LangGraph, full crawler, schema redesign, and real OpenAI CI.
+
+### External / Manual Requirements
+
+- Do not paste secrets into chat.
+- Real OpenAI QA should be rerun because retrieval/context behavior changed materially.
+- User must configure real `AI_PROVIDER=openai`, `OPENAI_API_KEY`, and `OPENAI_MODEL` only in local `.env` or secret manager.
+- Fake/local tokens and mocked OpenAI tests are not alpha-ready evidence.
+
+### Verification
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| `pnpm --filter @platform/api typecheck` | Passed | API RAG changes compile. |
+| `pnpm --filter @platform/api test` | Passed | Includes new cleaning/chunk/retrieval/debug regressions. |
+| `pnpm --filter @platform/admin-web typecheck` | Passed | Answer Debug UI contract compiles. |
+| `pnpm --filter @platform/types typecheck` | Passed | Shared Answer Debug fields compile. |
+| `pnpm typecheck` | Passed | 11/11 workspace packages. |
+| `pnpm lint` | Passed | 11/11 workspace packages. |
+| `pnpm test` | Passed | 11/11 workspace tasks; several packages remain placeholder tests. |
+| `pnpm build` | Passed | 11/11 workspace packages, including Admin-Web production build. |
+| `git diff --check` | Passed with warnings | No whitespace errors; existing Windows LF-to-CRLF warnings remain. |
+
+### Remaining Manual QA
+
+- Run the alpha knowledge QA set in `docs/architecture/rag-quality-audit.md` and `docs/runtime/alpha-knowledge-qa-checklist.md`.
+- Rerun real OpenAI smoke and Answer Debug checks with user-managed secrets only.
+- Confirm desktop/mobile Answer Debug remains readable with confidence/warnings.
+
 ## Latest P1 QA Follow-Up: Absolute URL Import Request Deadline
 
 ### Required Fix

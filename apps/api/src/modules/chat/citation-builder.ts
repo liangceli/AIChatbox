@@ -12,14 +12,21 @@ function createExcerpt(content: string, maxLength = 220): string {
 }
 
 export function buildBackendCitations(chunks: LlmRetrievedKnowledgeChunk[]): Citation[] {
-  return chunks.map((chunk) => ({
-    knowledgeDocumentId: chunk.knowledgeDocumentId,
-    chunkId: chunk.chunkId,
-    title: chunk.title,
-    chunkIndex: chunk.chunkIndex,
-    sourceUri: chunk.sourceUri ?? null,
-    sourceLocator: chunk.sourceLocator ?? undefined,
-    relevanceScore: chunk.relevanceScore,
-    excerpt: createExcerpt(chunk.content, 180)
-  }));
+  return chunks.map((chunk) => {
+    const citation: Citation = {
+      knowledgeDocumentId: chunk.knowledgeDocumentId,
+      chunkId: chunk.chunkId,
+      title: chunk.title,
+      chunkIndex: chunk.chunkIndex,
+      sourceUri: chunk.sourceUri ?? null,
+      relevanceScore: chunk.relevanceScore,
+      excerpt: createExcerpt(chunk.content, 180)
+    };
+
+    if (chunk.sourceLocator !== undefined) {
+      citation.sourceLocator = chunk.sourceLocator;
+    }
+
+    return citation;
+  });
 }

@@ -29,6 +29,25 @@ const STOP_WORDS = new Set([
   "you"
 ]);
 
+const SUPPORT_SYNONYMS: Record<string, string[]> = {
+  cancel: ["cancellation"],
+  cancellation: ["cancel"],
+  cost: ["price", "pricing"],
+  delivery: ["shipping"],
+  exchange: ["return"],
+  guarantee: ["warranty"],
+  help: ["support"],
+  invoice: ["bill", "receipt"],
+  price: ["cost", "pricing"],
+  pricing: ["price", "cost"],
+  refund: ["return"],
+  receipt: ["invoice"],
+  return: ["refund", "exchange"],
+  shipping: ["delivery"],
+  support: ["help"],
+  warranty: ["guarantee", "coverage"]
+};
+
 interface ScoredCandidate {
   score: number;
   coverage: number;
@@ -93,7 +112,8 @@ export class KnowledgeRetrievalService {
 
     const minimumCoverage = tokens.length >= 4 ? 0.34 : 0.2;
     const minimumScore = tokens.length === 1 ? 6 : 4;
-    const scored = candidates
+    const scored = this.selectDiverseCandidates(
+      candidates
       .map((candidate) => {
         const score = this.scoreChunk(
           candidate.content,
@@ -128,8 +148,9 @@ export class KnowledgeRetrievalService {
           right.coverage - left.coverage ||
           left.chunk.title.localeCompare(right.chunk.title) ||
           left.chunk.chunkIndex - right.chunk.chunkIndex
-      )
-      .slice(0, limit);
+      ),
+      limit
+    );
 
     this.logger.debug(
       `Retrieved ${scored.length} chunks for tenant ${tenant.slug}: ${scored
@@ -151,7 +172,7 @@ export class KnowledgeRetrievalService {
     const rawTerms = this.extractRawWords(question).filter((term) => !STOP_WORDS.has(this.normalizeTerm(term)));
     const normalizedTerms = rawTerms.map((term) => this.normalizeTerm(term));
 
-    return Array.from(new Set([...rawTerms, ...normalizedTerms])).slice(0, 16);
+    return this.expandTerms([...rawTerms, ...normalizedTerms]).slice(0, 24);
   }
 
   private extractSearchPhrases(question: string): string[] {
@@ -195,8 +216,15 @@ export class KnowledgeRetrievalService {
     }
 
     for (const token of tokens) {
-      const contentOccurrences = this.countOccurrences(contentTerms, token);
-      const titleOccurrences = this.countOccurrences(titleTerms, token);
+      const equivalentTerms = this.expandToken(token);
+      const contentOccurrences = equivalentTerms.reduce(
+        (sum, term) => sum + this.countOccurrences(contentTerms, term),
+        0
+      );
+      const titleOccurrences = equivalentTerms.reduce(
+        (sum, term) => sum + this.countOccurrences(titleTerms, term),
+        0
+      );
 
       if (contentOccurrences > 0) {
         matchedTokens += 1;
@@ -252,5 +280,64 @@ export class KnowledgeRetrievalService {
 
   private countOccurrences(terms: string[], token: string): number {
     return terms.filter((term) => term === token).length;
+  }
+
+  private expandTerms(terms: string[]): string[] {
+    const expanded = new Set<string>();
+
+    for (const term of terms) {
+      const rawTerm = term.toLowerCase();
+
+      if (rawTerm && !STOP_WORDS.has(this.normalizeTerm(rawTerm))) {
+        expanded.add(rawTerm);
+      }
+
+      for (const expandedTerm of this.expandToken(term)) {
+        expanded.add(expandedTerm);
+      }
+    }
+
+    return Array.from(expanded);
+  }
+
+  private expandToken(term: string): string[] {
+    const normalized = this.normalizeTerm(term);
+
+    if (!normalized || STOP_WORDS.has(normalized)) {
+      return [];
+    }
+
+    return Array.from(
+      new Set([
+        normalized,
+        ...(SUPPORT_SYNONYMS[normalized] ?? []).map((synonym) => this.normalizeTerm(synonym))
+      ])
+    );
+  }
+
+  private selectDiverseCandidates(candidates: ScoredCandidate[], limit: number): ScoredCandidate[] {
+    const selected: ScoredCandidate[] = [];
+    const perDocumentCount = new Map<string, number>();
+
+    for (const candidate of candidates) {
+      const count = perDocumentCount.get(candidate.chunk.knowledgeDocumentId) ?? 0;
+
+      if (count >= 2 && candidates.some(
+        (other) =>
+          other.chunk.knowledgeDocumentId !== candidate.chunk.knowledgeDocumentId &&
+          !selected.some((selectedCandidate) => selectedCandidate.chunk.chunkId === other.chunk.chunkId)
+      )) {
+        continue;
+      }
+
+      selected.push(candidate);
+      perDocumentCount.set(candidate.chunk.knowledgeDocumentId, count + 1);
+
+      if (selected.length >= limit) {
+        break;
+      }
+    }
+
+    return selected;
   }
 }

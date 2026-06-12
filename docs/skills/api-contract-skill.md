@@ -1,5 +1,11 @@
 # API Contract Skill
 
+## 2026-06-12 Answer Debug RAG Fields
+
+- `POST /v1/chat/answer-debug` knowledge output includes safe `retrievalConfidence`, `sourceDiversity`, and `warnings`.
+- These fields are diagnostic summaries only; they must not include raw prompts, tenant IDs, provider secrets, admin tokens, auth headers, or citation `sourceLocator`.
+- OpenAI success still uses backend-generated citations from retrieved chunks.
+
 ## 2026-06-12 Knowledge URL Import Safety
 
 - Protected single/batch knowledge URL import accepts only safe public HTTP(S) URLs.

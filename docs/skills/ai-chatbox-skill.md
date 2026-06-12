@@ -1,5 +1,11 @@
 # AI Chatbox Skill
 
+## 2026-06-12 RAG/Answer Debug Notes
+
+- Answer Debug is the current safe inspection path for knowledge hits/misses, retrieval confidence, source diversity, citations, provider mode, fallback, and sanitized provider metadata.
+- OpenAI context includes safe source title, chunk ID, source URL, retrieval score, and chunk content. It must not include raw hidden prompt text, tenant IDs, provider secrets, admin tokens, or auth headers.
+- Real OpenAI QA remains manual and secret-managed; fake/local tokens are not alpha evidence.
+
 ## 2026-06-12 Admin Answer Debug Notes
 
 - Admin-only `POST /v1/chat/answer-debug` uses the same tenant profile, retrieval, provider resolver, deterministic fallback, and backend citation paths as customer chat.

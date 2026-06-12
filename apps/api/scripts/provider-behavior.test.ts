@@ -17,12 +17,14 @@ import { createTenantResolutionMiddleware } from "../src/common/tenant/tenant-re
 import { AnswerDebugController } from "../src/modules/chat/answer-debug.controller";
 import { AnswerDebugService } from "../src/modules/chat/answer-debug.service";
 import { AssistantReplyService } from "../src/modules/chat/assistant-reply.service";
+import { buildBackendCitations } from "../src/modules/chat/citation-builder";
 import { ChatService } from "../src/modules/chat/chat.service";
 import { LlmProviderResolverService } from "../src/modules/chat/llm-provider-resolver.service";
 import { OpenAiLlmProviderService } from "../src/modules/chat/openai-llm-provider.service";
 import { buildOpenAiPrompt } from "../src/modules/chat/openai-prompt";
 import { ConversationsController } from "../src/modules/conversations/conversations.controller";
 import { ConversationsService } from "../src/modules/conversations/conversations.service";
+import { KnowledgeChunkingService } from "../src/modules/knowledge/knowledge-chunking.service";
 import { KnowledgeRetrievalService } from "../src/modules/knowledge/knowledge-retrieval.service";
 import {
   createPinnedLookup,
@@ -365,6 +367,9 @@ async function testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe() {
   assert.equal(agentConfigTenantId, "tenant-secret-id");
   assert.equal(result.answerSource, "knowledge_hit");
   assert.equal(result.knowledge.outcome, "hit");
+  assert.equal(result.knowledge.retrievalConfidence, "strong");
+  assert.equal(result.knowledge.sourceDiversity, 1);
+  assert.deepEqual(result.knowledge.warnings, []);
   assert.equal(result.retrievedChunks.length, 1);
   assert.equal(result.citations.length, 1);
   assert.equal(result.provider.requestedMode, "openai");
@@ -380,17 +385,32 @@ async function testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe() {
 }
 
 async function testAnswerDebugKnowledgeMissIsSafeAndNonPersistent() {
-  let writeCalled = false;
+  const writeCalls: string[] = [];
+  const trackWrite = (name: string) => async () => {
+    writeCalls.push(name);
+  };
   const answerDebugService = new AnswerDebugService(
     {
       client: {
         agentConfig: {
           findUnique: async () => null
         },
+        customer: {
+          create: trackWrite("customer.create"),
+          update: trackWrite("customer.update"),
+          upsert: trackWrite("customer.upsert")
+        },
         conversation: {
-          create: async () => {
-            writeCalled = true;
-          }
+          create: trackWrite("conversation.create"),
+          update: trackWrite("conversation.update"),
+          upsert: trackWrite("conversation.upsert"),
+          deleteMany: trackWrite("conversation.deleteMany")
+        },
+        message: {
+          create: trackWrite("message.create"),
+          update: trackWrite("message.update"),
+          upsert: trackWrite("message.upsert"),
+          deleteMany: trackWrite("message.deleteMany")
         }
       }
     } as never,
@@ -416,10 +436,12 @@ async function testAnswerDebugKnowledgeMissIsSafeAndNonPersistent() {
     "Question with no matching knowledge"
   );
 
-  assert.equal(writeCalled, false);
+  assert.deepEqual(writeCalls, []);
   assert.equal(result.answerSource, "knowledge_miss");
   assert.equal(result.knowledge.outcome, "miss");
+  assert.equal(result.knowledge.retrievalConfidence, "none");
   assert.equal(result.knowledge.retrievedChunkCount, 0);
+  assert.deepEqual(result.knowledge.warnings, ["No READY knowledge chunks met the retrieval threshold."]);
   assert.equal(result.citations.length, 0);
   assert.equal(result.provider.requestedMode, "deterministic");
   assert.equal(result.provider.usedMode, "deterministic");
@@ -566,6 +588,39 @@ async function testKnowledgeUrlImportPreservesSafePublicRedirectAndHtml() {
   assert.match(content.content, /Warranty coverage lasts twelve months/);
 }
 
+async function testKnowledgeUrlImportRemovesCommonPageNoiseAndDuplicateLines() {
+  const safetyService = KnowledgeUrlSafetyService.createForTest(async () => [
+    { address: "93.184.216.34", family: 4 }
+  ]);
+  const importService = KnowledgeUrlImportService.createForTest(
+    safetyService,
+    async () => ({
+      status: 200,
+      contentType: "text/html; charset=utf-8",
+      body: [
+        "<html><head><title>Returns Help</title><style>.hidden{}</style></head><body>",
+        "<header>Main navigation</header><nav>Products Pricing Support</nav>",
+        "<main><h1>Return Policy</h1><p>Customers can request a refund within thirty days of purchase.</p>",
+        "<p>Customers can request a refund within thirty days of purchase.</p></main>",
+        "<footer>Cookie settings and copyright footer</footer><script>alert('x')</script>",
+        "</body></html>"
+      ].join("")
+    })
+  );
+
+  const content = await importService.fetchContent("https://public.example.com/returns");
+
+  assert.equal(content.title, "Returns Help");
+  assert.match(content.content, /Return Policy/);
+  assert.match(content.content, /refund within thirty days/);
+  assert.equal(content.content.includes("Main navigation"), false);
+  assert.equal(content.content.includes("Cookie settings"), false);
+  assert.equal(
+    content.content.match(/refund within thirty days/g)?.length,
+    1
+  );
+}
+
 async function testKnowledgeUrlPinnedLookupSupportsNodeAllMode() {
   const selectedAddresses = [
     {
@@ -640,6 +695,134 @@ async function testKnowledgeUrlImportEnforcesAbsoluteDeadlineDuringSlowTrickle()
       });
     });
   }
+}
+
+async function testKnowledgeUrlImportEnforcesOverallRedirectFlowDeadline() {
+  const safetyService = KnowledgeUrlSafetyService.createForTest(async () => [
+    { address: "93.184.216.34", family: 4 }
+  ]);
+  const importService = KnowledgeUrlImportService.createForTest(
+    safetyService,
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      return {
+        status: 302,
+        contentType: "text/plain",
+        location: "https://docs.example.com/next",
+        body: ""
+      };
+    },
+    { flowDeadlineMs: 10 }
+  );
+
+  await assert.rejects(
+    () => importService.fetchContent("https://public.example.com/start"),
+    /overall import deadline/i
+  );
+}
+
+async function testChunkingDropsDuplicateChunks() {
+  const repeatedParagraph = "Warranty coverage lasts twelve months for eligible purchases. ".repeat(20);
+  const chunker = new KnowledgeChunkingService();
+  const singleChunks = chunker.chunkText(repeatedParagraph);
+  const duplicatedChunks = chunker.chunkText(
+    `${repeatedParagraph}\n\n${repeatedParagraph}`
+  );
+
+  assert.equal(duplicatedChunks.length, singleChunks.length);
+  assert.deepEqual(
+    duplicatedChunks.map((chunk) => chunk.content),
+    singleChunks.map((chunk) => chunk.content)
+  );
+  assert.ok(duplicatedChunks.every((chunk) => chunk.sourceLocator === undefined));
+}
+
+async function testChunkingSourceLocatorsMatchPersistedContentWhenReliable() {
+  const persistedContent = [
+    "Warranty coverage lasts twelve months for eligible purchases.",
+    "",
+    "Return requests must include the original order number."
+  ].join("\n");
+  const chunks = new KnowledgeChunkingService().chunkText(persistedContent);
+
+  assert.ok(chunks.length > 0);
+
+  for (const chunk of chunks) {
+    assert.ok(chunk.sourceLocator);
+    assert.equal(
+      persistedContent.slice(chunk.sourceLocator.startOffset, chunk.sourceLocator.endOffset),
+      chunk.content
+    );
+  }
+}
+
+async function testBackendCitationsOmitMissingSourceLocatorKey() {
+  const citations = buildBackendCitations([
+    {
+      knowledgeDocumentId: "doc-no-locator",
+      chunkId: "chunk-no-locator",
+      title: "Duplicate Warranty",
+      chunkIndex: 0,
+      sourceUri: "https://example.test/warranty",
+      relevanceScore: 8,
+      content: "Warranty coverage lasts twelve months for eligible purchases."
+    }
+  ]);
+
+  assert.equal(citations.length, 1);
+  assert.equal("sourceLocator" in citations[0]!, false);
+}
+
+async function testSynonymQuestionRetrievesSupportKnowledge() {
+  const retrievalService = createRetrievalService([
+    {
+      id: "chunk-return",
+      content: "Customers can return eligible purchases within thirty days of the purchase date.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-return",
+        title: "Returns",
+        sourceUri: "https://example.test/returns"
+      }
+    }
+  ]);
+
+  const chunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "refund policy");
+
+  assert.equal(chunks.length, 1);
+  assert.equal(chunks[0]?.chunkId, "chunk-return");
+}
+
+async function testRetrievalLimitsSingleDocumentDominanceWhenOtherSourcesMatch() {
+  const retrievalService = createRetrievalService([
+    ...[0, 1, 2].map((index) => ({
+      id: `chunk-warranty-${index}`,
+      content: `Warranty coverage lasts twelve months for eligible purchases. Warranty service option ${index}.`,
+      chunkIndex: index,
+      knowledgeDocument: {
+        id: "doc-warranty",
+        title: "Warranty",
+        sourceUri: "https://example.test/warranty"
+      }
+    })),
+    {
+      id: "chunk-service",
+      content: "Warranty service includes support troubleshooting for covered products.",
+      chunkIndex: 0,
+      knowledgeDocument: {
+        id: "doc-service",
+        title: "Service Coverage",
+        sourceUri: "https://example.test/service"
+      }
+    }
+  ]);
+
+  const chunks = await retrievalService.retrieveRelevantChunks(baseInput.tenant, "warranty service");
+
+  assert.equal(chunks.length, 3);
+  assert.equal(chunks.filter((chunk) => chunk.knowledgeDocumentId === "doc-warranty").length, 2);
+  assert.ok(chunks.some((chunk) => chunk.knowledgeDocumentId === "doc-service"));
 }
 
 async function testTenantAiProfileAdminRoutesUseAdminGuard() {
@@ -1630,8 +1813,13 @@ async function run() {
   await testKnowledgeUrlSafetyRejectsRestrictedTargets();
   await testKnowledgeUrlImportRejectsRestrictedRedirectTarget();
   await testKnowledgeUrlImportPreservesSafePublicRedirectAndHtml();
+  await testKnowledgeUrlImportRemovesCommonPageNoiseAndDuplicateLines();
   await testKnowledgeUrlPinnedLookupSupportsNodeAllMode();
   await testKnowledgeUrlImportEnforcesAbsoluteDeadlineDuringSlowTrickle();
+  await testKnowledgeUrlImportEnforcesOverallRedirectFlowDeadline();
+  await testChunkingDropsDuplicateChunks();
+  await testChunkingSourceLocatorsMatchPersistedContentWhenReliable();
+  await testBackendCitationsOmitMissingSourceLocatorKey();
   await testTenantAiProfileAdminRoutesUseAdminGuard();
   await testHumanSupportAdminRoutesUseAdminGuard();
   await testTenantAiProfileDefaultsExist();
@@ -1653,6 +1841,8 @@ async function run() {
   await testShortKeywordMatchesRelevantChunk();
   await testUnrelatedShortQueryAvoidsWeakSubstringMatch();
   await testRawPluralCandidateLookupWithNormalizedScoring();
+  await testSynonymQuestionRetrievesSupportKnowledge();
+  await testRetrievalLimitsSingleDocumentDominanceWhenOtherSourcesMatch();
   await testExactPhraseStrongMatchStillWorks();
   await testRetrievalChangesPreserveDeterministicCitations();
   await testDeterministicFallbackUsesTenantHandoffMessage();

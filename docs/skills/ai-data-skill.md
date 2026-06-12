@@ -1,5 +1,13 @@
 # AI 与数据流 Skill
 
+## 2026-06-12 Knowledge Intelligence Notes
+
+- Current ingestion supports manual/file text and SSRF-safe URL import, then stores tenant-scoped documents, checksum, chunk count, source type, source URI, and ingestion metadata.
+- URL content cleaning removes common layout noise and repeated lines; chunking removes repeated blocks before producing overlapping chunks.
+- Chunk source locators are optional and must only be present when they accurately slice back to persisted `KnowledgeDocument.content`.
+- Retrieval remains deterministic lexical retrieval with raw/normalized candidates, support synonym matching, title weighting, READY-document filtering, and source diversity.
+- RAG 2.0 items such as embeddings, reranking, async ingestion, and crawler/sitemap support are documented but not implemented for alpha.
+
 ## 2026-06-12 Answer Debug Notes
 
 - Protected `POST /v1/chat/answer-debug` reuses `KnowledgeRetrievalService` and `LlmProviderResolverService` for an admin test question.

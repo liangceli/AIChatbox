@@ -42,6 +42,14 @@ Prepare answers in the tenant's actual knowledge and test 5 to 10 questions:
 - URL import reports success or a clear safe error.
 - URL import accepts a known public HTTP(S) HTML/text page.
 - URL import rejects localhost, loopback, private/link-local/cloud-metadata addresses, embedded credentials, and a public URL that redirects to a restricted target.
+- Answer Debug direct exact question returns a grounded answer and backend citations.
+- Answer Debug short keyword question returns a clear hit or weak/no-knowledge explanation.
+- Answer Debug synonym question, such as refund vs return, behaves as expected for tenant knowledge.
+- Answer Debug knowledge-miss question does not invent facts or citations.
+- Answer Debug sensitive/unsupported question follows safe answer or human-support guidance.
+- Archived document content is excluded from retrieved chunks and citations.
+- Retrieval confidence, source diversity, and warning fields are understandable and do not expose secrets.
+- If citation `sourceLocator` is present in API output, it should map accurately to persisted document content; if content cleanup removed repeated blocks, locator may be absent.
 - Reprocess refreshes chunks, checksum, chunk count, and ingested time.
 - Archive removes chunks and excludes the document from retrieval.
 - Delete removes the document after confirmation.

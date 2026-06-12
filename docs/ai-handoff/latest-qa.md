@@ -4,95 +4,74 @@
 
 可以进入人工验收
 
-上一轮 P1 已准确修复。URL Import 现在使用从请求发送前开始计算的 15 秒绝对 deadline，不再依赖 socket inactivity timeout。Deadline 到期会销毁 active response/request，single-settle 逻辑确保成功、错误、大小超限、deadline 和同步异常路径只完成一次并清理 timer。
-
-Slow-trickle regression 使用真实本地 HTTP server 持续发送小 chunk，验证持续数据无法延长绝对时限。未发现新的必须修问题。
-
-本轮 5 项人工验收已全部通过：公网 URL Import、受限 URL 安全拒绝、桌面/移动端布局、真实 OpenAI smoke、真实 OpenAI Answer Debug。当前可以进入 commit。
+本轮 P1 follow-up 已准确修复。`buildBackendCitations()` 现在先构造不含 `sourceLocator` 的 citation object，只在 `chunk.sourceLocator !== undefined` 时才添加 `sourceLocator`。这意味着当 chunk dedupe 后 locator 不可靠或缺失时，backend citation 中不会出现 `sourceLocator` key，也不会产生 `sourceLocator: undefined` 的 Prisma JSON 持久化风险。
 
 ## 2. Scope 检查
 
 | 检查项 | 结果 | 说明 |
 | --- | -- | -- |
-| Absolute 15-second deadline | 通过 | 使用独立 deadline timer，从 outbound request 发送前开始计算。 |
-| Slow-trickle bypass prevention | 通过 | 持续收到小 chunk 时仍会在绝对 deadline 到期后终止。 |
-| Timer cleanup / single settle | 通过 | Resolve/reject、request/response error、大小超限、deadline 和同步异常均通过 single-settle 清理 timer。 |
-| Existing SSRF protection | 通过 | 初始 URL、redirect、DNS 结果、DNS pinning 和受限网络校验未被削弱。 |
-| Existing API/admin/tenant scope | 通过 | API shape、Admin guard、tenant scope 和持久化合同未改变。 |
-| Customer chat/widget behavior | 通过 | 最新 follow-up 未修改 customer chat/widget、provider、handoff 或 conversation history。 |
-| Scope creep / unrelated files | 通过 | 最新增量仅涉及 absolute deadline、focused regression 和对应 docs。 |
+| Backend citation omission | 通过 | 无可靠 locator 时 citation object 真正省略 `sourceLocator` key。 |
+| Reliable locator preservation | 通过 | 有可靠 `chunk.sourceLocator` 时仍会保留并传入 backend citation。 |
+| Chunk dedupe locator behavior | 通过 | 上一轮 chunker 已在 dedupe 改变文本时省略 locator，本轮未破坏该行为。 |
+| Prisma JSON safety | 通过 | 不再把 `sourceLocator: undefined` 放入可能持久化的 citation object。 |
+| Backend citation contract | 通过 | Citations 仍由 retrieved chunks 生成，包含 document/chunk/title/source/score/excerpt；locator 为可靠时可选字段。 |
+| Test coverage | 通过 | 新增 regression 断言无 locator chunk 生成的 citation 中 `"sourceLocator" in citation === false`。 |
+| Scope creep / unrelated changes | 通过 | 本轮 follow-up 只涉及 citation helper、focused test 和 handoff；未扩大功能范围。 |
 
 ## 3. 文件级 Diff Review
 
 | 文件 | 改动是否合理 | 风险等级 | 说明 |
 | -- | ------ | ---- | -- |
-| `apps/api/src/modules/knowledge/knowledge-url-import.service.ts` | 合理 | Medium | Absolute deadline、request/response destruction、single-settle 和 timer cleanup 实现正确。 |
-| `apps/api/scripts/provider-behavior.test.ts` | 合理 | Medium | 使用真实本地 HTTP slow-trickle response 验证绝对 deadline；现有 SSRF regressions 保持通过。 |
-| `docs/skills/backend-skill.md` | 合理 | Low | 已明确 absolute deadline 和持续流响应行为。 |
-| `docs/skills/qa-skill.md` | 合理 | Low | 已记录 slow-trickle regression gate。 |
-| `docs/skills/api-contract-skill.md` | 合理 | Low | 已明确每个 outbound request 的绝对 15 秒时限。 |
-| `docs/skills/current-status.md` | 合理 | Low | 与当前实现状态一致。 |
-| `docs/ai-handoff/latest-implementation.md` | 合理 | Low | 最新 follow-up、验证结果和剩余人工 QA 与实际一致。 |
-| Answer Debug / Admin-Web / shared contracts 累计 diff | 合理 | Medium | 上轮审查结论不变；未发现新增安全或合同回归。 |
+| `apps/api/src/modules/chat/citation-builder.ts` | 合理 | Low | 通过局部 `citation` object 和条件赋值真正 omit 缺失 locator；保留 excerpt、score 和 source URI 行为。 |
+| `apps/api/scripts/provider-behavior.test.ts` | 合理 | Low | 新增 `testBackendCitationsOmitMissingSourceLocatorKey()`，直接覆盖本轮 P1；现有 chunk locator reliability tests 保持覆盖。 |
+| `docs/ai-handoff/latest-implementation.md` | 合理 | Low | handoff 准确记录 backend citation omission 行为和验证结果。 |
+| 既有 RAG/Answer Debug/URL Import 累计 diff | 合理 | Medium | 本轮未新增问题；上一轮记录的真实 OpenAI alpha gate 和 RAG QA 仍适用。 |
 
 ## 4. 发现的问题
 
 | 问题 | 严重程度 | 是否必须修 | 建议处理方式 |
 | -- | ---- | ----- | ------ |
-| Admin-Web 新交互测试仍主要为 source smoke | P2 nice to fix | 否 | 后续引入组件或浏览器自动化，覆盖 loading/error、document actions 和移动端布局。 |
-| Answer Debug non-persistent test 未监控所有可能 Prisma write API | P2 nice to fix | 否 | 后续扩展为 customer/conversation/message create/update/upsert 全面无写入断言。 |
+| URL import 45s flow deadline 未覆盖 DNS/safety resolution 本身耗时 | P2 nice to fix | 否 | 后续可给 resolver 加 deadline wrapper；不阻塞本轮 locator/citation fix。 |
+
+未发现新的 P0/P1 问题。No fix request required.
 
 ## 5. Regression 风险
 
-- Safe public URL Import 已在当前正常网络环境人工通过；不同部署环境仍需配置并验证 egress policy。
-- Deadline 是每个 outbound request 的 15 秒时限；最多五次 redirects 的整条导入流程总时间可能超过 15 秒，符合当前文档合同。
-- URL Import 与知识文档 lifecycle 操作为同步流程，慢请求期间需人工确认 Admin-Web loading/error feedback。
-- Deployment egress denial 仍应作为 defense in depth。
+- Customer chat persisted citations：无可靠 locator 时将没有 `sourceLocator` 字段，这是预期行为；前端若显示 locator 相关能力，应按 optional 字段处理。
+- Backend citations 仍可被正常持久化为 Prisma JSON，避免 nested `undefined`。
+- OpenAI success path 和 deterministic grounded path 都继续通过 `buildBackendCitations()` 从 retrieved chunks 生成 citations，因此 locator omission 行为一致。
+- 本轮不改变 retrieval scoring、OpenAI prompt、message flow、handoff 或 conversation history。
 
 ## 6. AI Chatbox 专项检查
 
-- message flow：本轮未修改。
-- conversation history：本轮未修改；Answer Debug 仍为 non-persistent。
-- prompt handling：本轮未修改。
+- message flow：未修改。
+- conversation history：未修改；assistant messages 仍持久化 citations。
+- prompt handling：未修改 OpenAI prompt。
 - streaming：Not applicable for this task.
-- error handling：URL Import deadline/network error 会转换为安全错误，不返回原始网络异常。
-- API key exposure：未发现 OpenAI/admin token 或 auth header 暴露。
-- sensitive data/privacy：SSRF 内网访问风险已通过 URL/DNS/redirect 校验和 DNS pinning 防护。
-- user input validation：仅允许安全公网 HTTP(S)，拒绝 credentials 和受限目标。
+- error handling：无新增错误响应路径。
+- API key exposure：未发现 secret 暴露。
+- sensitive data/privacy：Answer Debug 仍不返回 citation `sourceLocator`；backend persisted citations 只在 locator 可靠时包含 locator。
+- user input validation：Not applicable for this locator-only follow-up.
 
 ## 7. 验证建议
 
-QA 本轮已执行并通过：
+QA 已执行并通过：
 
-- `pnpm --filter @platform/api test`
-- `pnpm --filter @platform/api typecheck`
-- `pnpm --filter @platform/api lint`
-- `pnpm --filter @platform/api build`
-- `pnpm typecheck`
-- `pnpm lint`
-- `pnpm test`
-- `pnpm build`
-- `git diff --check`：无 whitespace error，仅有 Windows LF/CRLF warning。
+- `.\node_modules\.bin\pnpm.CMD --filter @platform/api test`
+- `.\node_modules\.bin\pnpm.CMD --filter @platform/api typecheck`
+- `git diff --check`：无 whitespace error，仅 Windows LF/CRLF warning。
 
-自动化已确认：
+人工验收建议：
 
-- Slow-trickle response 无法绕过 absolute deadline。
-- Deadline 到期会安全终止 request/response。
-- Localhost、private/link-local/cloud metadata、mixed DNS、embedded credentials 和受限 redirects 被拒绝。
-- Safe public redirect、HTML extraction、DNS pinning 和 Node all-address lookup 保持通过。
-- Workspace 11/11 packages 的 typecheck、lint、test、build 均通过；部分 package tests 仍为 placeholder。
+1. 用普通 knowledge-backed chat 或 Answer Debug 确认 citations 仍显示 document title/source/excerpt。
+2. 对重复内容文档确认回答仍有 citations，但 API 中不应出现不可靠 `sourceLocator`。
+3. 对非重复普通文档，如果 API 输出包含 `sourceLocator`，它应能准确映射到 persisted document content。
 
-人工验收结果：
-
-1. 公网 URL Import：通过。成功 ingestion，并显示文档/chunks。
-2. 受限 URL Import：通过。Localhost target 被安全拒绝，未创建文档或暴露内部信息。
-3. 桌面/移动端布局：通过。Knowledge Base、document inspector、Answer Debug 无重叠或溢出。
-4. 真实 OpenAI smoke：通过。`providerMode: openai`、`attemptedRealOpenAI: true`、assistant/citations/provider metadata 均返回，`usedFallback: false`。
-5. 真实 OpenAI Answer Debug：通过。Requested/Used Provider 均为 `openai`，Fallback 为 `No`，返回 3 个 chunks 和 3 个 citations；未发现 API key、admin token、raw prompt 或 tenant ID。
+这轮 backend citation omission 是 locator-only fix，不改变 provider request、retrieval scoring 或 model output，因此不需要为了本轮小修单独重跑真实 OpenAI。整个 RAG hardening 最终进入 alpha 前，仍应按 `docs/runtime/alpha-knowledge-qa-checklist.md` 跑真实 OpenAI smoke 和 Answer Debug。fake/test token、mocked OpenAI、deterministic-only 输出或旧 RAG 行为下的 smoke 不能作为 alpha-ready evidence。
 
 ## 8. 是否需要更新 docs/skills
 
-本轮 absolute deadline 和 SSRF 相关 docs/skills 已同步，无必须补写项。人工验收结果已记录在本 QA 报告。
+不需要额外更新。当前 docs/skills 已记录 optional reliable-only locator 合同；本轮只是把 citation helper 的实现补齐到该合同。
 
 ## 9. 给 Implementation Chat 的修复请求
 
