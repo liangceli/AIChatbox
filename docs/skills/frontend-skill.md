@@ -1,5 +1,13 @@
 # 前端 Skill
 
+## 2026-06-12 Chat Restore And Latest-Message UX
+
+- `/chat` is force-dynamic and fetches the public tenant profile server-side with `x-tenant-slug`, then passes it to `CustomerWidget` as `initialProfile`.
+- `CustomerWidget` still refreshes the public profile client-side, but keeps the initial server profile while that request runs.
+- Customer conversation ID is persisted in browser localStorage under a tenant-scoped key and restored through the customer-scoped detail endpoint after reload.
+- Stored conversation IDs are removed when restore returns 403 or 404; transient request failures keep the ID so a later refresh can retry.
+- Customer widget message history and admin/agent Human Reply history auto-scroll to the latest message when selection or message content changes.
+
 ## 2026-06-10 Admin Interaction And Profile Media Notes
 
 - Admin topbar is a viewport-fixed sibling of the scrolling `.admin-screen`, not nested inside it; both use the shared `--admin-topbar-height` value so the menu remains fixed and content is not covered.

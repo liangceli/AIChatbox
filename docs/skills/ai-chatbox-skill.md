@@ -1,5 +1,13 @@
 # AI Chatbox Skill
 
+## 2026-06-12 Widget Restore Notes
+
+- The customer widget persists the active conversation ID in tenant-scoped browser localStorage.
+- After visitor ID resolution, the widget restores the stored conversation through `GET /v1/conversations/:conversationId/customer-detail?visitorId=...`.
+- Restore remains tenant + visitor + conversation scoped. A 403 or 404 clears the stored conversation ID; transient failures keep it for a later retry.
+- `/chat` provides an initial server-fetched public tenant profile so branding/messaging can render before the client profile refresh completes.
+- Message history automatically scrolls to the latest message after restore, new messages, realtime updates, or status changes.
+
 ## 2026-06-05 Persistent Human Support Notes
 
 - Handoff now persists as explicit `PENDING_HUMAN` mode until the customer or an admin/agent ends it.

@@ -93,6 +93,9 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - AI Profile Avatar/Logo upload should remain the primary action and should preview/save/remove PNG/JPEG/WebP/GIF files up to 1 MB; the always-visible URL fallback should remain usable.
 - AI Profile Avatar/Logo removal must send explicit `null`; save and reload must not restore the previously persisted media.
 - Media-clear regression coverage must include a tenant branding Logo and assert explicit `logoUrl: null` remains null after persistence and reload instead of falling back to branding.
+- `/chat` should render the server-fetched public tenant profile before the client profile refresh completes.
+- Customer widget reload should restore the active tenant-scoped conversation for the same visitor; 403/404 restore responses should clear the stored conversation ID.
+- Customer widget and admin/agent Human Reply history should scroll to the latest message after restore, new messages, selection changes, and realtime updates.
 - Tenant profile image validation should reject non-image data URLs, unsafe schemes, unsupported types, and oversized image sources.
 - Handoff rejects mismatched visitorId.
 - Public handoff rejects missing/blank visitorId.
@@ -113,6 +116,8 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Known QA Observations
 
+- Latest QA accepts the P1 fixes in `e499c45 fix: preserve human handoff state and profile media clearing`; `906440b small fix` was committed afterward and is not covered by that QA report.
+- Non-blocking P2 risk: the pre-provider pending-human branch can still move `lastMessageAt` backwards in a narrow concurrency window.
 - QA for `bcaa940 Add runtime env templates and OpenAI safety docs` accepted the P1 secret-scan fix: repository scans exclude real env files and output only `Path`, `LineNumber`, and `Rule`; real env checks use booleans and do not print values.
 - QA for `8ddc85d Add secure admin access and customer-scoped realtime` accepted the P1 fixes for admin access open-redirect sanitization and required public handoff `visitorId`; no required follow-up fixes remain.
 - Manual QA for `fb3ca66 Add LLM provider boundary with deterministic fallback` passed.

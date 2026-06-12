@@ -1,5 +1,14 @@
 # Current Status
 
+## 2026-06-12 Latest Commit And QA Reconciliation
+
+- Latest commit: `906440b small fix`.
+- Latest commit adds server-side public tenant-profile prefetch for `/chat`, passes the initial profile into `CustomerWidget`, persists/restores the tenant-scoped customer conversation ID in browser localStorage, and auto-scrolls customer/admin conversation history to the latest message.
+- Latest accepted QA context applies to the preceding P1 fix commit `e499c45 fix: preserve human handoff state and profile media clearing`.
+- Accepted P1 behavior: explicit `logoUrl: null` / `avatarUrl: null` stops older media fallback after reload; provider-time human handoff discards the AI result and preserves the newer persisted `PENDING_HUMAN` conversation and `lastMessageAt`.
+- Latest QA found no required fixes for those P1 items. It recorded one non-blocking P2 risk: the earlier pre-provider pending-human branch may still move `lastMessageAt` backwards in a narrow concurrency window.
+- `906440b` is not covered by the current latest QA report. Its frontend restore/prefetch/auto-scroll behavior still needs focused manual validation.
+
 ## 2026-06-05 Persistent Human Support Mode
 
 - Human handoff is now an explicit persistent mode: `PENDING_HUMAN` remains active after agent replies.
@@ -89,14 +98,12 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Latest Accepted Task
 
-- Latest commit: `bcaa940 Add runtime env templates and OpenAI safety docs`.
-- Accepted task: added product-neutral runtime env templates, runtime runbooks, manual OpenAI enablement/smoke guidance, safe OpenAI answer baseline, and safer secret-safety scan guidance.
-- Main changes: `.env.example`, `.env.local.example`, `.env.staging.example`, and `.env.production.example` now separate neutral reference, local QA, staging, and production usage; reusable tenant slug defaults are `demo`.
-- OpenAI status: deterministic remains default; OpenAI is opt-in through `AI_PROVIDER=openai`, requires `OPENAI_API_KEY` and `OPENAI_MODEL`, and real-key smoke remains manual/non-blocking.
-- Secret-safety status: repository scans exclude real env files and avoid printing matched line contents; real env files use boolean shape checks.
-- Safe answer baseline: OpenAI prompt rules now avoid invented policies/pricing/guarantees/service promises, high-risk professional advice, hidden prompt/API key/routing/provider disclosure, and invented citations.
-- QA result: manual QA accepted the P1 secret-scan fix; no required follow-up fixes remain.
-- Verification summary: API/config focused typecheck/lint/build/test, workspace `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build` passed. Missing OpenAI env smoke failed safely as expected, secret scans were value-safe, and runtime company-string search passed.
+- Latest commit: `906440b small fix`.
+- Latest accepted QA task: `e499c45 fix: preserve human handoff state and profile media clearing`.
+- Accepted P1 changes: explicit-null Logo/Avatar removal persists through all fallback sources; provider-time handoff suppresses the generated assistant reply and preserves the newer handoff activity timestamp.
+- Latest commit changes after that QA: `/chat` prefetches public tenant profile server-side, widget conversation ID persists/restores per tenant, and customer/admin message history auto-scrolls to the latest message.
+- QA result: no required fixes for `e499c45`; one non-blocking P2 pre-provider `lastMessageAt` monotonicity risk remains.
+- Verification boundary: latest QA records passing API/admin-web focused checks and workspace typecheck/test/lint for the accepted P1 work. `906440b` requires separate focused/manual QA because it was committed after that report.
 
 ## Implemented Capabilities
 
@@ -138,10 +145,9 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Recommended Next Tasks
 
-1. If the next task begins Level 3 lead capture, public personal branding, or company-specific integrations, create the personal product repo first.
-2. Replace alpha admin-web access with production auth/RBAC before production.
-3. Decide the signed customer/session auth model for public customer conversation reads.
-4. Run manual real-key OpenAI smoke when an API key is available.
-5. Continue monitoring deterministic retrieval quality for short keyword-style questions.
-6. Move knowledge ingestion from synchronous API requests toward worker/queue when product need is clear.
-7. Plan embeddings/vector retrieval only when there is an explicit product need.
+1. Manually validate `906440b`: refresh `/chat`, confirm tenant profile appears without a branding flash, restore the same visitor conversation after reload, clear stale/unauthorized stored conversation IDs, and confirm customer/admin history scrolls to the latest message.
+2. Consider fixing the non-blocking pre-provider pending-human `lastMessageAt` monotonicity risk.
+3. If the next task begins Level 3 lead capture, public personal branding, or company-specific integrations, create the personal product repo first.
+4. Replace alpha admin-web access with production auth/RBAC before production.
+5. Decide the signed customer/session auth model for public customer conversation reads.
+6. Run manual real-key OpenAI smoke when an API key is available.
