@@ -53,6 +53,16 @@ Local unprotected mode is allowed only when all are true:
 
 Production must not use disabled admin API protection.
 
+For Clerk alpha admin auth:
+
+- `ADMIN_API_PROTECTION_MODE=clerk`
+- `CLERK_JWT_KEY=<server-side verification public key>`
+- `CLERK_ISSUER=<expected Clerk issuer>`
+- `CLERK_AUTHORIZED_PARTIES=<admin-web origin>`
+- `CORS_ALLOWED_ORIGINS=<admin-web origin, external widget test origin>`
+
+`ADMIN_API_PROTECTION_MODE=token` remains available as a local/service fallback, but it is not the primary staging/production alpha auth path.
+
 ## Admin Web
 
 Admin web uses a server-side proxy/access gate:
@@ -63,8 +73,16 @@ Admin web uses a server-side proxy/access gate:
 - `ADMIN_WEB_SESSION_COOKIE_NAME`
 - `ADMIN_WEB_SESSION_SECRET`
 - `ADMIN_WEB_SESSION_TTL_SECONDS`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_SIGN_IN_URL`
+- `CLERK_SIGN_UP_URL`
+- `CLERK_AFTER_SIGN_IN_URL`
+- `CLERK_AFTER_SIGN_UP_URL`
+- `ADMIN_WEB_CLERK_SESSION_COOKIE_NAME`
 
-Never expose these through `NEXT_PUBLIC_*`, bundled browser code, local storage, API responses, or logs.
+Never expose the non-public admin-web/proxy values through `NEXT_PUBLIC_*`, bundled browser code, local storage, API responses, or logs.
+
+Only `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` may be browser-visible. Do not expose Clerk secret keys, Clerk JWT verification keys, admin tokens, OpenAI keys, database URLs, or session secrets.
 
 Admin-web server routes load the repository-root `.env` before validating these access/proxy keys. Local `/admin/access` should work predictably when the root `.env` contains matching values, for example `ADMIN_WEB_ACCESS_TOKEN=test-web-token` in local placeholder QA.
 

@@ -1,6 +1,7 @@
 import { ConversationStatus } from "@platform/database";
 import { loadAdminWebEnv, loadServerEnv, type ServerEnv } from "@platform/config";
 import assert from "node:assert/strict";
+import { createSign, generateKeyPairSync } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { plainToInstance } from "class-transformer";
@@ -86,6 +87,13 @@ type RetrievalCandidate = {
   };
 };
 
+type ClerkAuthUserFixture = {
+  tenantSlug: string;
+  email: string;
+  metadata?: Record<string, unknown>;
+  isPlatformAdmin: boolean;
+};
+
 function createOpenAiEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
   return loadServerEnv({
     AI_PROVIDER: "openai",
@@ -135,11 +143,85 @@ function createRetrievalService(candidates: RetrievalCandidate[]): KnowledgeRetr
   } as never);
 }
 
-function createGuardContext(headers: Record<string, string | undefined>): ExecutionContext {
+function createClerkTestKeys() {
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: {
+      type: "spki",
+      format: "pem"
+    },
+    privateKeyEncoding: {
+      type: "pkcs8",
+      format: "pem"
+    }
+  });
+
+  return { publicKey, privateKey };
+}
+
+function createClerkTestToken(
+  privateKey: string,
+  claims: { sub: string; email?: string; iss?: string; azp?: string }
+): string {
+  const header = encodeJwtPart({
+    alg: "RS256",
+    typ: "JWT"
+  });
+  const payload = encodeJwtPart({
+    sub: claims.sub,
+    email: claims.email,
+    iss: claims.iss,
+    azp: claims.azp,
+    exp: Math.floor(Date.now() / 1000) + 3600
+  });
+  const signer = createSign("RSA-SHA256");
+
+  signer.update(`${header}.${payload}`);
+  signer.end();
+
+  return `${header}.${payload}.${signer.sign(privateKey, "base64url")}`;
+}
+
+function encodeJwtPart(value: Record<string, unknown>): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
+}
+
+function createClerkAuthPrismaMock(users: ClerkAuthUserFixture[]): never {
+  return {
+    client: {
+      role: {
+        findMany: async (query: { where?: { tenant?: { slug?: string } } }) =>
+          users
+            .filter((user) => user.tenantSlug === query.where?.tenant?.slug)
+            .map((user) => ({
+              user: {
+                email: user.email,
+                metadata: user.metadata ?? null,
+                isPlatformAdmin: user.isPlatformAdmin
+              }
+            }))
+      },
+      user: {
+        findMany: async () =>
+          users.map((user) => ({
+            email: user.email,
+            metadata: user.metadata ?? null,
+            isPlatformAdmin: user.isPlatformAdmin
+          }))
+      }
+    }
+  } as never;
+}
+
+function createGuardContext(
+  headers: Record<string, string | undefined>,
+  extras: Record<string, unknown> = {}
+): ExecutionContext {
   return {
     switchToHttp: () => ({
       getRequest: () => ({
-        headers
+        headers,
+        ...extras
       })
     })
   } as never;
@@ -197,6 +279,23 @@ async function testAdminProtectionConfigRequiresExplicitDevDisable() {
   assert.equal(env.ADMIN_API_PROTECTION_MODE, "disabled");
 }
 
+async function testClerkAdminProtectionConfigRequiresJwtKey() {
+  assert.throws(
+    () =>
+      loadServerEnv({
+        ADMIN_API_PROTECTION_MODE: "clerk"
+      }),
+    /CLERK_JWT_KEY/
+  );
+
+  const env = loadServerEnv({
+    ADMIN_API_PROTECTION_MODE: "clerk",
+    CLERK_JWT_KEY: "test-public-key"
+  });
+
+  assert.equal(env.ADMIN_API_PROTECTION_MODE, "clerk");
+}
+
 async function testAdminWebConfigUsesOnlyAdminWebRuntimeKeys() {
   const env = loadAdminWebEnv({
     AI_PROVIDER: "openai",
@@ -208,6 +307,7 @@ async function testAdminWebConfigUsesOnlyAdminWebRuntimeKeys() {
 
   assert.equal(env.API_INTERNAL_BASE_URL, "http://localhost:4000/v1");
   assert.equal(env.ADMIN_API_TOKEN, "test-admin-token");
+  assert.equal(env.ADMIN_WEB_CLERK_SESSION_COOKIE_NAME, "platform_clerk_session");
   assert.equal(env.ADMIN_WEB_ACCESS_TOKEN, "test-web-token");
   assert.equal(env.ADMIN_WEB_SESSION_COOKIE_NAME, "platform_admin_session");
   assert.equal(env.ADMIN_WEB_SESSION_TTL_SECONDS, 43200);
@@ -271,6 +371,117 @@ async function testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed() {
   );
 
   assert.equal(guard.canActivate(createGuardContext({})), true);
+}
+
+async function testClerkAdminProtectionRejectsMissingAndInvalidTokens() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([])
+  );
+
+  await assert.rejects(
+    () => guard.canActivate(createGuardContext({}, { tenant: baseInput.tenant })),
+    UnauthorizedException
+  );
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: "Bearer malformed-token"
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    UnauthorizedException
+  );
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: `Bearer ${createClerkTestToken(privateKey, { sub: "user-unmapped" })}`
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    ForbiddenException
+  );
+}
+
+async function testClerkAdminProtectionAcceptsMappedTenantUser() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.equal(
+    await guard.canActivate(
+      createGuardContext(
+        {
+          authorization: `Bearer ${createClerkTestToken(privateKey, {
+            sub: "user-mapped",
+            email: "agent@example.test"
+          })}`
+        },
+        { tenant: baseInput.tenant }
+      )
+    ),
+    true
+  );
+}
+
+async function testClerkAdminProtectionRejectsWrongTenant() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "other",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: `Bearer ${createClerkTestToken(privateKey, {
+              sub: "user-mapped",
+              email: "agent@example.test"
+            })}`
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    ForbiddenException
+  );
 }
 
 async function testAdminRealtimeControllerUsesAdminGuard() {
@@ -1801,11 +2012,15 @@ async function run() {
   await testDeterministicConfigDoesNotNeedOpenAi();
   await testOpenAiConfigRequiresKeyAndModel();
   await testAdminProtectionConfigRequiresExplicitDevDisable();
+  await testClerkAdminProtectionConfigRequiresJwtKey();
   await testAdminWebConfigUsesOnlyAdminWebRuntimeKeys();
   await testAdminWebConfigRejectsInvalidSessionTtl();
   await testAdminProtectionGuardRejectsMissingAndInvalidTokens();
   await testAdminProtectionGuardAcceptsValidTokens();
   await testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed();
+  await testClerkAdminProtectionRejectsMissingAndInvalidTokens();
+  await testClerkAdminProtectionAcceptsMappedTenantUser();
+  await testClerkAdminProtectionRejectsWrongTenant();
   await testAdminRealtimeControllerUsesAdminGuard();
   await testAnswerDebugControllerUsesAdminGuard();
   await testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe();

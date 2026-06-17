@@ -1,5 +1,144 @@
 # Latest Implementation Handoff
 
+## Latest P1 QA Fix: Admin-Web Clerk Session Verification
+
+### Required Fix
+
+- Fix the admin-web Clerk session bridge gap where token-shaped JWTs could set an httpOnly cookie without signature verification.
+- Ensure `/api/auth/clerk/session`, `/admin`, `/agent`, and the admin-web proxy reject forged Clerk JWT cookies.
+- Keep backend Clerk guard, tenant role mapping, and legacy token fallback behavior intact.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `packages/config/src/index.ts` | Adds admin-web server-side Clerk verification env keys: `CLERK_JWT_KEY`, `CLERK_ISSUER`, and `CLERK_AUTHORIZED_PARTIES`. |
+| `apps/admin-web/app/lib/admin-access.ts` | Adds server-side RS256 Clerk JWT signature/claim verification and removes the old shape-only session helper. |
+| `apps/admin-web/app/api/auth/clerk/session/route.ts` | Verifies Clerk JWT before setting the httpOnly Clerk session cookie; returns 500 if verification key is missing and 401 for invalid tokens. |
+| `apps/admin-web/app/admin/page.tsx`, `apps/admin-web/app/agent/page.tsx` | Require verified Clerk session cookies before rendering protected UI, with legacy local fallback unchanged. |
+| `apps/admin-web/app/api/admin/[...path]/route.ts` | Forwards Clerk Bearer auth only after server-side JWT verification; legacy token fallback remains intact. |
+| `apps/admin-web/scripts/admin-access.test.cjs` | Adds focused source smoke assertions that session route/page/proxy use `verifyClerkSessionToken` and no longer use shape-only checks. |
+| `docs/skills/auth-skill.md`, `frontend-skill.md`, `qa-skill.md`, `docs/runtime/clerk-alpha-auth-checklist.md` | Documents that token shape/expiry checks are not enough and admin-web must verify Clerk JWT signatures/claims. |
+| `docs/ai-handoff/latest-implementation.md` | Adds this P1 handoff. |
+
+### Behavior Notes
+
+- A forged token-shaped JWT can no longer establish an admin-web Clerk session cookie through `/api/auth/clerk/session`.
+- A forged Clerk session cookie can no longer render `/admin` or `/agent`; those pages now call the verifier before rendering.
+- The admin-web proxy only forwards Clerk Bearer auth after verification.
+- Existing backend Clerk guard, tenant/role mapping, and legacy `/admin/access` + `ADMIN_API_TOKEN` fallback behavior were left intact.
+
+### Verification
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| `pnpm --filter @platform/admin-web typecheck` | Passed | Session verifier, protected pages, and proxy compile. |
+| `pnpm --filter @platform/admin-web test` | Passed | Includes focused session-verifier source smoke. |
+| `pnpm --filter @platform/config typecheck` | Passed | Admin-web Clerk verification env parser compiles. |
+| `pnpm --filter @platform/api typecheck` | Passed | Backend Clerk guard and tenant mapping remain intact. |
+| `pnpm --filter @platform/admin-web build` | Passed | Next production build compiles protected pages and auth routes. |
+| `pnpm --filter @platform/config build` | Passed | Config production build passed. |
+
+## Latest Task: Clerk Alpha Auth, Deployment Readiness, External Widget Embed, And Online Smoke
+
+### Original Task Brief Summary
+
+- Add a real alpha admin/agent auth boundary using Clerk.
+- Protect admin-web and backend admin/agent APIs without exposing backend admin tokens to the browser.
+- Require tenant/role mapping so random signed-in Clerk users cannot access tenant data.
+- Prepare deployment, external widget embed, and online smoke documentation.
+- Do not claim alpha is online unless real deployed URLs and external widget smoke pass.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `packages/config/src/index.ts` | Adds `ADMIN_API_PROTECTION_MODE=clerk`, Clerk JWT/env validation, `CORS_ALLOWED_ORIGINS`, and admin-web Clerk env keys. |
+| `apps/api/src/common/admin-protection/admin-api.guard.ts` | Adds Clerk JWT verification and tenant role/platform admin authorization while preserving token/disabled modes. |
+| `apps/api/src/main.ts` | Uses optional `CORS_ALLOWED_ORIGINS` allowlist instead of unconditional CORS when configured. |
+| `apps/api/src/modules/health/health.controller.ts` | Adds secret-safe runtime readiness fields for auth mode, AI provider, and Clerk configured state. |
+| `apps/api/scripts/bootstrap-clerk-admin.ts` | Adds env-driven first alpha admin/user-to-tenant role bootstrap. |
+| `apps/api/package.json` | Adds `bootstrap:clerk-admin`. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds Clerk config/auth/membership regressions with local RSA tokens and mock Prisma. |
+| `apps/admin-web/app/lib/admin-access.ts` | Adds Clerk session cookie config and lightweight session expiry check. |
+| `apps/admin-web/app/admin/page.tsx`, `app/agent/page.tsx`, `middleware.ts` | Protects admin/agent routes through Clerk sign-in first, with legacy local fallback. |
+| `apps/admin-web/app/api/admin/[...path]/route.ts` | Proxies Clerk Bearer auth server-side when present; legacy admin token remains fallback only. |
+| `apps/admin-web/app/api/auth/clerk/session/route.ts`, `app/api/auth/sign-out/route.ts` | Adds httpOnly Clerk session bridge and sign-out cookie clearing. |
+| `apps/admin-web/app/sign-in/page.tsx`, `app/sign-up/page.tsx`, `app/components/clerk-auth-panel.tsx` | Adds lightweight Clerk sign-in/sign-up UI without adding a Clerk SDK dependency. |
+| `apps/admin-web/app/globals.css`, `scripts/admin-access.test.cjs` | Adds auth UI styles and source smoke checks for Clerk/proxy secret safety. |
+| `.env*.example` | Adds Clerk/CORS alpha env placeholders and marks staging/production Clerk as primary auth mode. |
+| `docs/runtime/*`, `docs/deployment/alpha-deployment-checklist.md` | Adds Clerk setup, deployment, external widget embed, and online alpha smoke checklists. |
+| `docs/skills/*` relevant auth/frontend/backend/API/QA/deployment/status/decision/chat docs | Records current alpha auth/deployment boundaries. |
+
+### Auth Design
+
+- Admin-web `/sign-in` and `/sign-up` load Clerk with `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
+- Browser obtains a Clerk session token and posts it to `/api/auth/clerk/session`.
+- Admin-web stores that JWT in an httpOnly sameSite cookie named by `ADMIN_WEB_CLERK_SESSION_COOKIE_NAME`.
+- Browser continues to call same-origin `/api/admin/...`.
+- The server-side proxy forwards `Authorization: Bearer <Clerk JWT>` to the API when the Clerk cookie exists.
+- The API verifies the JWT using `CLERK_JWT_KEY`, optional `CLERK_ISSUER`, and optional `CLERK_AUTHORIZED_PARTIES`.
+
+### Tenant / Role Mapping Design
+
+- Existing `User` and tenant-scoped `Role` tables are reused; no Prisma schema change or migration was added.
+- A Clerk user is mapped by matching email or `User.metadata.clerkUserId` / `metadata.clerkSubject`.
+- Tenant-scoped protected routes require a matching `Role` for the requested tenant.
+- Non-tenant platform routes such as tenant list/create require `User.isPlatformAdmin=true`.
+- First alpha admin mapping is manual through `pnpm --filter @platform/api bootstrap:clerk-admin` with env-managed values.
+
+### Legacy Admin Token Decision
+
+- `ADMIN_API_TOKEN` and `/admin/access` remain available for local/dev or service fallback.
+- Staging/production env examples now use `ADMIN_API_PROTECTION_MODE=clerk` as the primary path.
+- Browser code still never receives `ADMIN_API_TOKEN`.
+
+### Deployment / External Embed / Manual Gates
+
+- Added `docs/deployment/alpha-deployment-checklist.md`.
+- Added `docs/runtime/clerk-alpha-auth-checklist.md`.
+- Added `docs/runtime/external-widget-embed-checklist.md`.
+- Added `docs/runtime/online-alpha-smoke-checklist.md`.
+- Codex did not deploy because Clerk/hosting/database/OpenAI dashboard access and real secrets are user-owned external setup.
+- Do not mark alpha online until real deployed admin-web/API URLs, Clerk sign-in, tenant mapping, real OpenAI if enabled, and external widget smoke have passed.
+
+### Manual Secrets The User Must Configure
+
+- Clerk publishable key, JWT verification key, issuer/authorized parties, allowed redirects, allowed origins.
+- Database URL, API URL, admin-web URL, CORS origins.
+- OpenAI API key/model if alpha uses real OpenAI.
+- Strong admin/session fallback secrets if retaining token fallback locally or for service use.
+
+Never paste real Clerk keys, JWTs, auth headers, OpenAI keys, database URLs, admin tokens, session secrets, or raw env files into chat.
+
+### Verification
+
+| Command / Check | Result | Notes |
+| --- | --- | --- |
+| `pnpm --filter @platform/api typecheck` | Passed | Clerk guard/config/bootstrap compile. |
+| `pnpm --filter @platform/admin-web typecheck` | Passed | Clerk auth pages/session/proxy compile. |
+| `pnpm --filter @platform/config typecheck` | Passed | Env schema changes compile. |
+| `pnpm --filter @platform/api lint` | Passed | Current lint script is TypeScript sanity check. |
+| `pnpm --filter @platform/admin-web lint` | Passed | Current lint script is TypeScript sanity check. |
+| `pnpm --filter @platform/config lint` | Passed | Current lint script is TypeScript sanity check. |
+| `pnpm --filter @platform/api test` | Passed | Includes mocked Clerk JWT/membership regressions; existing mocked OpenAI fallback warning remains non-fatal. |
+| `pnpm --filter @platform/admin-web test` | Passed | Source smoke covers Clerk proxy/session safety. |
+| `pnpm --filter @platform/api build` | Passed | API production TypeScript build passed. |
+| `pnpm --filter @platform/admin-web build` | Passed | Next production build passed; `/sign-in`, `/sign-up`, auth session routes, proxy, and middleware compiled. |
+| `pnpm --filter @platform/config build` | Passed | Config package build passed. |
+| `git diff --check` | Passed with warnings | No whitespace errors; Windows LF-to-CRLF warnings remain. |
+| Secret pattern check | Passed with expected documentation matches | No real keys found; matches were local placeholder/documentation safety text only. |
+
+### Remaining Manual QA
+
+- Configure real Clerk project and redirect/origin settings.
+- Sign in online through Clerk and bootstrap/map the alpha owner.
+- Confirm unmapped users cannot access tenant data.
+- Confirm mapped users can access only intended tenant data.
+- Deploy API/admin-web and verify `/v1/health`.
+- Run external widget embed smoke from a separate test domain.
+- Rerun real OpenAI smoke if OpenAI env changes.
+
 ## Latest P1 QA Follow-Up: Backend Citation SourceLocator Omission
 
 ### Required Fix

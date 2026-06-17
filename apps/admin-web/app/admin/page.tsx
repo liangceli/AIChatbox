@@ -1,14 +1,16 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AdminConsole } from "../components/admin-console";
-import { getAdminWebConfig, isValidAdminSessionCookie } from "../lib/admin-access";
+import { getAdminWebConfig, isValidAdminSessionCookie, verifyClerkSessionToken } from "../lib/admin-access";
 
 export default function AdminPage() {
   const config = getAdminWebConfig();
-  const sessionCookie = cookies().get(config.cookieName)?.value;
+  const cookieStore = cookies();
+  const legacySessionCookie = cookieStore.get(config.cookieName)?.value;
+  const clerkSessionCookie = cookieStore.get(config.clerkSessionCookieName)?.value;
 
-  if (!isValidAdminSessionCookie(sessionCookie)) {
-    redirect("/admin/access?next=/admin");
+  if (!verifyClerkSessionToken(clerkSessionCookie) && !isValidAdminSessionCookie(legacySessionCookie)) {
+    redirect(`${config.clerkSignInUrl}?redirect_url=/admin`);
   }
 
   const apiBaseUrl = "/api/admin";

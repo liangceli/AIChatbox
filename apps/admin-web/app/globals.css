@@ -54,6 +54,74 @@ body {
   overflow-x: hidden;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: #f7f4ff;
+}
+
+.auth-panel {
+  width: min(460px, 100%);
+  padding: 32px;
+  border: 1px solid rgba(20, 20, 28, 0.12);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(38, 35, 55, 0.18);
+}
+
+.auth-kicker {
+  margin: 0 0 10px;
+  color: #7c6c2b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.auth-panel h1 {
+  margin: 0 0 12px;
+  color: #171821;
+  font-size: 1.85rem;
+}
+
+.auth-copy {
+  min-height: 44px;
+  margin: 0 0 22px;
+  color: #5d5d68;
+  line-height: 1.5;
+}
+
+.auth-primary-button,
+.auth-secondary-link {
+  width: 100%;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.auth-primary-button {
+  border: 0;
+  background: #ffc627;
+  color: #171821;
+  cursor: pointer;
+}
+
+.auth-primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.auth-secondary-link {
+  margin-top: 10px;
+  color: #5d5d68;
+}
+
 button,
 textarea,
 input,

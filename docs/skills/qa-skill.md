@@ -180,3 +180,17 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Expected success: provider mode is OpenAI, real OpenAI attempt occurred, assistant text exists, citations exist when retrieved chunks exist, provider metadata exists, fallback state is visible, and no secret values print.
 - Then configure a distinctive tenant AI Profile, ask a knowledge-based question, and confirm the real model reflects the tenant profile while staying grounded and preserving citations.
 - Fake/test/local-only tokens are not online/alpha acceptance evidence.
+
+## 2026-06-12 Clerk Alpha Auth QA Notes
+
+- API tests must cover missing/invalid Clerk JWT rejection, mapped tenant user acceptance, and wrong-tenant rejection without calling real Clerk network services.
+- Admin-web source smoke should confirm Clerk session cookies are httpOnly, proxy forwards Bearer auth server-side, and client code does not reference secret env keys or localStorage token storage.
+- Admin-web Clerk session tests/smoke must confirm token-shaped forged JWTs are not accepted by `/api/auth/clerk/session`, `/admin`, `/agent`, or `/api/admin/...`; the session bridge must verify JWT signature and claims before setting cookies.
+- Latest accepted P1 QA confirms `/api/auth/clerk/session` verifies the Clerk JWT before setting the httpOnly cookie; missing verification config returns 500, invalid/forged token returns 401, and invalid tokens must not set cookies.
+- `/admin`, `/agent`, and the admin-web `/api/admin/...` proxy must reverify the Clerk session cookie server-side. Middleware may redirect based on cookie presence only as a fast path, but it is not the final auth proof.
+- Legacy `/admin/access` plus `ADMIN_API_TOKEN` remains a server-only local/dev fallback and should continue to work when intentionally configured.
+- Non-blocking P2 follow-up: add route-handler/runtime tests for forged JWT rejection and no `Set-Cookie`, beyond source-smoke coverage.
+- Non-blocking P2 follow-up: strengthen backend Clerk guard tests for issuer and authorized-party claim failures.
+- Manual alpha QA must distinguish local pass, staging/online pass, external embed pass, and real alpha-ready pass.
+- Fake/local test tokens, mocked Clerk, mocked OpenAI, or localhost-only flows do not count as online alpha evidence.
+- Real Clerk/OpenAI/deployment smoke requires user-owned dashboard/secret-manager setup and must not involve pasting secrets into chat.

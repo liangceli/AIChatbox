@@ -150,3 +150,11 @@ Widget 行为：
 - `ConversationOpsPanel` renders selected conversation history inside the Human Reply card. History is chronological and includes customer, assistant, agent, system/handoff messages, message type labels, author names when available, and citations.
 - `/admin` drawer navigation is feedback-driven: Dashboard, Knowledge Base, Conversations, and Settings scroll/focus existing page sections.
 - Unimplemented drawer actions such as Analytics, Support, Account, and New Chatbot should remain non-destructive and show coming-soon feedback instead of navigating to a dead anchor.
+## 2026-06-12 Clerk Alpha Auth Notes
+
+- `/admin` and `/agent` now prefer Clerk alpha auth through `/sign-in` and `/sign-up`.
+- Admin-web stores Clerk session JWTs only in an httpOnly sameSite cookie via `/api/auth/clerk/session` after server-side JWT signature/claims verification; do not use localStorage for Clerk/backend/admin tokens.
+- `/admin`, `/agent`, and `/api/admin/...` must call the server-side Clerk token verifier before accepting the Clerk session cookie. Middleware can redirect quickly but is not the final auth proof.
+- Browser admin operations continue to call same-origin `/api/admin/...`; the server proxy forwards Clerk Bearer auth when present and falls back to legacy `ADMIN_API_TOKEN` only for local/dev legacy access.
+- `/admin/access` remains a local legacy fallback, not the primary staging/production auth path.
+- Only `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is browser-visible. Never expose `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `ADMIN_API_TOKEN`, `OPENAI_API_KEY`, database URLs, or session secrets.

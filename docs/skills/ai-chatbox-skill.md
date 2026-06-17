@@ -142,3 +142,8 @@
 - 未来 external LLM provider 只能接收 tenant-scoped backend 已选择的数据，不能绕过 tenant isolation。
 - 不要在 prompt 或 provider response 中暴露 internal metadata、provider settings、tenant identifiers 或 hidden instructions。
 - 生产化前需要加入认证、权限、PII handling、日志脱敏策略。
+## 2026-06-12 Alpha Auth Boundary Notes
+
+- Clerk alpha auth applies to admin/agent surfaces and protected backend operations only.
+- Customer chat/widget routes remain public customer-scoped and must continue to work without Clerk.
+- External widget embed QA must confirm no admin/debug APIs, Clerk secret, admin token, OpenAI key, raw prompt, or internal metadata is exposed to the browser.

@@ -1,5 +1,14 @@
 # 后端 Skill
 
+## 2026-06-12 Clerk Alpha Auth Notes
+
+- `ADMIN_API_PROTECTION_MODE=clerk` makes protected admin/agent API routes verify a Clerk Bearer JWT instead of the legacy `x-admin-api-token`.
+- Clerk verification uses server-side `CLERK_JWT_KEY`, optional `CLERK_ISSUER`, and optional `CLERK_AUTHORIZED_PARTIES`; real values must live only in local env or deployment secret managers.
+- Authenticated Clerk users are not automatically authorized. They must map to an existing `User` through email or `metadata.clerkUserId` / `metadata.clerkSubject`, and to the requested tenant through `Role`.
+- Non-tenant platform routes require `User.isPlatformAdmin=true`; tenant support users should normally get a tenant role without platform admin.
+- `ADMIN_API_PROTECTION_MODE=token` remains a local/service fallback, while `disabled` remains explicit dev-only and rejected in production.
+- API health returns secret-safe status fields only; it must not expose DB URLs, Clerk keys, OpenAI keys, admin tokens, or session secrets.
+
 ## 2026-06-12 RAG Quality Hardening Notes
 
 - URL import cleaning removes scripts/styles/noscript, common nav/footer/header/aside/form/button/svg/canvas noise, hidden/aria-hidden blocks, comments, duplicate lines, and malformed whitespace.

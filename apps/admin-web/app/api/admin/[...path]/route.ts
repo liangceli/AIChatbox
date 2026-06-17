@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { assertAdminWebAccessConfigured, isValidAdminSessionCookie } from "../../../lib/admin-access";
+import { getAdminWebConfig, isValidAdminSessionCookie, verifyClerkSessionToken } from "../../../lib/admin-access";
 
 type RouteContext = {
   params: {
@@ -25,18 +25,18 @@ export async function DELETE(request: Request, context: RouteContext) {
 }
 
 async function proxyAdminRequest(request: Request, context: RouteContext) {
-  let config: ReturnType<typeof assertAdminWebAccessConfigured>;
+  const config = getAdminWebConfig();
+  const cookieStore = cookies();
+  const clerkSessionCookie = cookieStore.get(config.clerkSessionCookieName)?.value;
+  const legacySessionCookie = cookieStore.get(config.cookieName)?.value;
+  const useClerkSession = verifyClerkSessionToken(clerkSessionCookie);
 
-  try {
-    config = assertAdminWebAccessConfigured();
-  } catch {
-    return NextResponse.json({ error: "Admin proxy is not configured." }, { status: 500 });
+  if (!useClerkSession && !isValidAdminSessionCookie(legacySessionCookie)) {
+    return NextResponse.json({ error: "Admin web access is required." }, { status: 401 });
   }
 
-  const sessionCookie = cookies().get(config.cookieName)?.value;
-
-  if (!isValidAdminSessionCookie(sessionCookie)) {
-    return NextResponse.json({ error: "Admin web access is required." }, { status: 401 });
+  if (!useClerkSession && !config.adminApiToken) {
+    return NextResponse.json({ error: "Admin proxy legacy token is not configured." }, { status: 500 });
   }
 
   const targetUrl = buildTargetUrl(config.apiInternalBaseUrl, context.params.path ?? [], request.url);
@@ -44,7 +44,11 @@ async function proxyAdminRequest(request: Request, context: RouteContext) {
   const contentType = request.headers.get("content-type");
   const tenantSlug = request.headers.get("x-tenant-slug");
 
-  headers.set("x-admin-api-token", config.adminApiToken);
+  if (useClerkSession) {
+    headers.set("authorization", `Bearer ${clerkSessionCookie}`);
+  } else if (config.adminApiToken) {
+    headers.set("x-admin-api-token", config.adminApiToken);
+  }
 
   if (contentType) {
     headers.set("content-type", contentType);

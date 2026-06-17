@@ -248,3 +248,10 @@ Public customer-scoped SSE endpoint. Emits event type `customer_conversation_sna
 Data shape:
 
 - `conversation`: `ConversationDetail | null`
+## 2026-06-12 Admin Auth Contract
+
+- Protected admin/agent endpoints can run in `ADMIN_API_PROTECTION_MODE=clerk`, where requests must include `Authorization: Bearer <Clerk JWT>`.
+- The API verifies the JWT server-side and authorizes the user through tenant-scoped `Role` mapping before returning tenant data.
+- Legacy `x-admin-api-token` / `Authorization: Bearer <ADMIN_API_TOKEN>` token protection remains only for the documented token fallback mode.
+- Customer widget/chat/customer conversation routes remain public customer-scoped and must not require Clerk.
+- API responses must not include Clerk JWTs, Clerk secret key, JWT verification key, admin tokens, auth headers, OpenAI keys, database URLs, or session secrets.

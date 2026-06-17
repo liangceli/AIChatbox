@@ -1,5 +1,5 @@
 import { loadAdminWebEnv, loadWorkspaceEnv } from "@platform/config";
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, createPublicKey, createVerify, timingSafeEqual } from "node:crypto";
 
 const SESSION_PREFIX = "v1";
 let hasLoadedWorkspaceEnv = false;
@@ -25,11 +25,90 @@ export function getAdminWebConfig() {
     accessToken,
     sessionSecret,
     adminApiToken,
+    clerkPublishableKey: env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim(),
+    clerkJwtKey: env.CLERK_JWT_KEY?.trim(),
+    clerkIssuer: env.CLERK_ISSUER?.trim(),
+    clerkAuthorizedParties: parseCsv(env.CLERK_AUTHORIZED_PARTIES),
+    clerkSignInUrl: env.CLERK_SIGN_IN_URL,
+    clerkSignUpUrl: env.CLERK_SIGN_UP_URL,
+    clerkAfterSignInUrl: env.CLERK_AFTER_SIGN_IN_URL,
+    clerkAfterSignUpUrl: env.CLERK_AFTER_SIGN_UP_URL,
+    clerkSessionCookieName: env.ADMIN_WEB_CLERK_SESSION_COOKIE_NAME,
     apiInternalBaseUrl: env.API_INTERNAL_BASE_URL,
     cookieName: env.ADMIN_WEB_SESSION_COOKIE_NAME,
     sessionTtlSeconds: env.ADMIN_WEB_SESSION_TTL_SECONDS,
     secureCookie: env.NODE_ENV === "production"
   };
+}
+
+export function isClerkSessionVerificationConfigured(): boolean {
+  return Boolean(getAdminWebConfig().clerkJwtKey);
+}
+
+export function verifyClerkSessionToken(value?: string, nowSeconds = Math.floor(Date.now() / 1000)): boolean {
+  if (!value?.trim()) {
+    return false;
+  }
+
+  const config = getAdminWebConfig();
+
+  if (!config.clerkJwtKey) {
+    return false;
+  }
+
+  const [encodedHeader, encodedPayload, encodedSignature] = value.split(".");
+
+  if (!encodedHeader || !encodedPayload || !encodedSignature) {
+    return false;
+  }
+
+  try {
+    const header = parseBase64UrlJson(encodedHeader) as { alg?: unknown };
+
+    if (header.alg !== "RS256") {
+      return false;
+    }
+
+    const verifier = createVerify("RSA-SHA256");
+    verifier.update(`${encodedHeader}.${encodedPayload}`);
+    verifier.end();
+
+    const isSignatureValid = verifier.verify(
+      createPublicKey(normalizePem(config.clerkJwtKey)),
+      Buffer.from(encodedSignature, "base64url")
+    );
+
+    if (!isSignatureValid) {
+      return false;
+    }
+
+    const claims = parseBase64UrlJson(encodedPayload) as {
+      exp?: unknown;
+      nbf?: unknown;
+      iss?: unknown;
+      azp?: unknown;
+    };
+
+    if (typeof claims.exp === "number" && claims.exp <= nowSeconds) {
+      return false;
+    }
+
+    if (typeof claims.nbf === "number" && claims.nbf > nowSeconds) {
+      return false;
+    }
+
+    if (config.clerkIssuer && claims.iss !== config.clerkIssuer) {
+      return false;
+    }
+
+    if (config.clerkAuthorizedParties.length > 0) {
+      return typeof claims.azp === "string" && config.clerkAuthorizedParties.includes(claims.azp);
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function assertAdminWebAccessConfigured() {
@@ -97,4 +176,21 @@ function timingSafeCompare(providedValue: string, expectedValue: string): boolea
   }
 
   return timingSafeEqual(provided, expected);
+}
+
+function parseBase64UrlJson(value: string): unknown {
+  return JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+}
+
+function normalizePem(value: string): string {
+  return value.includes("BEGIN PUBLIC KEY")
+    ? value.replace(/\\n/g, "\n")
+    : `-----BEGIN PUBLIC KEY-----\n${value.replace(/\s+/g, "")}\n-----END PUBLIC KEY-----`;
+}
+
+function parseCsv(value?: string): string[] {
+  return value
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean) ?? [];
 }

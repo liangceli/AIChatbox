@@ -125,3 +125,16 @@ Trade-off: This records current behavior as-is, including known limitations, rat
 - Keep widget-facing and admin-facing concerns separate.
 - Keep AI provider orchestration out of core until there is a concrete execution need.
 - Use deterministic retrieval/reply as a scaffold before adding real LLM and vector search.
+## 2026-06-12 Clerk Alpha Auth Boundary
+
+Decision: Use Clerk as the fast alpha admin/agent auth boundary for admin-web and protected backend APIs.
+
+Rationale: The project needs a real third-party identity boundary before online alpha, but does not need enterprise RBAC/SSO yet.
+
+Implementation boundary:
+
+- Admin-web uses Clerk sign-in/sign-up and httpOnly server cookie bridging.
+- Backend verifies Clerk JWTs in `ADMIN_API_PROTECTION_MODE=clerk`.
+- Tenant authorization uses existing `User` + `Role`; no new RBAC schema was introduced.
+- `ADMIN_API_TOKEN` remains a documented local/service fallback and must not be the primary production/staging path.
+- Real Clerk/deployment setup remains a manual gate owned by the project owner.

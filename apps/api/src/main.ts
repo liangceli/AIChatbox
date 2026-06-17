@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import "./load-env";
+import { loadServerEnv } from "@platform/config";
 import { prisma } from "@platform/database";
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
@@ -8,8 +9,9 @@ import { createTenantResolutionMiddleware } from "./common/tenant/tenant-resolut
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
+  const env = loadServerEnv(process.env);
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    cors: true,
+    cors: buildCorsOptions(env.CORS_ALLOWED_ORIGINS),
     bodyParser: false
   });
 
@@ -34,3 +36,19 @@ async function bootstrap() {
 }
 
 bootstrap();
+
+function buildCorsOptions(allowedOrigins?: string) {
+  const origins = allowedOrigins
+    ?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (!origins || origins.length === 0) {
+    return true;
+  }
+
+  return {
+    origin: origins,
+    credentials: true
+  };
+}

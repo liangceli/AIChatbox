@@ -135,3 +135,10 @@ Do not treat `pnpm dev` or package `dev` scripts as blocking deployment verifica
 - No production secrets strategy documented.
 - No migration release process documented beyond Prisma commands.
 - No Redis-backed worker/job deployment yet.
+## 2026-06-12 Alpha Deployment And Clerk Notes
+
+- Online alpha requires real user-owned Clerk, hosting, database, OpenAI, API URL, admin-web URL, and CORS setup outside Git/chat.
+- Required Clerk/API env includes `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `ADMIN_API_PROTECTION_MODE=clerk`, `CLERK_JWT_KEY`, optional `CLERK_ISSUER`, optional `CLERK_AUTHORIZED_PARTIES`, `API_INTERNAL_BASE_URL`, and exact allowed origins/redirect URLs.
+- Real secrets must be configured only in local `.env` or deployment secret managers; do not paste Clerk keys, JWTs, OpenAI keys, database URLs, auth headers, or session secrets into chat.
+- `docs/deployment/alpha-deployment-checklist.md`, `docs/runtime/clerk-alpha-auth-checklist.md`, `docs/runtime/external-widget-embed-checklist.md`, and `docs/runtime/online-alpha-smoke-checklist.md` are the current alpha setup/checklist docs.
+- Do not claim alpha is online until deployed admin-web/API URLs, Clerk sign-in, tenant mapping, real OpenAI if enabled, and external widget smoke have passed.

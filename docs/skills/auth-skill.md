@@ -1,5 +1,25 @@
 # Auth Skill
 
+## 2026-06-12 Clerk Alpha Auth Boundary
+
+- Clerk alpha auth is now implemented for admin/agent access, but it is still not full enterprise RBAC.
+- Admin-web primary path:
+  - `/sign-in` and `/sign-up` use Clerk with `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`.
+  - `/api/auth/clerk/session` verifies the Clerk JWT signature and configured claims before storing it in an httpOnly sameSite cookie.
+  - `/api/admin/...` forwards `Authorization: Bearer <Clerk JWT>` server-side.
+- `/admin`, `/agent`, and the admin-web proxy must reject forged token-shaped JWT cookies; token structure/expiry checks alone are not enough.
+- API primary alpha path:
+  - `ADMIN_API_PROTECTION_MODE=clerk`
+  - `CLERK_JWT_KEY`
+  - optional `CLERK_ISSUER`
+  - optional `CLERK_AUTHORIZED_PARTIES`
+- API authorization maps Clerk users to existing `User` records by email or `metadata.clerkUserId` / `metadata.clerkSubject`, then requires a tenant `Role` for tenant routes.
+- Platform-level tenant list/create requires `User.isPlatformAdmin=true`.
+- `ADMIN_API_TOKEN` and `/admin/access` remain local/dev or service fallback only. They are not the primary staging/production auth path.
+- First alpha admin mapping is manual through `pnpm --filter @platform/api bootstrap:clerk-admin`; real Clerk IDs and secrets must stay in env/secret managers, not chat or Git.
+- Customer widget/chat routes remain public customer-scoped and do not require Clerk.
+- Never expose `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, Clerk JWTs, auth headers, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, OpenAI keys, database URLs, or session secrets in browser bundles, localStorage, logs, docs examples with real values, or API responses.
+
 ## 2026-06-04 Minimal Admin Protection Boundary
 
 - Full authentication is still not implemented.
@@ -25,10 +45,12 @@
 
 ## Current Auth State
 
-Full authentication and authorization are not implemented yet.
+Clerk alpha authentication is implemented for admin/agent surfaces. Full production RBAC, SSO, invite flows, billing-aware roles, and signed customer sessions are still future work.
 
 Current code has:
 
+- Clerk admin/agent sign-in bridge in admin-web.
+- Clerk JWT verification in API admin guard.
 - `User`: platform-global user identity data.
 - `Role`: tenant-scoped membership with a simple role name.
 - `isPlatformAdmin`: boolean on User.
@@ -36,13 +58,10 @@ Current code has:
 
 Current code does not have:
 
-- Login/session flow.
-- JWT/session cookie validation.
 - Password, SSO, OAuth, or magic-link auth.
-- Route guards for admin web.
-- Production auth/RBAC guards for tenant management.
+- Clerk Organizations or invite/approval workflow.
 - Full RBAC permission matrix.
-- Production-grade admin-web identity/session provider.
+- Production-grade customer identity/session provider.
 
 ## Implemented Permission Checks
 
@@ -51,14 +70,14 @@ Current code does not have:
 - assigning a conversation to a user;
 - sending an agent reply as a user.
 
-These checks confirm a user belongs to the current tenant, but they do not authenticate who is making the request.
+These checks confirm a user belongs to the current tenant. Admin API access in Clerk mode now authenticates the request, but some action bodies still carry `userId`; future hardening should derive acting user IDs directly from auth context.
 
 ## Known Risks
 
-- `GET /v1/tenants` and `POST /v1/tenants` are platform-level and protected only by the alpha admin API guard, not production auth/RBAC.
+- `GET /v1/tenants` and `POST /v1/tenants` are platform-level and require platform admin when Clerk mode is enabled, but still do not implement a full permission matrix.
 - Admin and agent actions rely on request body `userId`; production code must not trust client-supplied identity.
 - Tenant isolation is enforced mainly by tenant resolution and Prisma query scoping, not by authenticated principal permissions.
-- Admin-web alpha access is a minimal token gate, not user identity or RBAC.
+- Admin-web legacy alpha access remains a local fallback and must not be treated as production auth.
 
 ## Future Auth Direction
 

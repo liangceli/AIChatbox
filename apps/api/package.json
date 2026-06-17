@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx scripts/provider-behavior.test.ts",
     "smoke:openai": "tsx scripts/openai-smoke.ts",
+    "bootstrap:clerk-admin": "tsx scripts/bootstrap-clerk-admin.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

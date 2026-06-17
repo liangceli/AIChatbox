@@ -1,5 +1,18 @@
 # Current Status
 
+## 2026-06-17 Clerk Alpha Auth QA Reconciliation
+
+- Latest Git commit reviewed for this sync: `0c6fc17 update skill files`.
+- Important reconciliation note: `0c6fc17` is a documentation sync commit and does not contain the Clerk alpha auth implementation described by the latest implementation/QA handoff. The current working tree contains newer uncommitted Clerk alpha auth and deployment-readiness changes.
+- Latest accepted QA context: Admin-Web Clerk session verification P1 fix accepted with no P0/P1 findings.
+- Admin-web Clerk session bridge now must verify Clerk JWT signature and configured claims before setting the httpOnly Clerk session cookie.
+- `/admin`, `/agent`, and `/api/admin/...` must reject forged token-shaped Clerk JWT cookies; token shape/expiry checks alone are not sufficient.
+- Admin-web proxy forwards `Authorization: Bearer <Clerk JWT>` only after server-side verification. Legacy `/admin/access` and `ADMIN_API_TOKEN` remain local/dev or service fallback paths and must stay server-only.
+- `packages/config` now includes Clerk verification config fields: `CLERK_JWT_KEY`, optional `CLERK_ISSUER`, and optional `CLERK_AUTHORIZED_PARTIES`.
+- API Clerk mode still relies on backend `AdminApiGuard`, mapped `User`, tenant `Role`, and platform-admin checks; signed-in Clerk users are not automatically authorized for tenant data.
+- Latest QA found two non-blocking P2 gaps: admin-web forged JWT coverage is mostly source-smoke rather than runtime route-handler tests, and backend Clerk issuer/authorized-party tests can be strengthened.
+- Real online alpha readiness is still not proven until user-owned Clerk, hosting, database, CORS, OpenAI-if-enabled, and external widget smoke checks pass on deployed URLs.
+
 ## 2026-06-12 Reliable Citation Locator Omission
 
 - Latest commit: `49962f7 Fix reliable citation locator omission`.
@@ -133,11 +146,12 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Latest Accepted Task
 
-- Latest commit: `49962f7 Fix reliable citation locator omission`.
-- Accepted task: fix backend citation `sourceLocator` omission so citations without reliable locators do not contain `sourceLocator: undefined`.
-- Contract: `sourceLocator` is optional and reliable-only. Normal chunks may include it when it maps to persisted `KnowledgeDocument.content`; deduped/reordered chunks omit it.
-- QA result: no required fixes. Regression asserts `"sourceLocator" in citation === false` when the retrieved chunk has no reliable locator.
-- Verification summary: `pnpm --filter @platform/api test`, `pnpm --filter @platform/api typecheck`, and `git diff --check` passed, with only Windows LF/CRLF warnings.
+- Latest commit reviewed for this docs sync: `0c6fc17 update skill files`.
+- Accepted QA task described by current handoff: Clerk alpha auth P1 fix for Admin-Web Clerk session verification.
+- Commit reconciliation: the Clerk auth handoff/QA describes newer uncommitted working-tree changes, not the latest committed `0c6fc17` docs-only commit.
+- Contract: Admin-Web may set or trust its Clerk session cookie only after server-side Clerk JWT signature and claim verification. `/admin`, `/agent`, and `/api/admin/...` must reject forged token-shaped JWTs.
+- QA result: no P0/P1 findings. Non-blocking P2 follow-ups remain for runtime forged-JWT route tests and stronger Clerk issuer/authorized-party guard coverage.
+- Verification summary from accepted QA: admin-web test/typecheck/build, API test/typecheck, config typecheck/build, and `git diff --check` passed, with only Windows LF/CRLF warnings.
 
 ## Implemented Capabilities
 
@@ -156,8 +170,8 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Current Limitations
 
-- This is not production auth/RBAC; `AdminApiGuard` is only an alpha token boundary.
-- Admin-web access gate is alpha token/session-cookie protection, not real user identity or RBAC.
+- Clerk alpha admin/agent auth is implemented in the current working tree, but it is not full production RBAC, SSO, invite approval, billing-aware roles, or signed customer identity.
+- Latest committed HEAD is documentation-only relative to the Clerk handoff; implementation changes must be committed/reviewed before treating the repository history as synced.
 - Customer conversation read/detail endpoints require visitorId but do not yet use signed customer sessions.
 - Real OpenAI smoke has passed manual acceptance, but it remains opt-in/manual and must not become a normal blocking CI test while it requires a real key.
 - Embeddings, vector database, and reranker are not implemented.
@@ -169,8 +183,10 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Observed Risks
 
-- Production auth must derive identity from auth context and apply tenant-aware authorization.
+- Production auth must derive all acting user identity from verified auth context and tenant-aware authorization, not request body fields.
+- Admin-web middleware may do quick cookie-presence redirects, but page/proxy handlers must remain the final Clerk verification boundary.
 - Never expose `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, or `ADMIN_WEB_SESSION_SECRET` through `NEXT_PUBLIC_*`, browser bundles, local storage, responses, or logs.
+- Never expose `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, Clerk JWTs, auth headers, database URLs, OpenAI keys, or admin/session secrets in browser bundles, docs examples with real values, responses, or logs.
 - Customer visitorId is still bearer-like anonymous identity; production customer-session hardening remains future work.
 - Real-key OpenAI smoke helper is manual-only and must not become a normal blocking automated test.
 - Customer widget uses `/images/logo.png` as avatar path; external embed static asset strategy still needs review.
@@ -178,8 +194,16 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Recommended Next Tasks
 
-1. Continue alpha knowledge QA using `docs/runtime/alpha-knowledge-qa-checklist.md`, including optional citation locator checks.
-2. Add a deadline wrapper for DNS/safety resolution if URL import resolution latency becomes a practical risk.
-3. Add stronger Admin-Web component/browser automation for Answer Debug, document lifecycle actions, loading/error states, and mobile layout.
-4. Expand Answer Debug non-persistence tests to assert all relevant Prisma write APIs remain unused.
-5. Keep deployment-level egress denial for internal/metadata networks as defense in depth.
+1. Commit or otherwise review the current Clerk alpha auth working-tree changes so repository history matches the accepted handoff/QA state.
+2. Run manual Clerk alpha acceptance: no cookie redirects, forged token POST returns 401/no cookie, forged session cookie cannot render `/admin` or `/agent`, forged cookie cannot proxy `/api/admin/...`, and legacy local `/admin/access` still works when intentionally configured.
+3. Add runtime route-handler coverage for forged Clerk JWT rejection and stronger backend issuer/authorized-party tests.
+4. Complete deployed online alpha smoke with user-owned Clerk, hosting, DB, CORS, OpenAI-if-enabled, and external widget configuration before claiming alpha-online readiness.
+5. Continue alpha knowledge QA using `docs/runtime/alpha-knowledge-qa-checklist.md`, including optional citation locator checks.
+
+## 2026-06-12 Alpha Auth Status
+
+- Admin/agent auth now has a Clerk alpha path: admin-web `/sign-in` / `/sign-up` establishes an httpOnly Clerk session cookie, and `/api/admin/...` forwards Bearer auth to the API.
+- API `AdminApiGuard` supports `ADMIN_API_PROTECTION_MODE=clerk`, verifies Clerk JWTs, and requires a mapped `User` + tenant `Role` before tenant protected data is accessible.
+- The legacy `/admin/access` token gate and `ADMIN_API_TOKEN` proxy path remain only as local/dev or service fallback, not the primary staging/production alpha path.
+- First alpha owner mapping is manual via `pnpm --filter @platform/api bootstrap:clerk-admin` with env-managed Clerk user/tenant values.
+- Real alpha acceptance still requires user-owned Clerk setup, deployment env setup, deployed URL verification, external widget embed smoke, and real OpenAI smoke if OpenAI is enabled.
