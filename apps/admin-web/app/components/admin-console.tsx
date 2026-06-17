@@ -7,11 +7,11 @@ import { KnowledgeBasePanel } from "./knowledge-base-panel";
 import { TenantAiProfilePanel } from "./tenant-ai-profile-panel";
 
 const drawerNavigationItems = [
-  { label: "Dashboard", icon: "dashboard", target: "dashboard" },
-  { label: "Knowledge Base", icon: "database", target: "knowledge" },
-  { label: "Conversations", icon: "chat", target: "conversations" },
+  { label: "Dashboard", icon: "dashboard", target: "dashboard", href: "/admin" },
+  { label: "Knowledge Base", icon: "database", target: "knowledge", href: "/admin" },
+  { label: "Conversations", icon: "chat", href: "/admin/conversations" },
   { label: "Analytics", icon: "bar_chart", comingSoon: true },
-  { label: "Settings", icon: "settings", target: "settings" },
+  { label: "Settings", icon: "settings", target: "settings", href: "/admin" },
   { label: "Support", icon: "help", separated: true, comingSoon: true },
   { label: "Account", icon: "account_circle", comingSoon: true }
 ];
@@ -21,22 +21,25 @@ const profileImageUrl =
 
 export function AdminConsole({
   apiBaseUrl,
-  defaultTenantSlug
+  defaultTenantSlug,
+  view = "dashboard"
 }: {
   apiBaseUrl: string;
   defaultTenantSlug: string;
+  view?: "dashboard" | "conversations";
 }) {
   const [tenants, setTenants] = useState<TenantOverviewRecord[]>([]);
   const [selectedTenantSlug, setSelectedTenantSlug] = useState(defaultTenantSlug);
   const [error, setError] = useState<string>();
   const [isLoadingTenants, setIsLoadingTenants] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [activeNavigationItem, setActiveNavigationItem] = useState("Dashboard");
+  const [activeNavigationItem, setActiveNavigationItem] = useState(
+    view === "conversations" ? "Conversations" : "Dashboard"
+  );
   const [navigationNotice, setNavigationNotice] = useState<string>();
   const dashboardRef = useRef<HTMLElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
   const knowledgeRef = useRef<HTMLDivElement>(null);
-  const conversationsRef = useRef<HTMLDivElement>(null);
 
   async function loadTenants(nextSelectedSlug?: string) {
     setIsLoadingTenants(true);
@@ -127,13 +130,28 @@ export function AdminConsole({
 
   function handleNavigationItemClick(item: (typeof drawerNavigationItems)[number]) {
     if (item.comingSoon || !item.target) {
+      if (item.href) {
+        window.location.assign(item.href);
+        return;
+      }
+
       showNavigationNotice(`${item.label} is coming soon.`);
+      return;
+    }
+
+    if (item.href && item.label === "Dashboard" && view === "conversations") {
+      window.location.assign(item.href);
       return;
     }
 
     const section = getNavigationSection(item.target);
 
     if (!section) {
+      if (item.href) {
+        window.location.assign(item.href);
+        return;
+      }
+
       showNavigationNotice(`${item.label} is not available yet.`);
       return;
     }
@@ -158,8 +176,6 @@ export function AdminConsole({
         return settingsRef.current;
       case "knowledge":
         return knowledgeRef.current;
-      case "conversations":
-        return conversationsRef.current;
       default:
         return null;
     }
@@ -281,42 +297,46 @@ export function AdminConsole({
 
       <div className="admin-screen">
         <main className="admin-page-content" id="workspace">
-          <section
-            ref={dashboardRef}
-            className="stats-grid nav-section"
-            aria-label="Tenant statistics"
-            tabIndex={-1}
-          >
-            {metricCards.map((metric) => (
-              <article key={metric.label} className={`stat-card glass-card ${metric.tone}`}>
-                <span className="stat-icon">
-                  <Icon name={metric.icon} />
-                </span>
-                <div>
-                  <p>{metric.label}</p>
-                  <h2>{metric.value.toLocaleString()}</h2>
-                  <small>{metric.helper}</small>
-                </div>
-              </article>
-            ))}
-          </section>
+          {view === "dashboard" ? (
+            <>
+              <section
+                ref={dashboardRef}
+                className="stats-grid nav-section"
+                aria-label="Tenant statistics"
+                tabIndex={-1}
+              >
+                {metricCards.map((metric) => (
+                  <article key={metric.label} className={`stat-card glass-card ${metric.tone}`}>
+                    <span className="stat-icon">
+                      <Icon name={metric.icon} />
+                    </span>
+                    <div>
+                      <p>{metric.label}</p>
+                      <h2>{metric.value.toLocaleString()}</h2>
+                      <small>{metric.helper}</small>
+                    </div>
+                  </article>
+                ))}
+              </section>
 
-          <div ref={settingsRef} className="nav-section" tabIndex={-1}>
-            <TenantAiProfilePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
-          </div>
+              <div ref={settingsRef} className="nav-section" tabIndex={-1}>
+                <TenantAiProfilePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+              </div>
 
-          <div ref={knowledgeRef} className="nav-section" tabIndex={-1}>
-            <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
-          </div>
-
-          <div ref={conversationsRef} className="nav-section" tabIndex={-1}>
-            <ConversationOpsPanel
-              apiBaseUrl={apiBaseUrl}
-              tenantSlug={selectedTenantSlug}
-              allowAssignment
-              allowAdminDeletes
-            />
-          </div>
+              <div ref={knowledgeRef} className="nav-section" tabIndex={-1}>
+                <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+              </div>
+            </>
+          ) : (
+            <section className="nav-section admin-conversations-page" aria-label="Conversations" tabIndex={-1}>
+              <ConversationOpsPanel
+                apiBaseUrl={apiBaseUrl}
+                tenantSlug={selectedTenantSlug}
+                allowAssignment
+                allowAdminDeletes
+              />
+            </section>
+          )}
         </main>
       </div>
 

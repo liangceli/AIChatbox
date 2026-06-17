@@ -1,5 +1,23 @@
 # Auth Skill
 
+## 2026-06-17 Clerk Alpha Auth Code-Level Closeout
+
+- Clerk alpha auth code-level closeout is complete, but real local Clerk login smoke is still pending user-owned Clerk Dashboard/env setup.
+- Admin-web `verifyClerkSessionToken()` must require:
+  - RS256 signature verification against server-side `CLERK_JWT_KEY`
+  - string `sub`
+  - numeric unexpired `exp`
+  - valid optional `nbf`
+  - configured `CLERK_ISSUER` match when present
+  - configured `CLERK_AUTHORIZED_PARTIES` / `azp` match when present
+- `/api/auth/clerk/session` must return 500 when verification config is missing, 401 for invalid/forged tokens or invalid verification key, and must not set the Clerk session cookie on any rejected token.
+- `/admin`, `/agent`, and `/api/admin/...` must reverify the Clerk cookie server-side. Middleware can only be a quick redirect helper.
+- Admin-web proxy may forward `Authorization: Bearer <Clerk JWT>` only after verification succeeds. Legacy fallback may inject `x-admin-api-token` only server-side after a valid legacy admin-web session.
+- Backend `AdminApiGuard` in Clerk mode must reject forged signatures, missing/expired `exp`, invalid `CLERK_JWT_KEY`, issuer mismatch, authorized-party mismatch, signed-in but unmapped users, and wrong-tenant users.
+- Platform-level tenant list/create requires `User.isPlatformAdmin=true`.
+- Customer widget/chat/customer conversation routes remain public customer-scoped and must not require Clerk.
+- Only `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` may be browser-visible. Keep `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, raw JWTs, auth headers, database URLs, OpenAI keys, admin tokens, and session secrets out of chat, Git, browser bundles, localStorage, logs, responses, and docs examples with real values.
+
 ## 2026-06-12 Clerk Alpha Auth Boundary
 
 - Clerk alpha auth is now implemented for admin/agent access, but it is still not full enterprise RBAC.

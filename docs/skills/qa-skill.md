@@ -1,5 +1,41 @@
 # QA Skill
 
+## 2026-06-17 Admin Conversations Route QA
+
+- `/admin` should not render the Active Chats / ConversationOps workspace inline.
+- `/admin/conversations` should render the conversation operations page with Active Chats, metadata, human mode, and Human Reply.
+- The left drawer `Conversations` item should navigate to `/admin/conversations`.
+- The drawer `Dashboard` item should navigate back to `/admin` when opened from `/admin/conversations`.
+- Both `/admin` and `/admin/conversations` remain protected by the same Clerk/legacy admin-web route gate.
+- Local smoke for this change should check `http://localhost:3000/admin`, `http://localhost:3000/admin/conversations`, and `http://localhost:4000/v1/health`.
+
+## 2026-06-17 Clerk Alpha Auth QA Gate
+
+- Code-level Clerk alpha auth closeout is complete when:
+  - `/api/auth/clerk/session` rejects forged JWTs with 401 and no cookie.
+  - missing verification config returns 500 and no cookie.
+  - invalid verification key fails closed and no cookie is set.
+  - `/admin` and `/agent` reject forged Clerk cookies by redirecting to sign-in.
+  - `/api/admin/...` rejects forged Clerk cookies before upstream fetch.
+  - proxy forwards `Authorization: Bearer <Clerk JWT>` only after server-side verification.
+  - legacy fallback uses server-only `x-admin-api-token` and does not forward Clerk bearer for forged cookies.
+  - backend `AdminApiGuard` rejects forged signatures, missing expiration, invalid JWT key, issuer mismatch, authorized-party mismatch, unmapped users, and wrong-tenant users.
+  - backend accepts valid mapped tenant users and requires `isPlatformAdmin=true` for platform tenant list/create.
+  - customer widget/chat routes remain public customer-scoped and Clerk-free.
+- Current verification passed:
+  - `node --check apps/admin-web/scripts/admin-access.test.cjs`
+  - `pnpm --filter @platform/admin-web test`
+  - `pnpm --filter @platform/api test`
+  - `pnpm --filter @platform/admin-web typecheck`
+  - `pnpm --filter @platform/api typecheck`
+  - `pnpm --filter @platform/config typecheck`
+  - `pnpm --filter @platform/admin-web build`
+  - `pnpm --filter @platform/api build`
+  - `pnpm --filter @platform/config build`
+  - `git diff --check` with Windows LF/CRLF warnings only
+- Real local Clerk smoke remains pending until the user configures Clerk Dashboard, allowed redirects/origins, and local env. Do not ask the user to paste secrets into chat.
+- Fake/local tokens, source-transpiled handler tests, mocked Clerk JWTs, and localhost-only tests are code-level evidence only; they are not online alpha evidence.
+
 ## 2026-06-12 RAG Quality Regression Gate
 
 - URL import cleaning must remove common page chrome/noise and duplicate lines while preserving useful title/heading/content.
@@ -114,7 +150,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - OpenAI prompt assembly includes tenant assistant identity, company display name, business type, tone, and profile guidance while keeping platform safety rules higher priority.
 - Widget displays tenant profile basics without changing visitorId persistence, chat send, handoff, customer-scoped realtime, or agent reply display.
 - Admin/agent selected conversations of every status should show complete history inside the Human Reply box, including citations when present.
-- Admin drawer navigation should scroll/focus Dashboard, Knowledge Base, Conversations, and Settings; unimplemented items should show coming-soon feedback.
+- Admin drawer navigation should keep Dashboard/Knowledge/Settings behavior clear while Conversations navigates to `/admin/conversations`; unimplemented items should show coming-soon feedback.
 - Admin topbar should remain fixed at the viewport top while the page scrolls on desktop and mobile; opening the navigation drawer or focusing/scanning lower sections must not move it, and content must not render beneath it.
 - Main admin modules and interactive rows/buttons should provide visible hover/active feedback without layout overlap; reduced-motion preference should disable meaningful animation.
 - Selecting any conversation status should render the complete chronological customer/AI/agent/system history inside the Human Reply card.

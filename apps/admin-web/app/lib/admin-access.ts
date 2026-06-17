@@ -29,6 +29,7 @@ export function getAdminWebConfig() {
     clerkJwtKey: env.CLERK_JWT_KEY?.trim(),
     clerkIssuer: env.CLERK_ISSUER?.trim(),
     clerkAuthorizedParties: parseCsv(env.CLERK_AUTHORIZED_PARTIES),
+    clerkClockSkewSeconds: env.CLERK_CLOCK_SKEW_SECONDS,
     clerkSignInUrl: env.CLERK_SIGN_IN_URL,
     clerkSignUpUrl: env.CLERK_SIGN_UP_URL,
     clerkAfterSignInUrl: env.CLERK_AFTER_SIGN_IN_URL,
@@ -46,27 +47,34 @@ export function isClerkSessionVerificationConfigured(): boolean {
 }
 
 export function verifyClerkSessionToken(value?: string, nowSeconds = Math.floor(Date.now() / 1000)): boolean {
+  return verifyClerkSessionTokenDetailed(value, nowSeconds).valid;
+}
+
+export function verifyClerkSessionTokenDetailed(
+  value?: string,
+  nowSeconds = Math.floor(Date.now() / 1000)
+): { valid: true; reason: "valid" } | { valid: false; reason: string } {
   if (!value?.trim()) {
-    return false;
+    return { valid: false, reason: "missing-token" };
   }
 
   const config = getAdminWebConfig();
 
   if (!config.clerkJwtKey) {
-    return false;
+    return { valid: false, reason: "missing-jwt-key" };
   }
 
   const [encodedHeader, encodedPayload, encodedSignature] = value.split(".");
 
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
-    return false;
+    return { valid: false, reason: "malformed-token" };
   }
 
   try {
     const header = parseBase64UrlJson(encodedHeader) as { alg?: unknown };
 
     if (header.alg !== "RS256") {
-      return false;
+      return { valid: false, reason: "unsupported-algorithm" };
     }
 
     const verifier = createVerify("RSA-SHA256");
@@ -79,35 +87,51 @@ export function verifyClerkSessionToken(value?: string, nowSeconds = Math.floor(
     );
 
     if (!isSignatureValid) {
-      return false;
+      return { valid: false, reason: "invalid-signature" };
     }
 
     const claims = parseBase64UrlJson(encodedPayload) as {
+      sub?: unknown;
       exp?: unknown;
       nbf?: unknown;
       iss?: unknown;
       azp?: unknown;
     };
 
-    if (typeof claims.exp === "number" && claims.exp <= nowSeconds) {
-      return false;
+    if (!claims.sub || typeof claims.sub !== "string") {
+      return { valid: false, reason: "missing-subject" };
     }
 
-    if (typeof claims.nbf === "number" && claims.nbf > nowSeconds) {
-      return false;
+    if (typeof claims.exp !== "number") {
+      return { valid: false, reason: "invalid-expiration" };
+    }
+
+    if (claims.exp + config.clerkClockSkewSeconds <= nowSeconds) {
+      return { valid: false, reason: `expired-clock-skew-${bucketSeconds(nowSeconds - claims.exp)}` };
+    }
+
+    if (
+      claims.nbf !== undefined &&
+      (typeof claims.nbf !== "number" || claims.nbf - config.clerkClockSkewSeconds > nowSeconds)
+    ) {
+      return { valid: false, reason: "invalid-not-before" };
     }
 
     if (config.clerkIssuer && claims.iss !== config.clerkIssuer) {
-      return false;
+      return { valid: false, reason: "issuer-mismatch" };
     }
 
     if (config.clerkAuthorizedParties.length > 0) {
-      return typeof claims.azp === "string" && config.clerkAuthorizedParties.includes(claims.azp);
+      if (typeof claims.azp === "string" && config.clerkAuthorizedParties.includes(claims.azp)) {
+        return { valid: true, reason: "valid" };
+      }
+
+      return { valid: false, reason: "authorized-party-mismatch" };
     }
 
-    return true;
+    return { valid: true, reason: "valid" };
   } catch {
-    return false;
+    return { valid: false, reason: "verification-error" };
   }
 }
 
@@ -193,4 +217,28 @@ function parseCsv(value?: string): string[] {
     ?.split(",")
     .map((item) => item.trim())
     .filter(Boolean) ?? [];
+}
+
+function bucketSeconds(value: number): string {
+  if (value < 60) {
+    return "under-1m";
+  }
+
+  if (value < 3600) {
+    return "under-1h";
+  }
+
+  if (value < 86400) {
+    return "under-1d";
+  }
+
+  if (value < 604800) {
+    return "under-1w";
+  }
+
+  if (value < 2678400) {
+    return "under-31d";
+  }
+
+  return "over-31d";
 }

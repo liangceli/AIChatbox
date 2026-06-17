@@ -1,5 +1,32 @@
 # Current Status
 
+## 2026-06-17 Admin Conversations Page Split
+
+- Active Chats / conversation operations have been moved out of the main `/admin` dashboard.
+- New protected admin route: `/admin/conversations`.
+- The left drawer `Conversations` item now navigates to `/admin/conversations`; `Dashboard` returns to `/admin`.
+- `/admin` now keeps the dashboard/profile/knowledge workspace separate from the conversation operations workspace.
+- Local route checks returned 200 for `/admin`, `/admin/conversations`, and API health at `/v1/health`.
+
+## 2026-06-17 Clerk Alpha Auth Code-Level Closeout
+
+- Current repo root confirmed: `C:\Users\liangceli\HanecoAIPilot`.
+- Latest commit at the start of this task: `0fd2603 Add Clerk alpha auth and deployment readiness docs & update skill files`; this task adds new uncommitted Clerk hardening/test/docs changes.
+- Current stage: Clerk alpha auth code-level closeout is complete; real local Clerk login smoke is blocked until the user configures Clerk Dashboard and local env values directly.
+- Admin-web Clerk verification now requires RS256 signature, string `sub`, numeric unexpired `exp`, valid optional `nbf`, optional issuer, and optional authorized party before a Clerk JWT is accepted as the httpOnly admin-web Clerk session cookie.
+- `/api/auth/clerk/session` rejects missing verification config, invalid verification key, forged token-shaped JWTs, and invalid JWTs without setting cookies.
+- `/admin`, `/agent`, and `/api/admin/...` reverify Clerk cookies server-side; forged cookies redirect or return 401 safely.
+- Admin-web proxy forwards `Authorization: Bearer <Clerk JWT>` only after server-side verification. Legacy `/admin/access` and `ADMIN_API_TOKEN` remain local/dev or server-only fallback paths.
+- Backend `AdminApiGuard` in Clerk mode verifies signature/claims, fails safely on invalid `CLERK_JWT_KEY`, requires mapped `User` + tenant `Role`, rejects wrong tenant and unmapped users, and requires `User.isPlatformAdmin=true` for platform tenant list/create.
+- Customer widget/chat/customer conversation routes remain public customer-scoped and do not require Clerk.
+- Added/strengthened tests:
+  - Admin-web handler-style tests for forged JWT POST 401/no cookie, missing config 500/no cookie, invalid key rejection, forged `/admin` and `/agent` cookie redirect, forged proxy 401/no upstream fetch, verified bearer forwarding, and legacy fallback no bearer forwarding.
+  - API tests for forged signature, missing expiration, invalid JWT key, issuer mismatch, authorized-party mismatch, valid issuer/authorized-party, wrong tenant, unmapped user, and platform admin gate.
+- Verification passed: admin-web test/typecheck/build, API test/typecheck/build, config typecheck/build, `node --check apps/admin-web/scripts/admin-access.test.cjs`, and `git diff --check` with Windows LF/CRLF warnings only.
+- Real Clerk smoke result: not run yet; waiting for user to configure Clerk project, allowed redirects/origins, and env values without sharing secrets.
+- Never paste or expose `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, raw Clerk JWTs, auth headers, database URLs, OpenAI keys, admin tokens, session secrets, or raw env files in chat, browser code, logs, responses, or committed docs.
+- Next stage after user setup: local real Clerk smoke, first alpha owner bootstrap via `pnpm --filter @platform/api bootstrap:clerk-admin`, then Alpha Online Deployment + External Widget Smoke.
+
 ## 2026-06-17 Clerk Alpha Auth QA Reconciliation
 
 - Latest Git commit reviewed for this sync: `0c6fc17 update skill files`.

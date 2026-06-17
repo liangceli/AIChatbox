@@ -1,5 +1,93 @@
 # Director Update
 
+## 2026-06-17 Admin Conversations Page Split
+
+## 1. Completed Task
+
+Moved the Active Chats / conversation operations workspace out of the `/admin` dashboard and into its own protected admin route: `/admin/conversations`.
+
+## 2. Accepted Change
+
+- `/admin` now remains the dashboard/profile/knowledge workspace.
+- `/admin/conversations` renders `ConversationOpsPanel` as the standalone conversation operations page.
+- The left drawer `Conversations` item navigates to `/admin/conversations`.
+- The drawer `Dashboard` item navigates back to `/admin`.
+- The new route reuses the existing Clerk/legacy protected route gate and existing `/api/admin/...` proxy behavior.
+
+## 3. Verification
+
+Passed:
+
+- `pnpm --filter @platform/admin-web test`
+- `pnpm --filter @platform/admin-web typecheck`
+- `pnpm --filter @platform/admin-web build`
+- Local route checks returned 200 for `/admin`, `/admin/conversations`, and `/v1/health`.
+
+Note: in-app Browser visual verification was blocked by the Browser plugin security policy for `localhost:3000`.
+
+## 2026-06-17 Clerk Alpha Auth Code-Level Closeout
+
+## 1. Completed Task
+
+Clerk alpha auth code-level closeout is complete for current local code. Real local Clerk login smoke remains pending user-owned Clerk Dashboard and local env configuration.
+
+Latest commit at task start: `0fd2603 Add Clerk alpha auth and deployment readiness docs & update skill files`.
+
+Current working tree now contains uncommitted hardening changes in admin-web/API auth verification, tests, and docs.
+
+## 2. Accepted Change
+
+- Admin-web Clerk session verifier now requires RS256 signature verification plus `sub`, numeric unexpired `exp`, valid optional `nbf`, optional `CLERK_ISSUER`, and optional `CLERK_AUTHORIZED_PARTIES`.
+- `/api/auth/clerk/session` rejects missing config, invalid config, forged JWTs, invalid token-shaped JWTs, and does not set cookies for rejected tokens.
+- `/admin` and `/agent` reject forged Clerk session cookies and redirect safely to sign-in.
+- `/api/admin/...` rejects forged Clerk cookies before upstream fetch, and forwards `Authorization: Bearer <Clerk JWT>` only after verification.
+- Backend `AdminApiGuard` fails safely on invalid `CLERK_JWT_KEY`, rejects forged signatures/missing expiration/issuer mismatch/authorized-party mismatch, and still requires mapped `User` + tenant `Role`.
+- Platform tenant list/create path still requires `User.isPlatformAdmin=true`.
+- Legacy `/admin/access` + `ADMIN_API_TOKEN` remains server-only local/dev or service fallback.
+- Customer widget/chat routes remain public customer-scoped and do not require Clerk.
+
+## 3. Verification
+
+Passed:
+
+- `node --check apps/admin-web/scripts/admin-access.test.cjs`
+- `pnpm --filter @platform/admin-web test`
+- `pnpm --filter @platform/api test`
+- `pnpm --filter @platform/admin-web typecheck`
+- `pnpm --filter @platform/api typecheck`
+- `pnpm --filter @platform/config typecheck`
+- `pnpm --filter @platform/admin-web build`
+- `pnpm --filter @platform/api build`
+- `pnpm --filter @platform/config build`
+- `git diff --check` passed with Windows LF/CRLF warnings only.
+
+## 4. Manual Gate
+
+The user must configure Clerk directly in Clerk Dashboard and local env without pasting secrets into chat:
+
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- `CLERK_JWT_KEY`
+- optional `CLERK_ISSUER`
+- optional `CLERK_AUTHORIZED_PARTIES`
+- sign-in/sign-up/after-auth URL env
+- allowed redirect URLs and allowed origins for local admin-web
+- `ADMIN_API_PROTECTION_MODE=clerk`
+
+Real local Clerk smoke cannot be claimed until that is done and verified.
+
+## 5. Remaining Risks
+
+- P0: none known.
+- P1: real Clerk local login smoke blocked pending user setup.
+- P2: handler-style tests are not full browser/e2e tests.
+- P2: future production auth should derive acting user IDs from verified auth context rather than body fields.
+
+## 6. Recommended Next Tasks
+
+1. Pause for user Clerk Dashboard/env setup.
+2. After confirmation, run local env presence checks without printing values, start services, complete first owner bootstrap, and run real Clerk local smoke.
+3. If local smoke passes, proceed to Alpha Online Deployment + External Widget Smoke.
+
 ## 1. Completed Task
 
 Accepted QA context: Clerk alpha auth boundary and Admin-Web Clerk session verification P1 fix.

@@ -1,5 +1,91 @@
 # 中文 Diff Review & QA Report
 
+## 2026-06-17 Admin Conversations Page Split QA
+
+## 1. Conclusion
+
+Accepted for local route-level QA. Active Chats / ConversationOps has been moved from inline `/admin` dashboard content to the dedicated protected `/admin/conversations` route.
+
+## 2. Scope Check
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| `/admin` dashboard separation | Passed | `AdminConsole` dashboard view renders dashboard/profile/knowledge content and no longer mounts `ConversationOpsPanel` inline. |
+| `/admin/conversations` route | Passed | New protected route renders `AdminConsole` with `view="conversations"`. |
+| Drawer navigation | Passed | `Conversations` navigates to `/admin/conversations`; `Dashboard` navigates back to `/admin`. |
+| Auth boundary | Passed | The new route reuses existing Clerk/legacy protected route logic before rendering. |
+| API contract | Passed | No backend API route or request/response contract changed. |
+
+## 3. Verification
+
+Passed:
+
+- `pnpm --filter @platform/admin-web test`
+- `pnpm --filter @platform/admin-web typecheck`
+- `pnpm --filter @platform/admin-web build`
+- `http://localhost:3000/admin` returned 200.
+- `http://localhost:3000/admin/conversations` returned 200.
+- `http://localhost:4000/v1/health` returned 200.
+
+Note: in-app Browser visual verification was blocked by the Browser plugin security policy for `localhost:3000`, so this QA evidence is route/build/check based.
+
+## 2026-06-17 Clerk Alpha Auth Code-Level QA
+
+## 1. 总体结论
+
+代码级 Clerk alpha auth 可以进入真实 Clerk 本地 smoke 前的人工配置阶段。
+
+本轮补强后，admin-web Clerk session verifier 不再只依赖 token shape / exp 检查，而是要求 RS256 signature、`sub`、数值型未过期 `exp`、有效 optional `nbf`、optional issuer 和 authorized-party claims。`/api/auth/clerk/session` 的 forged JWT / invalid key / missing config 行为已用 handler-style 测试覆盖，rejected token 不会 set cookie。`/admin`、`/agent` 和 `/api/admin/...` 的 forged Clerk cookie 行为也已覆盖。
+
+后端 `AdminApiGuard` 已补 forged signature、missing expiration、invalid `CLERK_JWT_KEY`、issuer mismatch、authorized-party mismatch、valid issuer/authorized-party、tenant role mapping、wrong tenant、platform admin gate 覆盖。
+
+真实 Clerk local login smoke 尚未完成，阻塞点是用户还需要在 Clerk Dashboard 和本地 env 中配置真实项目值。不要把 secret 发到聊天。
+
+## 2. Scope 检查
+
+| 检查项 | 结果 | 说明 |
+| --- | --- | --- |
+| 当前 repo root | 通过 | `C:\Users\liangceli\HanecoAIPilot`。 |
+| Git 状态 | 通过 | 进入本轮时 working tree clean，最新提交为 `0fd2603 Add Clerk alpha auth and deployment readiness docs & update skill files`。本轮产生新的未提交改动。 |
+| `/api/auth/clerk/session` forged JWT 拒绝 | 通过 | Handler-style test 覆盖 401，且无 cookie set。 |
+| missing Clerk verification config | 通过 | Session route 返回 500，且无 cookie set。 |
+| invalid Clerk verification key | 通过 | Session route/API guard 安全失败，不输出 raw crypto error 或 secret。 |
+| rejected token no cookie | 通过 | forged/missing/invalid config tests 均断言 no `Set-Cookie` call。 |
+| `/admin` forged cookie | 通过 | Handler-style page test 确认 redirect `/sign-in?redirect_url=/admin`。 |
+| `/agent` forged cookie | 通过 | Handler-style page test 确认 redirect `/sign-in?redirect_url=/agent`。 |
+| `/api/admin/...` forged cookie | 通过 | Proxy returns 401 and does not call upstream fetch. |
+| proxy Authorization forwarding | 通过 | Only verified Clerk cookie forwards `Authorization: Bearer <Clerk JWT>`; legacy fallback uses `x-admin-api-token` and no Authorization header. |
+| backend Clerk guard | 通过 | Signature/claims verification and User + tenant Role mapping covered. |
+| platform tenant list/create gate | 通过 | Platform-level no-tenant guard path rejects non-platform user and accepts `isPlatformAdmin=true`. |
+| customer widget/chat public scope | 通过 | Code route map unchanged; customer routes remain outside Clerk/AdminApiGuard path. |
+| secret exposure | 通过 | Browser code exposes only publishable Clerk key path; tests/source smoke reject secret env references in Clerk auth panel and debug panels. |
+
+## 3. 验证结果
+
+Passed:
+
+- `node --check apps/admin-web/scripts/admin-access.test.cjs`
+- `pnpm --filter @platform/admin-web test`
+- `pnpm --filter @platform/api test`
+- `pnpm --filter @platform/admin-web typecheck`
+- `pnpm --filter @platform/api typecheck`
+- `pnpm --filter @platform/config typecheck`
+- `pnpm --filter @platform/admin-web build`
+- `pnpm --filter @platform/api build`
+- `pnpm --filter @platform/config build`
+- `git diff --check`：通过，仅 Windows LF/CRLF warnings，无 whitespace error。
+
+## 4. 剩余风险
+
+- P0: none known.
+- P1: real local Clerk login smoke is not done until the user completes Clerk Dashboard/env configuration.
+- P2: admin-web runtime coverage is handler-style/transpiled rather than full browser/Next integration e2e.
+- P2: production hardening should derive admin/agent acting user identity from verified auth context instead of request body `userId`.
+
+## 5. QA 结论
+
+No code fix request remains for Clerk code-level closeout. Continue only after the user confirms Clerk Dashboard and local env are configured.
+
 ## 1. 总体结论
 
 可以进入人工验收

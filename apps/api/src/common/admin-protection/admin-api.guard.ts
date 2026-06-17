@@ -133,11 +133,19 @@ export class AdminApiGuard implements CanActivate {
     verifier.update(`${encodedHeader}.${encodedPayload}`);
     verifier.end();
 
-    const normalizedPublicKey = normalizePem(publicKey);
-    const signature = Buffer.from(encodedSignature, "base64url");
+    try {
+      const normalizedPublicKey = normalizePem(publicKey);
+      const signature = Buffer.from(encodedSignature, "base64url");
 
-    if (!verifier.verify(createPublicKey(normalizedPublicKey), signature)) {
-      throw new ForbiddenException("Clerk authentication token is invalid.");
+      if (!verifier.verify(createPublicKey(normalizedPublicKey), signature)) {
+        throw new ForbiddenException("Clerk authentication token is invalid.");
+      }
+    } catch (error) {
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+
+      throw new UnauthorizedException("Clerk authentication is not configured.");
     }
 
     const claims = parseBase64UrlJson(encodedPayload) as ClerkJwtClaims;
@@ -147,11 +155,14 @@ export class AdminApiGuard implements CanActivate {
       throw new UnauthorizedException("Clerk authentication token is missing a subject.");
     }
 
-    if (typeof claims.exp === "number" && claims.exp <= nowSeconds) {
+    if (typeof claims.exp !== "number" || claims.exp + this.env.CLERK_CLOCK_SKEW_SECONDS <= nowSeconds) {
       throw new UnauthorizedException("Clerk authentication token has expired.");
     }
 
-    if (typeof claims.nbf === "number" && claims.nbf > nowSeconds) {
+    if (
+      claims.nbf !== undefined &&
+      (typeof claims.nbf !== "number" || claims.nbf - this.env.CLERK_CLOCK_SKEW_SECONDS > nowSeconds)
+    ) {
       throw new UnauthorizedException("Clerk authentication token is not active yet.");
     }
 

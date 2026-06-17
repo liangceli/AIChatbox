@@ -1,5 +1,114 @@
 # Latest Implementation Handoff
 
+## 2026-06-17 Admin Conversations Page Split
+
+### Stage Conclusion
+
+- Active Chats / conversation operations have been moved out of the main `/admin` dashboard into a dedicated protected admin page.
+- The new route is `/admin/conversations`.
+- The left drawer `Conversations` item now navigates to `/admin/conversations`; `Dashboard` navigates back to `/admin`.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/admin-web/app/components/admin-console.tsx` | Adds a route-aware `view` prop, keeps `/admin` as dashboard/profile/knowledge, and renders `ConversationOpsPanel` only in the conversations view. |
+| `apps/admin-web/app/admin/conversations/page.tsx` | Adds a protected admin route that reuses the existing Clerk/legacy route gate and renders the conversations view. |
+| `docs/skills/frontend-skill.md`, `docs/skills/current-status.md`, `docs/skills/qa-skill.md`, `docs/ai-handoff/*` | Records the route split and updated QA expectations. |
+
+### Behavior Notes
+
+- `/admin` no longer embeds the Active Chats panel under the dashboard page.
+- `/admin/conversations` is the standalone admin conversation operations workspace for Active Chats, metadata, human mode, and Human Reply.
+- The page uses the existing same-origin `/api/admin/...` proxy and the existing admin protection model; no backend API contract changed.
+
+### Verification
+
+Passed:
+
+- `pnpm --filter @platform/admin-web test`
+- `pnpm --filter @platform/admin-web typecheck`
+- `pnpm --filter @platform/admin-web build`
+- Local HTTP checks returned 200 for `http://localhost:3000/admin`, `http://localhost:3000/admin/conversations`, and `http://localhost:4000/v1/health`.
+
+Note: the in-app Browser plugin blocked direct `localhost:3000` navigation under its security policy, so browser-plugin visual verification was not completed.
+
+## 2026-06-17 Clerk Alpha Auth Code-Level Closeout
+
+### Stage Conclusion
+
+- Clerk alpha auth code-level closeout is complete for the current repository state.
+- Real local Clerk login smoke is not complete yet because it requires user-owned Clerk Dashboard configuration and local env values. The user must configure those values directly in local env / dashboards and must not paste secrets into chat.
+- Current working tree now contains additional hardening beyond commit `0fd2603 Add Clerk alpha auth and deployment readiness docs & update skill files`.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `apps/admin-web/app/lib/admin-access.ts` | Tightens Clerk session JWT verification to require a string `sub`, numeric unexpired `exp`, valid optional `nbf`, RS256 signature, and configured issuer/authorized-party claims before accepting the admin-web Clerk session cookie. |
+| `apps/admin-web/scripts/admin-access.test.cjs` | Replaces source-only Clerk smoke with executable handler-style tests for session route rejection/no-cookie behavior, missing/invalid verification config, forged cookies on `/admin` and `/agent`, proxy authorization forwarding, and legacy fallback behavior. |
+| `apps/api/src/common/admin-protection/admin-api.guard.ts` | Tightens backend Clerk JWT verification to require numeric unexpired `exp` and to fail safely when `CLERK_JWT_KEY` is invalid instead of leaking raw crypto errors. |
+| `apps/api/scripts/provider-behavior.test.ts` | Adds backend Clerk regressions for forged signatures, missing expiration, invalid JWT key, issuer mismatch, authorized-party mismatch, valid issuer/authorized-party acceptance, and platform-admin-only platform access. |
+| `docs/ai-handoff/*`, `docs/skills/*` | Records current Clerk code-level closeout status, verification, real Clerk setup gate, remaining risks, and next stage recommendation. |
+
+### Auth Design Confirmed
+
+- Admin-web `/sign-in` and `/sign-up` expose only `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` to browser code.
+- Browser Clerk session tokens are posted to `/api/auth/clerk/session`.
+- Admin-web stores the Clerk JWT in an httpOnly sameSite cookie only after server-side RS256 signature and claim verification.
+- `/admin`, `/agent`, and `/api/admin/...` reverify the Clerk session cookie server-side; middleware remains only a quick cookie-presence redirect helper.
+- Admin-web proxy forwards `Authorization: Bearer <Clerk JWT>` only when verification succeeds.
+- Legacy `/admin/access` and `ADMIN_API_TOKEN` remain local/dev or server-only fallback paths.
+- Backend `AdminApiGuard` in `ADMIN_API_PROTECTION_MODE=clerk` verifies Clerk JWTs, maps Clerk identity to an existing `User`, requires tenant `Role` for tenant data, and requires `User.isPlatformAdmin=true` for platform tenant list/create.
+- Customer widget/chat/customer conversation routes remain public customer-scoped and do not require Clerk.
+
+### Verification
+
+Passed:
+
+- `node --check apps/admin-web/scripts/admin-access.test.cjs`
+- `pnpm --filter @platform/admin-web test`
+- `pnpm --filter @platform/api test`
+- `pnpm --filter @platform/admin-web typecheck`
+- `pnpm --filter @platform/api typecheck`
+- `pnpm --filter @platform/config typecheck`
+- `pnpm --filter @platform/admin-web build`
+- `pnpm --filter @platform/api build`
+- `pnpm --filter @platform/config build`
+- `git diff --check` passed with Windows LF/CRLF warnings only.
+- Real local Clerk login smoke is blocked until the user creates/configures Clerk project settings and local env values without sharing secrets.
+
+### Manual Clerk Setup Gate
+
+The user must complete these outside chat before real smoke can continue:
+
+- Create/select a Clerk project.
+- Enable Email login first; Google login is optional.
+- Configure local admin-web redirect URLs and origins.
+- Put required values into local env or deployment secret manager directly:
+  - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+  - `CLERK_SECRET_KEY` only if future server-side Clerk API calls need it
+  - `CLERK_JWT_KEY`
+  - `CLERK_ISSUER` if enforcing issuer
+  - `CLERK_AUTHORIZED_PARTIES` if enforcing authorized parties
+  - `CLERK_SIGN_IN_URL=/sign-in`
+  - `CLERK_SIGN_UP_URL=/sign-up`
+  - `CLERK_AFTER_SIGN_IN_URL=/admin`
+  - `CLERK_AFTER_SIGN_UP_URL=/admin`
+  - `ADMIN_API_PROTECTION_MODE=clerk`
+- Never paste Clerk secret key, JWT verification key, raw JWTs, auth headers, database URLs, OpenAI keys, admin tokens, or raw env files into chat.
+
+### Remaining Risks
+
+- P0: none known after code-level verification.
+- P1: real Clerk local login smoke is still blocked on user-owned Clerk/env configuration.
+- P2: route tests are handler-style and source-transpiled rather than full Next/Nest e2e; full browser/e2e coverage remains future work.
+- P2: admin/agent action bodies still include `userId`; future production hardening should derive acting identity from verified auth context.
+
+### Next Stage Recommendation
+
+After the user replies that Clerk is configured, run local real Clerk smoke, bootstrap/map the first alpha owner through `pnpm --filter @platform/api bootstrap:clerk-admin`, verify mapped/unmapped/wrong-tenant behavior, then proceed to Alpha Online Deployment + External Widget Smoke.
+
 ## Latest P1 QA Fix: Admin-Web Clerk Session Verification
 
 ### Required Fix

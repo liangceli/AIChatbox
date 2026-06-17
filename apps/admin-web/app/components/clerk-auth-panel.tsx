@@ -15,6 +15,8 @@ declare global {
       load: () => Promise<void>;
       openSignIn: (options?: { redirectUrl?: string; afterSignInUrl?: string }) => void;
       openSignUp: (options?: { redirectUrl?: string; afterSignUpUrl?: string }) => void;
+      redirectToSignIn?: (options?: { redirectUrl?: string; afterSignInUrl?: string }) => void;
+      redirectToSignUp?: (options?: { redirectUrl?: string; afterSignUpUrl?: string }) => void;
       session?: {
         getToken: (options?: { template?: string }) => Promise<string | null>;
       } | null;
@@ -91,7 +93,8 @@ export function ClerkAuthPanel({
     });
 
     if (!response.ok) {
-      setStatus("Signed in, but admin session could not be established.");
+      const reason = await readFailureReason(response);
+      setStatus(`Signed in, but admin session could not be established. Reason: ${reason}`);
       return;
     }
 
@@ -104,9 +107,25 @@ export function ClerkAuthPanel({
     }
 
     if (mode === "sign-up") {
+      if (window.Clerk.redirectToSignUp) {
+        window.Clerk.redirectToSignUp({
+          redirectUrl: window.location.href,
+          afterSignUpUrl: window.location.href
+        });
+        return;
+      }
+
       window.Clerk.openSignUp({
         redirectUrl: window.location.href,
         afterSignUpUrl: window.location.href
+      });
+      return;
+    }
+
+    if (window.Clerk.redirectToSignIn) {
+      window.Clerk.redirectToSignIn({
+        redirectUrl: window.location.href,
+        afterSignInUrl: window.location.href
       });
       return;
     }
@@ -132,6 +151,16 @@ export function ClerkAuthPanel({
       </section>
     </main>
   );
+}
+
+async function readFailureReason(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { reason?: unknown };
+
+    return typeof body.reason === "string" && body.reason ? body.reason : "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 function sanitizeRedirectUrl(value?: string): string | undefined {

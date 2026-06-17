@@ -1,5 +1,16 @@
 # 后端 Skill
 
+## 2026-06-17 Clerk Alpha Auth Backend Notes
+
+- `ADMIN_API_PROTECTION_MODE=clerk` is the alpha backend auth mode for protected admin/agent/platform routes.
+- `AdminApiGuard` must verify RS256 Clerk JWTs with server-side `CLERK_JWT_KEY`, require string `sub`, require numeric unexpired `exp`, reject invalid optional `nbf`, enforce optional `CLERK_ISSUER`, and enforce optional `CLERK_AUTHORIZED_PARTIES`.
+- Invalid `CLERK_JWT_KEY` must fail closed with a safe auth error, not a raw crypto/server stack leak.
+- A signed-in Clerk user is not automatically authorized. The guard must map the token to an existing `User` by email or Clerk metadata, then require a tenant `Role` for tenant-scoped data.
+- Platform routes without a tenant, including tenant list/create, require `User.isPlatformAdmin=true`.
+- Wrong-tenant users, unmapped users, forged signatures, missing expiration, issuer mismatch, and authorized-party mismatch must be rejected.
+- Customer chat/widget/customer conversation endpoints remain public but tenant/visitor scoped and do not require Clerk.
+- First alpha owner mapping remains manual through `pnpm --filter @platform/api bootstrap:clerk-admin` after the user configures real Clerk locally. Do not ask for or print secrets.
+
 ## 2026-06-12 Clerk Alpha Auth Notes
 
 - `ADMIN_API_PROTECTION_MODE=clerk` makes protected admin/agent API routes verify a Clerk Bearer JWT instead of the legacy `x-admin-api-token`.

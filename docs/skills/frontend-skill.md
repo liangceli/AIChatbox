@@ -1,5 +1,23 @@
 # 前端 Skill
 
+## 2026-06-17 Admin Conversations Route Split
+
+- `/admin` is now the dashboard-only admin workspace for stats, AI Profile, and Knowledge Base work.
+- Active Chats / conversation operations live on the dedicated `/admin/conversations` route instead of being embedded under `/admin`.
+- The left drawer `Conversations` item navigates to `/admin/conversations`; `Dashboard` navigates back to `/admin`.
+- `ConversationOpsPanel` remains the shared operations surface for admin/agent conversation lists, metadata, human mode, and Human Reply history.
+
+## 2026-06-17 Clerk Alpha Auth Frontend Notes
+
+- Admin-web Clerk auth is code-level closed out, but real local Clerk login smoke is pending user Dashboard/env setup.
+- `/sign-in` and `/sign-up` may pass only `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` to browser code.
+- Browser code posts the Clerk session token to `/api/auth/clerk/session`; it must not store Clerk/admin/backend tokens in localStorage.
+- `/api/auth/clerk/session` sets the httpOnly Clerk session cookie only after server-side verification. Rejected tokens must not set cookies.
+- `/admin`, `/agent`, and `/api/admin/...` reverify the Clerk cookie server-side. A forged cookie should redirect to sign-in or return 401; middleware cookie presence is not final auth proof.
+- Admin operations continue to call same-origin `/api/admin/...`; the proxy forwards `Authorization: Bearer <Clerk JWT>` only after verification, or uses server-only legacy `x-admin-api-token` fallback after a valid legacy session.
+- Customer `/chat` and embeddable widget routes remain public customer-scoped and do not require Clerk.
+- Browser-visible env remains limited to `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_API_BASE_URL`, and `NEXT_PUBLIC_DEFAULT_TENANT_SLUG`. Do not expose `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `ADMIN_API_TOKEN`, `OPENAI_API_KEY`, database URLs, raw auth headers, or session secrets.
+
 ## 2026-06-12 Answer Debug RAG Indicators
 
 - Admin Answer Debug shows safe retrieval confidence, source diversity, and warning text from the backend.
@@ -53,6 +71,7 @@
 
 - `/`: 当前入口页，提供平台概览/跳转。
 - `/admin`: 平台管理工作台。
+- `/admin/conversations`: admin conversation operations workspace for Active Chats, metadata, human mode, and Human Reply.
 - `/agent`: 人工 handoff inbox。
 - `/chat`: 客户聊天测试页。
 
@@ -74,11 +93,12 @@ Admin protection:
 核心组件：
 
 - `app/components/admin-console.tsx`
+  - Route-aware shell: `/admin` renders dashboard/profile/knowledge sections; `/admin/conversations` renders the standalone conversation workspace.
   - 加载 tenant 列表。
   - 创建 tenant。
   - 选择当前 tenant。
   - 展示 conversation、pending human、knowledge base 统计。
-  - 嵌入 `KnowledgeBasePanel` 和 `ConversationOpsPanel`。
+  - 在 `/admin` 嵌入 `KnowledgeBasePanel`，在 `/admin/conversations` 嵌入 `ConversationOpsPanel`。
 - `app/components/knowledge-base-panel.tsx`
   - tenant-scoped knowledge base 列表与创建。
   - manual document 创建。
@@ -141,14 +161,14 @@ Widget 行为：
 
 ## Admin Dashboard Visual Shell
 
-- The admin dashboard currently follows the Solaris AI `code.html` design reference: pale `#fbf8ff` background, white/glass surfaces, golden `#fec931` highlights, black primary text/buttons, fixed topbar, mobile drawer, statistics cards, knowledge table, ingest card, active chats, metadata, and human reply panels.
+- The admin dashboard currently follows the Solaris AI `code.html` design reference: pale `#fbf8ff` background, white/glass surfaces, golden `#fec931` highlights, black primary text/buttons, fixed topbar, mobile drawer, statistics cards, knowledge table, and ingest/profile panels. Active Chats, metadata, and human reply panels belong to `/admin/conversations`.
 - Do not use the old `/images/logo.png` mark in the admin dashboard shell; the current design uses the `Solaris AI` wordmark text and tenant initials/profile imagery instead.
 - Keep future admin UI changes consistent with this responsive pattern unless a new design brief replaces it.
 
 ## 2026-06-05 Admin Handoff UX Notes
 
 - `ConversationOpsPanel` renders selected conversation history inside the Human Reply card. History is chronological and includes customer, assistant, agent, system/handoff messages, message type labels, author names when available, and citations.
-- `/admin` drawer navigation is feedback-driven: Dashboard, Knowledge Base, Conversations, and Settings scroll/focus existing page sections.
+- `/admin` drawer navigation keeps dashboard sections focused; Conversations navigates to `/admin/conversations` as its own page.
 - Unimplemented drawer actions such as Analytics, Support, Account, and New Chatbot should remain non-destructive and show coming-soon feedback instead of navigating to a dead anchor.
 ## 2026-06-12 Clerk Alpha Auth Notes
 

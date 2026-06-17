@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getAdminWebConfig,
   isClerkSessionVerificationConfigured,
-  verifyClerkSessionToken
+  verifyClerkSessionTokenDetailed
 } from "../../../../lib/admin-access";
 
 export async function POST(request: Request) {
@@ -19,8 +19,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Clerk session verification is not configured." }, { status: 500 });
   }
 
-  if (!verifyClerkSessionToken(token)) {
-    return NextResponse.json({ error: "Invalid Clerk session token." }, { status: 401 });
+  const verification = verifyClerkSessionTokenDetailed(token);
+
+  if (!verification.valid) {
+    return NextResponse.json(
+      {
+        error: "Invalid Clerk session token.",
+        reason: verification.reason
+      },
+      { status: 401 }
+    );
   }
 
   const config = getAdminWebConfig();

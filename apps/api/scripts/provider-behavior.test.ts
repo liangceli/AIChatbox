@@ -161,18 +161,19 @@ function createClerkTestKeys() {
 
 function createClerkTestToken(
   privateKey: string,
-  claims: { sub: string; email?: string; iss?: string; azp?: string }
+  claims: { sub: string; email?: string; iss?: string; azp?: string; exp?: number }
 ): string {
   const header = encodeJwtPart({
     alg: "RS256",
     typ: "JWT"
   });
   const payload = encodeJwtPart({
+    exp: Math.floor(Date.now() / 1000) + 3600,
     sub: claims.sub,
     email: claims.email,
     iss: claims.iss,
     azp: claims.azp,
-    exp: Math.floor(Date.now() / 1000) + 3600
+    ...claims
   });
   const signer = createSign("RSA-SHA256");
 
@@ -481,6 +482,328 @@ async function testClerkAdminProtectionRejectsWrongTenant() {
         )
       ),
     ForbiddenException
+  );
+}
+
+async function testClerkAdminProtectionRejectsForgedSignature() {
+  const { publicKey } = createClerkTestKeys();
+  const forgedKeys = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: `Bearer ${createClerkTestToken(forgedKeys.privateKey, {
+              sub: "user-mapped",
+              email: "agent@example.test"
+            })}`
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    ForbiddenException
+  );
+}
+
+async function testClerkAdminProtectionRejectsMissingExpiration() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: `Bearer ${createClerkTestToken(privateKey, {
+              sub: "user-mapped",
+              email: "agent@example.test",
+              exp: undefined
+            })}`
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    UnauthorizedException
+  );
+}
+
+async function testClerkAdminProtectionAcceptsConfiguredLocalClockSkew() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey,
+      CLERK_CLOCK_SKEW_SECONDS: "3600"
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.equal(
+    await guard.canActivate(
+      createGuardContext(
+        {
+          authorization: `Bearer ${createClerkTestToken(privateKey, {
+            sub: "user-mapped",
+            email: "agent@example.test",
+            exp: Math.floor(Date.now() / 1000) - 120
+          })}`
+        },
+        { tenant: baseInput.tenant }
+      )
+    ),
+    true
+  );
+}
+
+async function testClerkAdminProtectionRejectsInvalidJwtKeySafely() {
+  const { privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: "not-a-public-key"
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: `Bearer ${createClerkTestToken(privateKey, {
+              sub: "user-mapped",
+              email: "agent@example.test"
+            })}`
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    UnauthorizedException
+  );
+}
+
+async function testClerkAdminProtectionRejectsIssuerMismatch() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey,
+      CLERK_ISSUER: "https://expected-issuer.example.test"
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: `Bearer ${createClerkTestToken(privateKey, {
+              sub: "user-mapped",
+              email: "agent@example.test",
+              iss: "https://wrong-issuer.example.test"
+            })}`
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    ForbiddenException
+  );
+}
+
+async function testClerkAdminProtectionRejectsAuthorizedPartyMismatch() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey,
+      CLERK_AUTHORIZED_PARTIES: "http://localhost:3000,https://admin.example.test"
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () =>
+      guard.canActivate(
+        createGuardContext(
+          {
+            authorization: `Bearer ${createClerkTestToken(privateKey, {
+              sub: "user-mapped",
+              email: "agent@example.test",
+              azp: "https://evil.example.test"
+            })}`
+          },
+          { tenant: baseInput.tenant }
+        )
+      ),
+    ForbiddenException
+  );
+}
+
+async function testClerkAdminProtectionAcceptsIssuerAndAuthorizedPartyMatch() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey,
+      CLERK_ISSUER: "https://expected-issuer.example.test",
+      CLERK_AUTHORIZED_PARTIES: "http://localhost:3000,https://admin.example.test"
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.equal(
+    await guard.canActivate(
+      createGuardContext(
+        {
+          authorization: `Bearer ${createClerkTestToken(privateKey, {
+            sub: "user-mapped",
+            email: "agent@example.test",
+            iss: "https://expected-issuer.example.test",
+            azp: "https://admin.example.test"
+          })}`
+        },
+        { tenant: baseInput.tenant }
+      )
+    ),
+    true
+  );
+}
+
+async function testClerkPlatformTenantAccessRequiresPlatformAdmin() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const nonPlatformGuard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false
+      }
+    ])
+  );
+  const platformGuard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "owner@example.test",
+        metadata: {
+          clerkUserId: "platform-owner"
+        },
+        isPlatformAdmin: true
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () =>
+      nonPlatformGuard.canActivate(
+        createGuardContext({
+          authorization: `Bearer ${createClerkTestToken(privateKey, {
+            sub: "user-mapped",
+            email: "agent@example.test"
+          })}`
+        })
+      ),
+    ForbiddenException
+  );
+  await assert.equal(
+    await platformGuard.canActivate(
+      createGuardContext({
+        authorization: `Bearer ${createClerkTestToken(privateKey, {
+          sub: "platform-owner",
+          email: "owner@example.test"
+        })}`
+      })
+    ),
+    true
   );
 }
 
@@ -2021,6 +2344,14 @@ async function run() {
   await testClerkAdminProtectionRejectsMissingAndInvalidTokens();
   await testClerkAdminProtectionAcceptsMappedTenantUser();
   await testClerkAdminProtectionRejectsWrongTenant();
+  await testClerkAdminProtectionRejectsForgedSignature();
+  await testClerkAdminProtectionRejectsMissingExpiration();
+  await testClerkAdminProtectionAcceptsConfiguredLocalClockSkew();
+  await testClerkAdminProtectionRejectsInvalidJwtKeySafely();
+  await testClerkAdminProtectionRejectsIssuerMismatch();
+  await testClerkAdminProtectionRejectsAuthorizedPartyMismatch();
+  await testClerkAdminProtectionAcceptsIssuerAndAuthorizedPartyMatch();
+  await testClerkPlatformTenantAccessRequiresPlatformAdmin();
   await testAdminRealtimeControllerUsesAdminGuard();
   await testAnswerDebugControllerUsesAdminGuard();
   await testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe();

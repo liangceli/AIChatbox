@@ -1,5 +1,22 @@
 # API Contract Skill
 
+## 2026-06-17 Clerk Alpha Auth Contract
+
+- Protected admin/agent/platform APIs can run in `ADMIN_API_PROTECTION_MODE=clerk`.
+- Clerk-mode requests must include `Authorization: Bearer <Clerk JWT>` from the admin-web server proxy, not directly managed browser secrets.
+- Backend verification requires:
+  - RS256 signature verified with `CLERK_JWT_KEY`
+  - string `sub`
+  - numeric unexpired `exp`
+  - valid optional `nbf`
+  - optional `CLERK_ISSUER` match
+  - optional `CLERK_AUTHORIZED_PARTIES` / `azp` match
+- Tenant-scoped protected endpoints require the Clerk user to map to an existing `User` and tenant `Role`.
+- Platform tenant list/create require a mapped `User` with `isPlatformAdmin=true`.
+- Legacy `x-admin-api-token` / `ADMIN_API_TOKEN` behavior remains only for documented token fallback mode and must be injected server-side, never exposed to the browser.
+- Public customer routes remain Clerk-free and customer-scoped: chat messages, customer handoff, customer conversation detail/messages, customer realtime, and public tenant profile.
+- Responses must not include Clerk secret key, JWT verification key, raw JWTs, auth headers, admin tokens, OpenAI keys, database URLs, session secrets, or internal tenant IDs unless already part of an explicit safe public contract.
+
 ## 2026-06-12 Answer Debug RAG Fields
 
 - `POST /v1/chat/answer-debug` knowledge output includes safe `retrievalConfidence`, `sourceDiversity`, and `warnings`.

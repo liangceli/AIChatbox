@@ -1,5 +1,24 @@
 # Decision Log
 
+## 2026-06-17 - Clerk alpha auth code-level closeout
+
+Decision: Tighten the existing Clerk alpha auth boundary without changing provider, architecture, or RBAC model.
+
+Reason: The alpha auth implementation already used Clerk, admin-web cookie bridging, backend `AdminApiGuard`, and existing `User` + `Role` mapping. The remaining risk was incomplete code-level proof around forged JWTs/cookies, missing/invalid verification config, issuer/authorized-party rejection, and platform-admin gating.
+
+Accepted boundary:
+
+- Admin-web accepts Clerk session cookies only after RS256 signature and claim verification.
+- Verification requires `sub`, numeric unexpired `exp`, optional `nbf`, optional issuer, and optional authorized party.
+- Admin-web pages and proxy reverify cookies server-side.
+- Backend Clerk mode keeps authorization in `AdminApiGuard`, mapped `User`, tenant `Role`, and `isPlatformAdmin`.
+- Legacy token access remains local/dev or server-only fallback.
+- Customer widget/chat routes remain public customer-scoped and Clerk-free.
+
+Trade-off: Tests now include stronger handler-style and guard-level coverage, but not full browser/e2e Clerk login. Real smoke remains a user-owned setup gate because secrets and dashboard configuration must not be pasted into chat or committed.
+
+Affected areas: admin-web auth verifier/session route/proxy tests, API admin guard/tests, handoff docs, auth/frontend/backend/API/QA/status skill docs.
+
 ## 2026-06-12 - RAG quality hardening
 
 Decision: Harden current deterministic RAG for alpha with safer URL cleaning, repeated-block chunk cleanup, support synonym retrieval, source diversity, Answer Debug RAG indicators, architecture audit docs, and a deferred RAG 2.0 path.
