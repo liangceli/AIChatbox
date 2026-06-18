@@ -1,5 +1,56 @@
 # 中文 Diff Review & QA Report
 
+## 2026-06-18 Clerk Local Business Loop QA Status
+
+## 1. Conclusion
+
+Partial acceptance only. Real Clerk local login and mapped admin tenant access are working, but the original end-to-end business loop is not yet fully accepted.
+
+Current QA conclusion: RETURN FOR FIXES.
+
+## 2. Passed / Observed
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| Real Clerk login redirect | Passed | Local /sign-in opened the real Clerk Account Portal sign-in page and returned to local admin-web. |
+| Server-side session establishment | Passed | Admin-web attempted to persist a Clerk-backed httpOnly admin session after token verification. |
+| Unmapped access denial | Passed | Signed-in but unmapped state could not establish tenant admin access and returned 401/403 behavior. |
+| First admin mapping | Passed | liangceli@kasta.com.au was mapped to Clerk user user_3FFi1oexYzioOpimfG1ExJcIDOc. |
+| Mapped tenant admin access | Passed | After mapping, admin tenant API calls stopped returning repeated 403 responses. |
+| Admin conversations route | Passed | Conversation operations moved to /admin/conversations. |
+| Admin knowledge route | Passed | Knowledge Base, Ingest Data, chunks, and Answer Debug moved to /admin/knowledge-base. |
+
+## 3. Automation Passed In This Round
+
+- pnpm --filter @platform/admin-web typecheck
+- pnpm --filter @platform/admin-web test
+- pnpm --filter @platform/admin-web build
+- pnpm --filter @platform/api typecheck
+- pnpm --filter @platform/api test
+- pnpm --filter @platform/api build
+- git diff --check passed with Windows LF/CRLF warnings only.
+
+## 4. Still Required Before READY
+
+- Wrong-tenant access denial after mapped login.
+- Knowledge Base create/import/read/chunk inspection on /admin/knowledge-base.
+- Answer Debug hit/miss regression.
+- Real OpenAI answer path if OpenAI mode is required for acceptance.
+- Customer Widget grounded answer with citation.
+- Customer Widget knowledge miss without fake citation.
+- Customer requests human support.
+- Admin/agent sees pending conversation and replies.
+- Customer sees agent reply in the original widget session after refresh.
+- Sign-out clears protected access.
+- Full workspace pnpm typecheck, pnpm lint, pnpm test, pnpm build, git diff --check, and secret scan.
+
+## 5. Risk Notes
+
+- Clerk local auth is no longer the primary blocker.
+- Final acceptance is blocked by incomplete end-to-end browser QA across Knowledge, Widget, handoff, and agent reply.
+- Do not describe the project as READY until the full business loop is re-run and observed in the browser.
+
+
 ## 2026-06-17 Admin Conversations Page Split QA
 
 ## 1. Conclusion

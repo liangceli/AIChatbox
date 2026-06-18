@@ -1,5 +1,64 @@
 # Director Update
 
+## 2026-06-18 Clerk Local Business Loop Progress
+
+## 1. Current Outcome
+
+The local Clerk integration moved from code-level readiness into real local use. The user configured the Clerk Dashboard and local env, signed in with a real Clerk account, and the admin session bridge reached the protected admin workspace.
+
+This is not yet a full READY state for the original business-loop goal. Clerk local auth and tenant-role mapping are working, but the complete Knowledge Base -> Answer Debug -> Widget grounded answer -> human handoff -> agent reply -> widget refresh recovery loop still needs one final browser QA pass.
+
+## 2. Accepted Change
+
+- Real Clerk sign-in redirects to Clerk Account Portal and returns to local admin-web.
+- Admin-web establishes a verified httpOnly Clerk-backed session before protected admin access.
+- Unmapped/unauthorized access produced 401/403 behavior instead of silently exposing tenant data.
+- The first mapped admin path was completed for the company user liangceli@kasta.com.au with Clerk user id user_3FFi1oexYzioOpimfG1ExJcIDOc.
+- After mapping, the admin dashboard loaded tenant-scoped data without the earlier 403 spam.
+- Active Chats / conversation operations now live on /admin/conversations.
+- Knowledge Bases, Ingest Data, document chunks, and Answer Debug now live on /admin/knowledge-base.
+- Admin Web continues to call the API through same-origin /api/admin/... proxy.
+
+## 3. Verification Completed
+
+Passed during the local closeout work:
+
+- pnpm --filter @platform/admin-web typecheck
+- pnpm --filter @platform/admin-web test
+- pnpm --filter @platform/admin-web build
+- pnpm --filter @platform/api typecheck
+- pnpm --filter @platform/api test
+- pnpm --filter @platform/api build
+- git diff --check passed with Windows LF/CRLF warnings only.
+- Local admin-web was restored on http://localhost:3000 after build/dev chunk resets.
+
+Manual evidence observed:
+
+- Real Clerk login page opened from local /sign-in.
+- Signed-in but unmapped user could not establish admin tenant access.
+- After Clerk user mapping, protected admin data requests stopped returning 403.
+
+## 4. Not Yet Final-Accepted
+
+The following original completion criteria still need final browser QA before claiming READY:
+
+- Wrong-tenant isolation check after mapped login.
+- Knowledge Base create/import, document/chunk inspection, and Answer Debug regression.
+- Real OpenAI-backed answer path, if OpenAI mode is required for acceptance.
+- Customer Widget grounded answer with citation.
+- No-citation behavior for knowledge misses.
+- Customer human-support request.
+- Admin/agent sees pending conversation and sends reply.
+- Customer sees agent reply in the original widget session after refresh.
+- Sign-out protection check.
+- Full workspace pnpm typecheck, pnpm lint, pnpm test, pnpm build, secret scan.
+
+## 5. Director-Level Conclusion
+
+Current conclusion: RETURN FOR FIXES.
+
+Reason: real Clerk local auth and admin mapping are now working, but the full customer support business loop has not yet been re-run end to end after the auth setup.
+
 ## 2026-06-17 Admin Conversations Page Split
 
 ## 1. Completed Task
