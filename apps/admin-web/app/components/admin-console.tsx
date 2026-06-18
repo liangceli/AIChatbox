@@ -1,14 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { TenantOverviewRecord } from "@platform/types";
+import type { CSSProperties } from "react";
+import type { TenantAiProfile, TenantOverviewRecord } from "@platform/types";
 import { ConversationOpsPanel } from "./conversation-ops-panel";
 import { KnowledgeBasePanel } from "./knowledge-base-panel";
 import { TenantAiProfilePanel } from "./tenant-ai-profile-panel";
 
+const defaultAdminPrimaryColor = "#fec931";
+const adminColorSchemeStorageKey = "admin-color-scheme";
+type AdminColorScheme = "light" | "dark";
+
 const drawerNavigationItems = [
   { label: "Dashboard", icon: "dashboard", target: "dashboard", href: "/admin" },
-  { label: "Knowledge Base", icon: "database", target: "knowledge", href: "/admin" },
+  { label: "Knowledge Base", icon: "database", href: "/admin/knowledge-base" },
   { label: "Conversations", icon: "chat", href: "/admin/conversations" },
   { label: "Analytics", icon: "bar_chart", comingSoon: true },
   { label: "Settings", icon: "settings", target: "settings", href: "/admin" },
@@ -26,20 +31,21 @@ export function AdminConsole({
 }: {
   apiBaseUrl: string;
   defaultTenantSlug: string;
-  view?: "dashboard" | "conversations";
+  view?: "dashboard" | "knowledge" | "conversations";
 }) {
   const [tenants, setTenants] = useState<TenantOverviewRecord[]>([]);
   const [selectedTenantSlug, setSelectedTenantSlug] = useState(defaultTenantSlug);
   const [error, setError] = useState<string>();
   const [isLoadingTenants, setIsLoadingTenants] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [themePrimaryColor, setThemePrimaryColor] = useState(defaultAdminPrimaryColor);
+  const [colorScheme, setColorScheme] = useState<AdminColorScheme>("light");
   const [activeNavigationItem, setActiveNavigationItem] = useState(
-    view === "conversations" ? "Conversations" : "Dashboard"
+    view === "conversations" ? "Conversations" : view === "knowledge" ? "Knowledge Base" : "Dashboard"
   );
   const [navigationNotice, setNavigationNotice] = useState<string>();
   const dashboardRef = useRef<HTMLElement>(null);
   const settingsRef = useRef<HTMLDivElement>(null);
-  const knowledgeRef = useRef<HTMLDivElement>(null);
 
   async function loadTenants(nextSelectedSlug?: string) {
     setIsLoadingTenants(true);
@@ -77,6 +83,47 @@ export function AdminConsole({
   useEffect(() => {
     void loadTenants();
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem(adminColorSchemeStorageKey);
+    const nextTheme =
+      storedTheme === "dark" || storedTheme === "light"
+        ? storedTheme
+        : document.documentElement.dataset.theme === "dark"
+          ? "dark"
+          : "light";
+
+    applyAdminColorScheme(nextTheme);
+    setColorScheme(nextTheme);
+  }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    async function loadTenantTheme() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/tenants/${encodeURIComponent(selectedTenantSlug)}/ai-profile`);
+
+        if (!response.ok) {
+          return;
+        }
+
+        const profile = (await response.json()) as TenantAiProfile;
+
+        if (isCurrent) {
+          setThemePrimaryColor(normalizeAdminPrimaryColor(profile.primaryColor));
+        }
+      } catch {
+        // Theme loading must not block the admin workspace; protected data panels surface real request errors.
+      }
+    }
+
+    void loadTenantTheme();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [apiBaseUrl, selectedTenantSlug]);
 
   useEffect(() => {
     if (!navigationNotice) {
@@ -139,7 +186,7 @@ export function AdminConsole({
       return;
     }
 
-    if (item.href && item.label === "Dashboard" && view === "conversations") {
+    if (item.href && item.label === "Dashboard" && view !== "dashboard") {
       window.location.assign(item.href);
       return;
     }
@@ -174,8 +221,6 @@ export function AdminConsole({
         return dashboardRef.current;
       case "settings":
         return settingsRef.current;
-      case "knowledge":
-        return knowledgeRef.current;
       default:
         return null;
     }
@@ -185,8 +230,21 @@ export function AdminConsole({
     setNavigationNotice(message);
   }
 
+  function handlePrimaryColorChange(value: string | null | undefined) {
+    setThemePrimaryColor(normalizeAdminPrimaryColor(value));
+  }
+
+  function toggleColorScheme() {
+    const nextScheme = colorScheme === "dark" ? "light" : "dark";
+
+    applyAdminColorScheme(nextScheme);
+    setColorScheme(nextScheme);
+  }
+
+  const adminThemeStyle = buildAdminThemeStyle(themePrimaryColor);
+
   return (
-    <main className="admin-dashboard">
+    <main className="admin-dashboard" style={adminThemeStyle}>
       <button
         type="button"
         className={`drawer-overlay ${isMobileMenuOpen ? "open" : ""}`}
@@ -289,6 +347,15 @@ export function AdminConsole({
               <Icon name="notifications" />
               <span />
             </button>
+            <button
+              type="button"
+              className="theme-toggle-button"
+              aria-label={colorScheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={colorScheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={toggleColorScheme}
+            >
+              <Icon name={colorScheme === "dark" ? "light_mode" : "dark_mode"} />
+            </button>
             <div className="topbar-divider" />
             <button type="button" className="deploy-button primary-btn">Deploy</button>
             <img alt="User Profile" className="profile-avatar" src={profileImageUrl} />
@@ -320,13 +387,17 @@ export function AdminConsole({
               </section>
 
               <div ref={settingsRef} className="nav-section" tabIndex={-1}>
-                <TenantAiProfilePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
-              </div>
-
-              <div ref={knowledgeRef} className="nav-section" tabIndex={-1}>
-                <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+                <TenantAiProfilePanel
+                  apiBaseUrl={apiBaseUrl}
+                  tenantSlug={selectedTenantSlug}
+                  onPrimaryColorChange={handlePrimaryColorChange}
+                />
               </div>
             </>
+          ) : view === "knowledge" ? (
+            <section className="nav-section admin-knowledge-page" aria-label="Knowledge Base" tabIndex={-1}>
+              <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+            </section>
           ) : (
             <section className="nav-section admin-conversations-page" aria-label="Conversations" tabIndex={-1}>
               <ConversationOpsPanel
@@ -362,4 +433,86 @@ function getInitials(value: string): string {
     .map((word) => word[0])
     .join("")
     .toUpperCase();
+}
+
+function normalizeAdminPrimaryColor(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+
+  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : defaultAdminPrimaryColor;
+}
+
+function applyAdminColorScheme(colorScheme: AdminColorScheme) {
+  document.documentElement.dataset.theme = colorScheme;
+  document.documentElement.style.colorScheme = colorScheme;
+  window.localStorage.setItem(adminColorSchemeStorageKey, colorScheme);
+}
+
+function buildAdminThemeStyle(value: string): CSSProperties {
+  const primaryContainer = normalizeAdminPrimaryColor(value);
+  const primary = getReadableAccentColor(primaryContainer);
+  const primaryStrong = mixHexColor(primaryContainer, "#000000", getRelativeLuminance(primaryContainer) > 0.55 ? 0.5 : 0.18);
+
+  return {
+    "--primary": primary,
+    "--primary-container": primaryContainer,
+    "--on-primary-container": getReadableTextColor(primaryContainer),
+    "--primary-strong": primaryStrong,
+    "--on-primary-strong": getReadableTextColor(primaryStrong),
+    "--primary-soft": hexToRgba(primaryContainer, 0.08),
+    "--primary-soft-hover": hexToRgba(primaryContainer, 0.16),
+    "--primary-focus": hexToRgba(primaryContainer, 0.24),
+    "--primary-border": hexToRgba(primaryContainer, 0.32),
+    "--primary-shadow": hexToRgba(primaryContainer, 0.3)
+  } as CSSProperties;
+}
+
+function getReadableAccentColor(hexColor: string): string {
+  return getRelativeLuminance(hexColor) > 0.64 ? mixHexColor(hexColor, "#000000", 0.58) : hexColor;
+}
+
+function getReadableTextColor(hexColor: string): string {
+  return getRelativeLuminance(hexColor) > 0.56 ? "#171821" : "#ffffff";
+}
+
+function getRelativeLuminance(hexColor: string): number {
+  const [red, green, blue] = parseHexColor(hexColor);
+  const toLinearChannel = (channel: number) => {
+    const scaled = channel / 255;
+
+    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+  };
+  const linearRed = toLinearChannel(red);
+  const linearGreen = toLinearChannel(green);
+  const linearBlue = toLinearChannel(blue);
+
+  return 0.2126 * linearRed + 0.7152 * linearGreen + 0.0722 * linearBlue;
+}
+
+function hexToRgba(hexColor: string, alpha: number): string {
+  const [red, green, blue] = parseHexColor(hexColor);
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function mixHexColor(sourceHex: string, targetHex: string, targetWeight: number): string {
+  const source = parseHexColor(sourceHex);
+  const target = parseHexColor(targetHex);
+  const boundedWeight = Math.min(Math.max(targetWeight, 0), 1);
+  const mixed: [number, number, number] = [
+    Math.round(source[0] * (1 - boundedWeight) + target[0] * boundedWeight),
+    Math.round(source[1] * (1 - boundedWeight) + target[1] * boundedWeight),
+    Math.round(source[2] * (1 - boundedWeight) + target[2] * boundedWeight)
+  ];
+
+  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function parseHexColor(hexColor: string): [number, number, number] {
+  const normalized = normalizeAdminPrimaryColor(hexColor).slice(1);
+
+  return [
+    Number.parseInt(normalized.slice(0, 2), 16),
+    Number.parseInt(normalized.slice(2, 4), 16),
+    Number.parseInt(normalized.slice(4, 6), 16)
+  ];
 }

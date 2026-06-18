@@ -45,6 +45,12 @@ function runSourceSmokeAssertions() {
     "utf8"
   );
   const adminPageSource = readFileSync(resolve(__dirname, "../app/admin/page.tsx"), "utf8");
+  const adminKnowledgeBasePageSource = readFileSync(
+    resolve(__dirname, "../app/admin/knowledge-base/page.tsx"),
+    "utf8"
+  );
+  const adminConsoleSource = readFileSync(resolve(__dirname, "../app/components/admin-console.tsx"), "utf8");
+  const middlewareSource = readFileSync(resolve(__dirname, "../middleware.ts"), "utf8");
   const agentPageSource = readFileSync(resolve(__dirname, "../app/agent/page.tsx"), "utf8");
   const clerkAuthPanelSource = readFileSync(
     resolve(__dirname, "../app/components/clerk-auth-panel.tsx"),
@@ -77,6 +83,12 @@ function runSourceSmokeAssertions() {
   assert.match(clerkSessionRouteSource, /verifyClerkSessionToken/);
   assert.doesNotMatch(clerkSessionRouteSource, /hasClerkSessionCookie/);
   assert.match(adminPageSource, /verifyClerkSessionToken/);
+  assert.match(adminKnowledgeBasePageSource, /verifyClerkSessionToken/);
+  assert.match(adminKnowledgeBasePageSource, /redirect_url=\/admin\/knowledge-base/);
+  assert.match(adminKnowledgeBasePageSource, /view="knowledge"/);
+  assert.match(adminConsoleSource, /\/admin\/knowledge-base/);
+  assert.doesNotMatch(adminConsoleSource, /target: "knowledge"/);
+  assert.match(middlewareSource, /\/admin\/:path\*/);
   assert.match(agentPageSource, /verifyClerkSessionToken/);
   assert.doesNotMatch(adminPageSource, /hasClerkSessionCookie/);
   assert.doesNotMatch(agentPageSource, /hasClerkSessionCookie/);

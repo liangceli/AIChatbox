@@ -38,10 +38,12 @@ const fallbackProfile: TenantAiProfile = {
 
 export function TenantAiProfilePanel({
   apiBaseUrl,
-  tenantSlug
+  tenantSlug,
+  onPrimaryColorChange
 }: {
   apiBaseUrl: string;
   tenantSlug: string;
+  onPrimaryColorChange?: (value: string | null | undefined) => void;
 }) {
   const [profile, setProfile] = useState<TenantAiProfile>(fallbackProfile);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,7 +67,9 @@ export function TenantAiProfilePanel({
         throw new Error(`AI profile request failed with status ${response.status}`);
       }
 
-      setProfile(normalizeProfileForForm((await response.json()) as TenantAiProfile));
+      const nextProfile = normalizeProfileForForm((await response.json()) as TenantAiProfile);
+      setProfile(nextProfile);
+      onPrimaryColorChange?.(nextProfile.primaryColor);
     } catch (requestError: unknown) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load AI profile.");
     } finally {
@@ -93,7 +97,9 @@ export function TenantAiProfilePanel({
         throw new Error(`AI profile save failed with status ${response.status}`);
       }
 
-      setProfile(normalizeProfileForForm((await response.json()) as TenantAiProfile));
+      const nextProfile = normalizeProfileForForm((await response.json()) as TenantAiProfile);
+      setProfile(nextProfile);
+      onPrimaryColorChange?.(nextProfile.primaryColor);
       setStatusMessage("AI profile saved.");
     } catch (requestError: unknown) {
       setError(requestError instanceof Error ? requestError.message : "Unable to save AI profile.");
@@ -103,10 +109,22 @@ export function TenantAiProfilePanel({
   }
 
   function updateField<K extends keyof TenantAiProfile>(field: K, value: TenantAiProfile[K]) {
+    if (field === "primaryColor" && (typeof value === "string" || value === null || value === undefined)) {
+      notifyPrimaryColorChange(value);
+    }
+
     setProfile((current) => ({
       ...current,
       [field]: value
     }));
+  }
+
+  function notifyPrimaryColorChange(value: string | null | undefined) {
+    const trimmed = value?.trim() ?? "";
+
+    if (trimmed === "" || /^#[0-9a-fA-F]{6}$/.test(trimmed)) {
+      onPrimaryColorChange?.(trimmed);
+    }
   }
 
   function handleImageUpload(
@@ -349,9 +367,12 @@ function ProfileImageInput({
           <strong>Upload {label.toLowerCase()}</strong>
           <small>PNG, JPEG, WebP, or GIF. Maximum 1 MB.</small>
           <div className="profile-image-actions">
-            <label className="profile-upload-button">
+            <label
+              className="profile-upload-button"
+              aria-label={`Upload ${label.toLowerCase()}`}
+              title={`Upload ${label.toLowerCase()}`}
+            >
               <Icon name="upload" />
-              <span>Choose image</span>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp,image/gif"

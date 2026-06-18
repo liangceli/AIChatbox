@@ -744,11 +744,17 @@ export class ConversationsService {
   }
 
   private async ensureTenantUser(tenantId: string, userId: string): Promise<void> {
+    const normalizedUserId = userId.trim();
+
+    if (!normalizedUserId) {
+      throw new BadRequestException("A tenant support user is required for this action.");
+    }
+
     const membership = await this.prisma.client.role.findUnique({
       where: {
         tenantId_userId: {
           tenantId,
-          userId
+          userId: normalizedUserId
         }
       }
     });

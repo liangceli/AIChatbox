@@ -1,13 +1,31 @@
 # QA Skill
 
+## 2026-06-18 Admin Light Dark Theme QA
+
+- The admin topbar theme button should be icon-only and toggle `document.documentElement.dataset.theme` between `light` and `dark`.
+- Reloading `/admin`, `/admin/knowledge-base`, `/admin/conversations`, `/agent`, `/chat`, or `/sign-in` should preserve the saved `admin-color-scheme` value.
+- In dark mode, page backgrounds and admin surfaces should become dark through CSS variables while text remains readable and primary-color accents still follow AI Profile primary color.
+- Avatar and Logo upload controls should show only a large upload icon, no "Choose image" text, and the icon color should use `--on-primary-container` for contrast against the button background.
+
+## 2026-06-18 Admin Theme Primary Color QA
+
+- Change AI Profile Primary color to a non-default value such as `#15803d` and confirm admin shell accents update without saving/reloading.
+- Reload `/admin`, `/admin/knowledge-base`, and `/admin/conversations`; each route should load the selected tenant primary color from AI Profile.
+- Avatar and Logo upload actions must not render black rectangles/buttons; their action fills should use the tenant primary color while Remove remains visibly destructive.
+- Drawer active item, drawer CTA, Deploy, Reload, Save AI Profile, Ingest, Answer Debug run, selected rows, focus rings, and Human Reply dark surface should follow `--primary-*` theme variables.
+- White content cards/forms should remain white or near-white; only non-white component backgrounds, borders, accents, and action fills should change with the primary color.
+
 ## 2026-06-17 Admin Conversations Route QA
 
 - `/admin` should not render the Active Chats / ConversationOps workspace inline.
+- `/admin` should not render the Knowledge Bases / Ingest Data / Answer Debug workspace inline.
+- `/admin/knowledge-base` should render the knowledge workspace with Knowledge Bases, Ingest Data, document chunks, and Answer Debug.
 - `/admin/conversations` should render the conversation operations page with Active Chats, metadata, human mode, and Human Reply.
+- The left drawer `Knowledge Base` item should navigate to `/admin/knowledge-base`.
 - The left drawer `Conversations` item should navigate to `/admin/conversations`.
-- The drawer `Dashboard` item should navigate back to `/admin` when opened from `/admin/conversations`.
-- Both `/admin` and `/admin/conversations` remain protected by the same Clerk/legacy admin-web route gate.
-- Local smoke for this change should check `http://localhost:3000/admin`, `http://localhost:3000/admin/conversations`, and `http://localhost:4000/v1/health`.
+- The drawer `Dashboard` item should navigate back to `/admin` when opened from `/admin/knowledge-base` or `/admin/conversations`.
+- `/admin`, `/admin/knowledge-base`, and `/admin/conversations` remain protected by the same Clerk/legacy admin-web route gate.
+- Local smoke for this change should check `http://localhost:3000/admin`, `http://localhost:3000/admin/knowledge-base`, `http://localhost:3000/admin/conversations`, and `http://localhost:4000/v1/health`.
 
 ## 2026-06-17 Clerk Alpha Auth QA Gate
 
@@ -150,7 +168,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - OpenAI prompt assembly includes tenant assistant identity, company display name, business type, tone, and profile guidance while keeping platform safety rules higher priority.
 - Widget displays tenant profile basics without changing visitorId persistence, chat send, handoff, customer-scoped realtime, or agent reply display.
 - Admin/agent selected conversations of every status should show complete history inside the Human Reply box, including citations when present.
-- Admin drawer navigation should keep Dashboard/Knowledge/Settings behavior clear while Conversations navigates to `/admin/conversations`; unimplemented items should show coming-soon feedback.
+- Admin drawer navigation should keep Dashboard/Settings behavior clear while Knowledge Base navigates to `/admin/knowledge-base` and Conversations navigates to `/admin/conversations`; unimplemented items should show coming-soon feedback.
 - Admin topbar should remain fixed at the viewport top while the page scrolls on desktop and mobile; opening the navigation drawer or focusing/scanning lower sections must not move it, and content must not render beneath it.
 - Main admin modules and interactive rows/buttons should provide visible hover/active feedback without layout overlap; reduced-motion preference should disable meaningful animation.
 - Selecting any conversation status should render the complete chronological customer/AI/agent/system history inside the Human Reply card.

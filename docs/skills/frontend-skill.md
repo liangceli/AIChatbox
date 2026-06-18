@@ -1,10 +1,24 @@
 # 前端 Skill
 
+## 2026-06-18 Admin Light Dark Theme Toggle
+
+- Admin web has a persistent light/dark mode stored in `localStorage` under `admin-color-scheme`; `app/layout.tsx` applies it to `document.documentElement.dataset.theme` before rendering children.
+- The admin topbar owns the icon-only theme toggle. New admin-web surfaces should use CSS variables instead of hardcoded light backgrounds so the saved mode applies across routes.
+- AI Profile Avatar/Logo upload controls are icon-only buttons. Do not reintroduce visible "Choose image" text; keep accessible labels/titles, keep ordinary button text suppressed with `font-size: 0`, use `--on-primary-container` for automatic contrast against the primary-color button background, and avoid hover transforms on the upload label so the transparent file input does not jitter.
+
+## 2026-06-18 Admin Theme Primary Color
+
+- AdminConsole now loads the selected tenant AI Profile primary color and applies it as page-level CSS variables, so `/admin`, `/admin/knowledge-base`, and `/admin/conversations` share the same tenant theme.
+- `TenantAiProfilePanel` pushes valid primary color changes to the shell immediately while keeping the saved AI Profile as the source of truth.
+- Admin interactive fills, selected states, focus rings, upload controls, ingest/debug actions, drawer CTA, and human reply dark surfaces should use `--primary-*` variables instead of hardcoded black or static Solaris yellow values.
+- Keep white content surfaces white; only non-white component backgrounds, borders, accents, and action fills should follow the tenant primary color.
+
 ## 2026-06-17 Admin Conversations Route Split
 
-- `/admin` is now the dashboard-only admin workspace for stats, AI Profile, and Knowledge Base work.
+- `/admin` is now the dashboard-only admin workspace for stats and AI Profile work.
 - Active Chats / conversation operations live on the dedicated `/admin/conversations` route instead of being embedded under `/admin`.
-- The left drawer `Conversations` item navigates to `/admin/conversations`; `Dashboard` navigates back to `/admin`.
+- Knowledge Bases, Ingest Data, document chunks, and Answer Debug live on the dedicated `/admin/knowledge-base` route instead of being embedded under `/admin`.
+- The left drawer `Knowledge Base` item navigates to `/admin/knowledge-base`; `Conversations` navigates to `/admin/conversations`; `Dashboard` navigates back to `/admin`.
 - `ConversationOpsPanel` remains the shared operations surface for admin/agent conversation lists, metadata, human mode, and Human Reply history.
 
 ## 2026-06-17 Clerk Alpha Auth Frontend Notes
@@ -71,6 +85,7 @@
 
 - `/`: 当前入口页，提供平台概览/跳转。
 - `/admin`: 平台管理工作台。
+- `/admin/knowledge-base`: admin knowledge workspace for Knowledge Bases, Ingest Data, document chunks, and Answer Debug.
 - `/admin/conversations`: admin conversation operations workspace for Active Chats, metadata, human mode, and Human Reply.
 - `/agent`: 人工 handoff inbox。
 - `/chat`: 客户聊天测试页。
@@ -93,12 +108,12 @@ Admin protection:
 核心组件：
 
 - `app/components/admin-console.tsx`
-  - Route-aware shell: `/admin` renders dashboard/profile/knowledge sections; `/admin/conversations` renders the standalone conversation workspace.
+  - Route-aware shell: `/admin` renders dashboard/profile sections; `/admin/knowledge-base` renders the standalone knowledge workspace; `/admin/conversations` renders the standalone conversation workspace.
   - 加载 tenant 列表。
   - 创建 tenant。
   - 选择当前 tenant。
   - 展示 conversation、pending human、knowledge base 统计。
-  - 在 `/admin` 嵌入 `KnowledgeBasePanel`，在 `/admin/conversations` 嵌入 `ConversationOpsPanel`。
+  - 在 `/admin/knowledge-base` 嵌入 `KnowledgeBasePanel`，在 `/admin/conversations` 嵌入 `ConversationOpsPanel`。
 - `app/components/knowledge-base-panel.tsx`
   - tenant-scoped knowledge base 列表与创建。
   - manual document 创建。
@@ -161,14 +176,14 @@ Widget 行为：
 
 ## Admin Dashboard Visual Shell
 
-- The admin dashboard currently follows the Solaris AI `code.html` design reference: pale `#fbf8ff` background, white/glass surfaces, golden `#fec931` highlights, black primary text/buttons, fixed topbar, mobile drawer, statistics cards, knowledge table, and ingest/profile panels. Active Chats, metadata, and human reply panels belong to `/admin/conversations`.
+- The admin dashboard currently follows the Solaris AI `code.html` design reference: pale `#fbf8ff` background, white/glass surfaces, golden `#fec931` highlights, black primary text/buttons, fixed topbar, mobile drawer, statistics cards, and profile panels. Knowledge table, Ingest Data, document chunks, and Answer Debug belong to `/admin/knowledge-base`. Active Chats, metadata, and human reply panels belong to `/admin/conversations`.
 - Do not use the old `/images/logo.png` mark in the admin dashboard shell; the current design uses the `Solaris AI` wordmark text and tenant initials/profile imagery instead.
 - Keep future admin UI changes consistent with this responsive pattern unless a new design brief replaces it.
 
 ## 2026-06-05 Admin Handoff UX Notes
 
 - `ConversationOpsPanel` renders selected conversation history inside the Human Reply card. History is chronological and includes customer, assistant, agent, system/handoff messages, message type labels, author names when available, and citations.
-- `/admin` drawer navigation keeps dashboard sections focused; Conversations navigates to `/admin/conversations` as its own page.
+- `/admin` drawer navigation keeps dashboard sections focused; Knowledge Base navigates to `/admin/knowledge-base` and Conversations navigates to `/admin/conversations` as their own pages.
 - Unimplemented drawer actions such as Analytics, Support, Account, and New Chatbot should remain non-destructive and show coming-soon feedback instead of navigating to a dead anchor.
 ## 2026-06-12 Clerk Alpha Auth Notes
 

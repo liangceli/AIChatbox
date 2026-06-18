@@ -11,6 +11,7 @@ import { createPublicKey, createVerify, timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TenantRequest } from "../tenant/tenant.types";
+import type { AdminAuthenticatedRequest } from "./admin-auth-context";
 
 const ADMIN_TOKEN_HEADER = "x-admin-api-token";
 
@@ -59,7 +60,7 @@ export class AdminApiGuard implements CanActivate {
   }
 
   private async canActivateWithClerk(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & TenantRequest>();
+    const request = context.switchToHttp().getRequest<AdminAuthenticatedRequest & TenantRequest>();
     const token = this.resolveBearerToken(request);
 
     if (!token) {
@@ -184,7 +185,7 @@ export class AdminApiGuard implements CanActivate {
   }
 
   private async authorizeClerkClaims(
-    request: Request & TenantRequest,
+    request: AdminAuthenticatedRequest & TenantRequest,
     claims: ClerkJwtClaims
   ): Promise<void> {
     if (!this.prisma) {
@@ -192,15 +193,24 @@ export class AdminApiGuard implements CanActivate {
     }
 
     const tenantSlug = request.tenant?.slug ?? resolveTenantSlugFromRequest(request);
-    const user = await this.findMappedUser(claims, tenantSlug);
+    const mappedUser = await this.findMappedUser(claims, tenantSlug);
 
-    if (!user) {
+    if (!mappedUser) {
       throw new ForbiddenException("Clerk user is not mapped to this tenant.");
     }
 
-    if (!tenantSlug && !user.isPlatformAdmin) {
+    if (!tenantSlug && !mappedUser.user.isPlatformAdmin) {
       throw new ForbiddenException("Platform admin access is required.");
     }
+
+    request.adminAuth = {
+      userId: mappedUser.user.id,
+      email: mappedUser.user.email,
+      clerkSubject: typeof claims.sub === "string" ? claims.sub : undefined,
+      isPlatformAdmin: mappedUser.user.isPlatformAdmin,
+      tenantSlug,
+      roleName: mappedUser.roleName
+    };
   }
 
   private async findMappedUser(claims: ClerkJwtClaims, tenantSlug?: string) {
@@ -218,14 +228,25 @@ export class AdminApiGuard implements CanActivate {
         }
       });
 
-      return roles
-        .map((role) => role.user)
-        .find((user) => isUserMappedToClerk(user, claims.sub, email));
+      const role = roles.find((candidate) => isUserMappedToClerk(candidate.user, claims.sub, email));
+
+      return role
+        ? {
+            user: role.user,
+            roleName: role.name
+          }
+        : undefined;
     }
 
     const users = await this.prisma!.client.user.findMany();
+    const user = users.find((candidate) => isUserMappedToClerk(candidate, claims.sub, email));
 
-    return users.find((user) => isUserMappedToClerk(user, claims.sub, email));
+    return user
+      ? {
+          user,
+          roleName: null
+        }
+      : undefined;
   }
 }
 
@@ -240,6 +261,7 @@ type ClerkJwtClaims = {
 };
 
 type MappedUser = {
+  id: string;
   email: string;
   isPlatformAdmin: boolean;
   metadata?: unknown;

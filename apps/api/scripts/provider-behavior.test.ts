@@ -88,10 +88,12 @@ type RetrievalCandidate = {
 };
 
 type ClerkAuthUserFixture = {
+  id?: string;
   tenantSlug: string;
   email: string;
   metadata?: Record<string, unknown>;
   isPlatformAdmin: boolean;
+  roleName?: string;
 };
 
 function createOpenAiEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
@@ -195,7 +197,9 @@ function createClerkAuthPrismaMock(users: ClerkAuthUserFixture[]): never {
           users
             .filter((user) => user.tenantSlug === query.where?.tenant?.slug)
             .map((user) => ({
+              name: user.roleName ?? "ADMIN",
               user: {
+                id: user.id ?? `id-${user.email}`,
                 email: user.email,
                 metadata: user.metadata ?? null,
                 isPlatformAdmin: user.isPlatformAdmin
@@ -205,6 +209,7 @@ function createClerkAuthPrismaMock(users: ClerkAuthUserFixture[]): never {
       user: {
         findMany: async () =>
           users.map((user) => ({
+            id: user.id ?? `id-${user.email}`,
             email: user.email,
             metadata: user.metadata ?? null,
             isPlatformAdmin: user.isPlatformAdmin
@@ -447,6 +452,52 @@ async function testClerkAdminProtectionAcceptsMappedTenantUser() {
     ),
     true
   );
+}
+
+async function testClerkAdminProtectionAttachesVerifiedAdminContext() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        id: "verified-user-id",
+        tenantSlug: "demo",
+        email: "agent@example.test",
+        metadata: {
+          clerkUserId: "user-mapped"
+        },
+        isPlatformAdmin: false,
+        roleName: "ADMIN"
+      }
+    ])
+  );
+  const request = {
+    headers: {
+      authorization: `Bearer ${createClerkTestToken(privateKey, {
+        sub: "user-mapped",
+        email: "agent@example.test"
+      })}`
+    },
+    tenant: baseInput.tenant
+  } as Record<string, unknown>;
+  const context = {
+    switchToHttp: () => ({
+      getRequest: () => request
+    })
+  } as ExecutionContext;
+
+  assert.equal(await guard.canActivate(context), true);
+  assert.deepEqual(request.adminAuth, {
+    userId: "verified-user-id",
+    email: "agent@example.test",
+    clerkSubject: "user-mapped",
+    isPlatformAdmin: false,
+    tenantSlug: "demo",
+    roleName: "ADMIN"
+  });
 }
 
 async function testClerkAdminProtectionRejectsWrongTenant() {
@@ -1374,6 +1425,76 @@ async function testHumanSupportAdminRoutesUseAdminGuard() {
 
   assert.ok(startGuards.includes(AdminApiGuard));
   assert.ok(endGuards.includes(AdminApiGuard));
+}
+
+async function testConversationAdminActionsPreferVerifiedAdminUser() {
+  const calls: Array<{ method: string; userId: string | undefined }> = [];
+  const controller = new ConversationsController({
+    startHumanSupport: async (_tenant, _conversationId, userId) => {
+      calls.push({ method: "start", userId });
+      return {} as never;
+    },
+    endHumanSupport: async (_tenant, _conversationId, userId) => {
+      calls.push({ method: "end", userId });
+      return {} as never;
+    },
+    sendAgentReply: async (_tenant, _conversationId, userId) => {
+      calls.push({ method: "reply", userId });
+      return {} as never;
+    }
+  } as never);
+  const verifiedAdmin = {
+    userId: "verified-user-id",
+    email: "agent@example.test",
+    clerkSubject: "user-mapped",
+    isPlatformAdmin: false,
+    tenantSlug: "demo",
+    roleName: "ADMIN"
+  };
+
+  await controller.startHumanSupport(
+    baseInput.tenant as never,
+    "conversation-1",
+    { userId: "body-user-id", reason: "start" },
+    verifiedAdmin
+  );
+  await controller.endHumanSupport(
+    baseInput.tenant as never,
+    "conversation-1",
+    { userId: "body-user-id", reason: "end" },
+    verifiedAdmin
+  );
+  await controller.sendAgentReply(
+    baseInput.tenant as never,
+    "conversation-1",
+    { userId: "body-user-id", message: "hello" },
+    verifiedAdmin
+  );
+
+  assert.deepEqual(calls, [
+    { method: "start", userId: "verified-user-id" },
+    { method: "end", userId: "verified-user-id" },
+    { method: "reply", userId: "verified-user-id" }
+  ]);
+}
+
+async function testConversationAdminActionsFallbackToBodyUserForLegacyTokenMode() {
+  const calls: Array<{ method: string; userId: string | undefined }> = [];
+  const controller = new ConversationsController({
+    sendAgentReply: async (_tenant, _conversationId, userId) => {
+      calls.push({ method: "reply", userId });
+      return {} as never;
+    }
+  } as never);
+
+  await controller.sendAgentReply(
+    baseInput.tenant as never,
+    "conversation-1",
+    { userId: "body-user-id", message: "hello" },
+    undefined
+  );
+
+  assert.deepEqual(calls, [{ method: "reply", userId: "body-user-id" }]);
 }
 
 async function testTenantAiProfileDefaultsExist() {
@@ -2330,6 +2451,129 @@ async function testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence()
   assert.equal(response.assistantMessage, null);
 }
 
+async function testProviderRunsOutsideDatabaseTransaction() {
+  let inTransaction = false;
+  let providerCalled = false;
+  let providerSawOpenTransaction = false;
+  let transactionCalls = 0;
+  const conversation = {
+    id: "conversation-1",
+    tenantId: "tenant-1",
+    customerId: "customer-1",
+    assignedUserId: null,
+    channel: "WIDGET",
+    status: ConversationStatus.OPEN,
+    handoffRequestedAt: null,
+    handoffReason: null,
+    lastMessageAt: new Date("2026-01-01T00:00:00.000Z"),
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z")
+  };
+  const customerMessage = {
+    id: "message-customer",
+    tenantId: "tenant-1",
+    conversationId: "conversation-1",
+    authorUserId: null,
+    authorType: "CUSTOMER",
+    messageType: "TEXT",
+    content: "hello",
+    citations: null,
+    payload: null,
+    metadata: null,
+    createdAt: new Date("2026-01-01T00:02:00.000Z")
+  };
+  const assistantMessage = {
+    id: "message-assistant",
+    tenantId: "tenant-1",
+    conversationId: "conversation-1",
+    authorUserId: null,
+    authorType: "ASSISTANT",
+    messageType: "TEXT",
+    content: "assistant reply",
+    citations: null,
+    payload: null,
+    metadata: null,
+    createdAt: new Date("2026-01-01T00:03:00.000Z")
+  };
+  const prisma = {
+    client: {
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+        transactionCalls += 1;
+        inTransaction = true;
+
+        try {
+          return await callback({
+            customer: {
+              upsert: async () => ({ id: "customer-1" })
+            },
+            conversation: {
+              findFirst: async () => conversation,
+              findUnique: async () => conversation,
+              update: async () => ({
+                ...conversation,
+                status: ConversationStatus.AWAITING_CUSTOMER,
+                lastMessageAt: assistantMessage.createdAt
+              })
+            },
+            message: {
+              create: async ({ data }: { data: { authorType: string } }) =>
+                data.authorType === "ASSISTANT" ? assistantMessage : customerMessage,
+              findMany: async () => [customerMessage, assistantMessage]
+            },
+            agentConfig: {
+              findUnique: async () => null
+            }
+          });
+        } finally {
+          inTransaction = false;
+        }
+      }
+    }
+  };
+  const providerResolver = {
+    resolveProvider: () => ({
+      generateReply: async () => {
+        providerCalled = true;
+        providerSawOpenTransaction = inTransaction;
+
+        return {
+          content: "assistant reply",
+          citations: null,
+          metadata: {
+            providerName: "openai",
+            mode: "openai",
+            deterministic: false,
+            usedFallback: false
+          }
+        };
+      }
+    })
+  };
+  const chatService = new ChatService(
+    prisma as never,
+    { retrieveRelevantChunks: async () => [] } as never,
+    providerResolver as never
+  );
+
+  const response = await chatService.sendMessage(
+    {
+      id: "tenant-1",
+      slug: "demo",
+      name: "Demo"
+    },
+    {
+      conversationId: "conversation-1",
+      visitorId: "visitor-1",
+      message: "hello"
+    }
+  );
+
+  assert.equal(providerCalled, true);
+  assert.equal(providerSawOpenTransaction, false);
+  assert.equal(transactionCalls, 2);
+  assert.equal(response.assistantMessage?.content, "assistant reply");
+}
+
 async function run() {
   await testDefaultConfigUsesDeterministic();
   await testDeterministicConfigDoesNotNeedOpenAi();
@@ -2343,6 +2587,7 @@ async function run() {
   await testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed();
   await testClerkAdminProtectionRejectsMissingAndInvalidTokens();
   await testClerkAdminProtectionAcceptsMappedTenantUser();
+  await testClerkAdminProtectionAttachesVerifiedAdminContext();
   await testClerkAdminProtectionRejectsWrongTenant();
   await testClerkAdminProtectionRejectsForgedSignature();
   await testClerkAdminProtectionRejectsMissingExpiration();
@@ -2368,6 +2613,8 @@ async function run() {
   await testBackendCitationsOmitMissingSourceLocatorKey();
   await testTenantAiProfileAdminRoutesUseAdminGuard();
   await testHumanSupportAdminRoutesUseAdminGuard();
+  await testConversationAdminActionsPreferVerifiedAdminUser();
+  await testConversationAdminActionsFallbackToBodyUserForLegacyTokenMode();
   await testTenantAiProfileDefaultsExist();
   await testTenantAiProfileValidationRejectsUnsafeDisplayInputs();
   await testTenantAiProfileMediaCanBeExplicitlyCleared();
@@ -2394,6 +2641,7 @@ async function run() {
   await testDeterministicFallbackUsesTenantHandoffMessage();
   await testLatestHumanModeStatusBlocksAiAfterAgentReply();
   await testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence();
+  await testProviderRunsOutsideDatabaseTransaction();
 }
 
 void run();

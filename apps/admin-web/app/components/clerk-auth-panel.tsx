@@ -155,11 +155,16 @@ export function ClerkAuthPanel({
 
 async function readFailureReason(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { reason?: unknown };
+    const text = await response.text();
+    const body = JSON.parse(text) as { error?: unknown; reason?: unknown };
 
-    return typeof body.reason === "string" && body.reason ? body.reason : "unknown";
+    if (typeof body.reason === "string" && body.reason) {
+      return body.reason;
+    }
+
+    return typeof body.error === "string" && body.error ? body.error : "unknown";
   } catch {
-    return "unknown";
+    return `http-${response.status}`;
   }
 }
 

@@ -6,17 +6,43 @@ import {
 } from "../../../../lib/admin-access";
 
 export async function POST(request: Request) {
+  try {
+    return await handlePost(request);
+  } catch {
+    return NextResponse.json(
+      {
+        error: "Clerk session route failed.",
+        reason: "session-route-error"
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function handlePost(request: Request) {
   let token = "";
 
   try {
     const body = (await request.json()) as { token?: unknown };
     token = typeof body.token === "string" ? body.token.trim() : "";
   } catch {
-    return NextResponse.json({ error: "Invalid Clerk session request." }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: "Invalid Clerk session request.",
+        reason: "invalid-request"
+      },
+      { status: 400 }
+    );
   }
 
   if (!isClerkSessionVerificationConfigured()) {
-    return NextResponse.json({ error: "Clerk session verification is not configured." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Clerk session verification is not configured.",
+        reason: "missing-jwt-key"
+      },
+      { status: 500 }
+    );
   }
 
   const verification = verifyClerkSessionTokenDetailed(token);

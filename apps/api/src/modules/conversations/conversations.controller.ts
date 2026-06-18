@@ -6,7 +6,9 @@ import type {
   SupportUserRecord
 } from "@platform/types";
 import { Body, Controller, Delete, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
+import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import { AdminApiGuard } from "../../common/admin-protection/admin-api.guard";
+import { CurrentAdminAuth } from "../../common/admin-protection/current-admin-auth.decorator";
 import { CurrentTenant } from "../../common/tenant/current-tenant.decorator";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { AssignConversationDto } from "./dto/assign-conversation.dto";
@@ -115,12 +117,13 @@ export class ConversationsController {
   async startHumanSupport(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
-    @Body() body: UpdateHumanSupportDto
+    @Body() body: UpdateHumanSupportDto,
+    @CurrentAdminAuth() adminAuth?: AdminAuthContext
   ): Promise<ConversationDetail> {
     return this.conversationsService.startHumanSupport(
       tenant,
       conversationId,
-      body.userId,
+      resolveActingUserId(adminAuth, body.userId),
       body.reason
     );
   }
@@ -130,12 +133,13 @@ export class ConversationsController {
   async endHumanSupport(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
-    @Body() body: UpdateHumanSupportDto
+    @Body() body: UpdateHumanSupportDto,
+    @CurrentAdminAuth() adminAuth?: AdminAuthContext
   ): Promise<ConversationDetail> {
     return this.conversationsService.endHumanSupport(
       tenant,
       conversationId,
-      body.userId,
+      resolveActingUserId(adminAuth, body.userId),
       body.reason
     );
   }
@@ -155,12 +159,13 @@ export class ConversationsController {
   async sendAgentReply(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
-    @Body() body: SendAgentReplyDto
+    @Body() body: SendAgentReplyDto,
+    @CurrentAdminAuth() adminAuth?: AdminAuthContext
   ): Promise<ConversationDetail> {
     return this.conversationsService.sendAgentReply(
       tenant,
       conversationId,
-      body.userId,
+      resolveActingUserId(adminAuth, body.userId),
       body.message
     );
   }
@@ -183,4 +188,8 @@ export class ConversationsController {
     await this.conversationsService.deleteConversation(tenant, conversationId);
     return { deleted: true };
   }
+}
+
+function resolveActingUserId(adminAuth: AdminAuthContext | undefined, bodyUserId: string | undefined): string {
+  return adminAuth?.userId ?? bodyUserId ?? "";
 }

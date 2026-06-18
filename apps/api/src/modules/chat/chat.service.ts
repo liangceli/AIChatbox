@@ -40,8 +40,8 @@ export class ChatService {
       normalizedMessage
     );
 
-    return this.prisma.client.$transaction(async (tx) => {
-      const visitorId = input.visitorId?.trim() || randomUUID();
+    const visitorId = input.visitorId?.trim() || randomUUID();
+    const preparedMessage = await this.prisma.client.$transaction(async (tx) => {
       const customer = await tx.customer.upsert({
         where: {
           tenantId_visitorId: {
@@ -142,12 +142,15 @@ export class ChatService {
         });
 
         return {
-          visitorId,
-          customerId: customer.id,
-          conversation: toConversationSummary(updatedConversation),
-          customerMessage: toChatMessageRecord(customerMessage),
-          assistantMessage: null,
-          messages: messages.map(toChatMessageRecord)
+          readyForReply: false as const,
+          response: {
+            visitorId,
+            customerId: customer.id,
+            conversation: toConversationSummary(updatedConversation),
+            customerMessage: toChatMessageRecord(customerMessage),
+            assistantMessage: null,
+            messages: messages.map(toChatMessageRecord)
+          }
         };
       }
 
@@ -156,35 +159,51 @@ export class ChatService {
           tenantId: tenant.id
         }
       });
-      const tenantAiProfile = buildTenantAiProfile(tenant, agentConfig);
 
-      const llmProvider = this.llmProviderResolver.resolveProvider();
-      const assistantReply = await llmProvider.generateReply({
-        tenant: {
-          id: tenant.id,
-          slug: tenant.slug,
-          name: tenant.name
-        },
-        conversation: {
-          id: conversation.id
-        },
-        agent: {
-          displayName: tenantAiProfile.assistantName,
-          welcomeMessage: tenantAiProfile.welcomeMessage,
-          fallbackMessage: tenantAiProfile.fallbackMessage,
-          handoffMessage: tenantAiProfile.handoffMessage,
-          handoffEnabled: agentConfig?.handoffEnabled ?? false,
-          tenantAiProfile
-        },
-        latestCustomerMessage: customerMessage.content,
-        retrievedChunks
-      });
+      return {
+        readyForReply: true as const,
+        visitorId,
+        customerId: customer.id,
+        conversationId: conversation.id,
+        customerMessage,
+        agentConfig
+      };
+    });
 
+    if (!preparedMessage.readyForReply) {
+      return preparedMessage.response;
+    }
+
+    const tenantAiProfile = buildTenantAiProfile(tenant, preparedMessage.agentConfig);
+
+    const llmProvider = this.llmProviderResolver.resolveProvider();
+    const assistantReply = await llmProvider.generateReply({
+      tenant: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name
+      },
+      conversation: {
+        id: preparedMessage.conversationId
+      },
+      agent: {
+        displayName: tenantAiProfile.assistantName,
+        welcomeMessage: tenantAiProfile.welcomeMessage,
+        fallbackMessage: tenantAiProfile.fallbackMessage,
+        handoffMessage: tenantAiProfile.handoffMessage,
+        handoffEnabled: preparedMessage.agentConfig?.handoffEnabled ?? false,
+        tenantAiProfile
+      },
+      latestCustomerMessage: preparedMessage.customerMessage.content,
+      retrievedChunks
+    });
+
+    return this.prisma.client.$transaction(async (tx) => {
       // Human support may start while the provider is generating a reply.
       const conversationAfterProvider = await tx.conversation.findUnique({
         where: {
           id_tenantId: {
-            id: conversation.id,
+            id: preparedMessage.conversationId,
             tenantId: tenant.id
           }
         }
@@ -198,7 +217,7 @@ export class ChatService {
         const messages = await tx.message.findMany({
           where: {
             tenantId: tenant.id,
-            conversationId: conversation.id
+            conversationId: preparedMessage.conversationId
           },
           orderBy: {
             createdAt: "asc"
@@ -207,9 +226,9 @@ export class ChatService {
 
         return {
           visitorId,
-          customerId: customer.id,
+          customerId: preparedMessage.customerId,
           conversation: toConversationSummary(conversationAfterProvider),
-          customerMessage: toChatMessageRecord(customerMessage),
+          customerMessage: toChatMessageRecord(preparedMessage.customerMessage),
           assistantMessage: null,
           messages: messages.map(toChatMessageRecord)
         };
@@ -218,7 +237,7 @@ export class ChatService {
       const assistantMessage = await tx.message.create({
         data: {
           tenantId: tenant.id,
-          conversationId: conversation.id,
+          conversationId: preparedMessage.conversationId,
           authorType: MessageAuthor.ASSISTANT,
           messageType: MessageType.TEXT,
           content: assistantReply.content,
@@ -245,13 +264,13 @@ export class ChatService {
       });
 
       this.logger.debug(
-        `Assistant reply for tenant ${tenant.slug} conversation ${conversation.id}: provider=${assistantReply.metadata.providerName}, fallback=${assistantReply.metadata.usedFallback}, chunks=${retrievedChunks.length}`
+        `Assistant reply for tenant ${tenant.slug} conversation ${preparedMessage.conversationId}: provider=${assistantReply.metadata.providerName}, fallback=${assistantReply.metadata.usedFallback}, chunks=${retrievedChunks.length}`
       );
 
       const updatedConversation = await tx.conversation.update({
         where: {
           id_tenantId: {
-            id: conversation.id,
+            id: preparedMessage.conversationId,
             tenantId: tenant.id
           }
         },
@@ -264,7 +283,7 @@ export class ChatService {
       const messages = await tx.message.findMany({
         where: {
           tenantId: tenant.id,
-          conversationId: conversation.id
+          conversationId: preparedMessage.conversationId
         },
         orderBy: {
           createdAt: "asc"
@@ -273,9 +292,9 @@ export class ChatService {
 
       return {
         visitorId,
-        customerId: customer.id,
+        customerId: preparedMessage.customerId,
         conversation: toConversationSummary(updatedConversation),
-        customerMessage: toChatMessageRecord(customerMessage),
+        customerMessage: toChatMessageRecord(preparedMessage.customerMessage),
         assistantMessage: toChatMessageRecord(assistantMessage),
         messages: messages.map(toChatMessageRecord)
       };
