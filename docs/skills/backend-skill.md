@@ -313,3 +313,16 @@ API 启动入口：
 - 新共享类型放 `packages/types`。
 - 新 AI provider contract 放 `packages/ai-core`；API 内 provider resolver/provider implementation 应保持独立，不散落在 ChatService。
 - 后端变化后同步更新本 skill。
+## Enforced Tenant Boundaries
+
+- AdminApiGuard derives identity from verified Clerk claims and checks active tenant membership; client tenant/user/role values are never authorization evidence.
+- Agent conversation queries must include tenantId and `(assignedUserId = actor OR (status = PENDING_HUMAN AND assignedUserId IS NULL))`.
+- Customer Widget routes require a signed Widget session bound to tenant and visitor; visitorId alone is not sufficient.
+
+## Agent Invitation Governance
+
+- Agent invitations always expire after 12 hours and are email-bound, one-time, hashed records.
+- `Tenant.agentInvitationQuota` defaults to 5 and is constrained to 0-5. Count only unaccepted, unrevoked, unexpired Agent invitations against the quota.
+- Create invitations in a serializable transaction so concurrent requests cannot exceed quota.
+- Only Platform Admin can mutate quotas; every quota change must write an `AuditLog`.
+- Tenant creation stores support contact branding only and must not implicitly create an Owner membership.

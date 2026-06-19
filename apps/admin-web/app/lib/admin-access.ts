@@ -46,6 +46,17 @@ export function isClerkSessionVerificationConfigured(): boolean {
   return Boolean(getAdminWebConfig().clerkJwtKey);
 }
 
+export function isAdminWebSessionAuthenticated(
+  clerkSessionCookie?: string,
+  legacySessionCookie?: string
+): boolean {
+  if (isClerkSessionVerificationConfigured()) {
+    return verifyClerkSessionToken(clerkSessionCookie);
+  }
+
+  return isValidAdminSessionCookie(legacySessionCookie);
+}
+
 export function verifyClerkSessionToken(value?: string, nowSeconds = Math.floor(Date.now() / 1000)): boolean {
   return verifyClerkSessionTokenDetailed(value, nowSeconds).valid;
 }

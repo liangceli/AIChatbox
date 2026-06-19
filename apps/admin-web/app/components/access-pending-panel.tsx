@@ -2,8 +2,9 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import type { AccountRecord } from "@platform/types";
+import { signOutToHome } from "../lib/client-clerk-session";
 
-export function AccessPendingPanel() {
+export function AccessPendingPanel({ clerkPublishableKey }: { clerkPublishableKey?: string }) {
   const [account, setAccount] = useState<AccountRecord>();
   const [token, setToken] = useState("");
   const [error, setError] = useState<string>();
@@ -45,11 +46,13 @@ export function AccessPendingPanel() {
         <p className="auth-kicker">Access pending</p>
         <h1>Your identity is verified</h1>
         <p className="auth-copy">{account?.email || "This Clerk account"} has no active tenant access.</p>
+        <p className="pending-access-note">Enter the one-time invitation code issued for your email address. Your tenant and role are assigned by the invitation.</p>
         <form onSubmit={acceptInvitation} className="pending-invitation-form">
           <input required minLength={32} value={token} onChange={(event) => setToken(event.target.value)} placeholder="Invitation token" />
           <button type="submit" className="auth-primary-button">Accept invitation</button>
         </form>
         {error ? <div className="inline-error">{error}</div> : null}
+        <button type="button" className="auth-text-button" onClick={() => void signOutToHome(clerkPublishableKey)}>Sign out</button>
       </section>
     </main>
   );

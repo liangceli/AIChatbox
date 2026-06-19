@@ -17,12 +17,14 @@ export function ConversationOpsPanel({
   tenantSlug,
   initialFilter = "pending_human",
   initialConversationId,
+  currentUserId,
   allowAssignment = true
 }: {
   apiBaseUrl: string;
   tenantSlug: string;
   initialFilter?: "all" | "pending_human";
   initialConversationId?: string;
+  currentUserId?: string;
   allowAssignment?: boolean;
   allowAdminDeletes?: boolean;
 }) {
@@ -58,9 +60,9 @@ export function ConversationOpsPanel({
       void loadSupportUsers();
     } else {
       setSupportUsers([]);
-      setSelectedUserId("");
+      setSelectedUserId(currentUserId ?? "");
     }
-  }, [allowAssignment, tenantSlug]);
+  }, [allowAssignment, currentUserId, tenantSlug]);
 
   useEffect(() => {
     void loadConversations(filter);
@@ -147,6 +149,14 @@ export function ConversationOpsPanel({
   const latestMessage = chronologicalMessages.at(-1)?.content ?? "";
   const latestMessageId = chronologicalMessages.at(-1)?.id;
   const isHumanModeActive = conversationDetail?.status === "pending_human";
+  const isAgentWorkspace = !allowAssignment && Boolean(currentUserId);
+  const isAssignedToCurrentAgent = Boolean(
+    currentUserId && conversationDetail?.assignedUser?.id === currentUserId
+  );
+  const shouldClaimConversation = Boolean(
+    isAgentWorkspace && isHumanModeActive && !conversationDetail?.assignedUser
+  );
+  const canAgentReply = !isAgentWorkspace || isAssignedToCurrentAgent;
 
   useEffect(() => {
     const history = conversationHistoryRef.current;
@@ -426,9 +436,11 @@ export function ConversationOpsPanel({
             <div>
               <h3>Human Mode</h3>
               <p>
-                {isHumanModeActive
-                  ? "AI is paused for this conversation until a customer or agent ends human support."
-                  : "AI can reply to customer messages unless human support is enabled."}
+                {shouldClaimConversation
+                  ? "AI is paused. Claim this conversation before replying or ending human support."
+                  : isHumanModeActive
+                    ? "AI is paused for this conversation until a customer or agent ends human support."
+                    : "AI can reply to customer messages unless human support is enabled."}
               </p>
             </div>
             <Icon name={isHumanModeActive ? "support_agent" : "smart_toy"} />
@@ -437,15 +449,17 @@ export function ConversationOpsPanel({
             type="button"
             className={isHumanModeActive ? "handoff-toggle active" : "handoff-toggle"}
             disabled={!conversationDetail || isUpdatingHumanSupport}
-            onClick={() => updateHumanSupportMode(!isHumanModeActive)}
+            onClick={() => updateHumanSupportMode(shouldClaimConversation || !isHumanModeActive)}
           >
-            <Icon name={isHumanModeActive ? "toggle_off" : "toggle_on"} />
+            <Icon name={shouldClaimConversation ? "person_add" : isHumanModeActive ? "toggle_off" : "toggle_on"} />
             <span>
               {isUpdatingHumanSupport
                 ? "Updating..."
-                : isHumanModeActive
-                  ? "End human support"
-                  : "Start human support"}
+                : shouldClaimConversation
+                  ? "Claim conversation"
+                  : isHumanModeActive
+                    ? "End human support"
+                    : "Start human support"}
             </span>
           </button>
         </div>
@@ -486,13 +500,19 @@ export function ConversationOpsPanel({
           <textarea
             value={replyDraft}
             onChange={(event) => setReplyDraft(event.target.value)}
-            placeholder={conversationDetail ? "Type response..." : "Select a conversation first"}
-            disabled={!conversationDetail}
+            placeholder={
+              shouldClaimConversation
+                ? "Claim this conversation before replying"
+                : conversationDetail
+                  ? "Type response..."
+                  : "Select a conversation first"
+            }
+            disabled={!conversationDetail || !canAgentReply}
           />
           <button
             type="submit"
             className="primary-btn"
-            disabled={isReplying || !conversationDetail || !selectedUserId || !replyDraft.trim()}
+            disabled={isReplying || !conversationDetail || !selectedUserId || !canAgentReply || !replyDraft.trim()}
           >
             <Icon name="send" />
             <span>{isReplying ? "Sending..." : "Send Reply"}</span>

@@ -2,17 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 import type { AccountRecord, TenantAiProfile, TenantOverviewRecord } from "@platform/types";
 import { AdminGlobalSearch } from "./admin-global-search";
 import { ConversationOpsPanel } from "./conversation-ops-panel";
 import { KnowledgeBasePanel } from "./knowledge-base-panel";
 import { TenantAiProfilePanel } from "./tenant-ai-profile-panel";
 import { AccountPanel } from "./account-panel";
-
-const defaultAdminPrimaryColor = "#fec931";
-const adminColorSchemeStorageKey = "admin-color-scheme";
-type AdminColorScheme = "light" | "dark";
+import {
+  adminColorSchemeStorageKey,
+  applyAdminColorScheme,
+  buildAdminThemeStyle,
+  defaultAdminPrimaryColor,
+  normalizeAdminPrimaryColor,
+  type AdminColorScheme
+} from "../lib/tenant-theme";
+import { redirectToSignIn, refreshClerkSession } from "../lib/client-clerk-session";
 
 const drawerNavigationItems = [
   { label: "Dashboard", icon: "dashboard", target: "dashboard", href: "/admin" },
@@ -102,7 +106,20 @@ export function AdminConsole({
       setError(undefined);
 
       try {
+        if (clerkPublishableKey) {
+          try {
+            await refreshClerkSession(clerkPublishableKey);
+          } catch {
+            // The account request below remains the authoritative session check.
+          }
+        }
+
         const accountResponse = await fetch(`${apiBaseUrl}/account/me`, { cache: "no-store" });
+
+        if (accountResponse.status === 401) {
+          redirectToSignIn();
+          return;
+        }
 
         if (!accountResponse.ok) {
           throw new Error(`Account request failed with status ${accountResponse.status}`);
@@ -138,6 +155,11 @@ export function AdminConsole({
             conversationCount: membership.conversationCount,
             pendingHumanCount: membership.pendingHumanCount,
             knowledgeBaseCount: membership.knowledgeBaseCount,
+            ownerCount: 1,
+            agentCount: 0,
+            suspendedMemberCount: 0,
+            activeAgentInvitationCount: 0,
+            agentInvitationQuota: 5,
             createdAt: "",
             updatedAt: ""
           }));
@@ -154,7 +176,19 @@ export function AdminConsole({
 
     void loadAccountAndTenants();
     return () => { isCurrent = false; };
-  }, [apiBaseUrl, defaultTenantSlug]);
+  }, [apiBaseUrl, clerkPublishableKey, defaultTenantSlug]);
+
+  useEffect(() => {
+    if (!clerkPublishableKey) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshClerkSession(clerkPublishableKey).catch(() => undefined);
+    }, 45_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [clerkPublishableKey]);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(adminColorSchemeStorageKey);
@@ -170,6 +204,12 @@ export function AdminConsole({
   }, []);
 
   useEffect(() => {
+    if (!account || (!account.isPlatformAdmin && !account.memberships.some(
+      (membership) => membership.tenantSlug === selectedTenantSlug && membership.role === "owner" && membership.status === "active"
+    ))) {
+      return;
+    }
+
     let isCurrent = true;
 
     async function loadTenantTheme() {
@@ -195,7 +235,7 @@ export function AdminConsole({
     return () => {
       isCurrent = false;
     };
-  }, [apiBaseUrl, selectedTenantSlug]);
+  }, [account, apiBaseUrl, selectedTenantSlug]);
 
   useEffect(() => {
     if (!navigationNotice) {
@@ -216,6 +256,11 @@ export function AdminConsole({
     conversationCount: 0,
     pendingHumanCount: 0,
     knowledgeBaseCount: 0,
+    ownerCount: 0,
+    agentCount: 0,
+    suspendedMemberCount: 0,
+    activeAgentInvitationCount: 0,
+    agentInvitationQuota: 5,
     createdAt: "",
     updatedAt: ""
   };
@@ -495,7 +540,14 @@ export function AdminConsole({
               />
             </section>
           ) : (
-            <AccountPanel apiBaseUrl={apiBaseUrl} account={account} tenantSlug={selectedTenantSlug} clerkPublishableKey={clerkPublishableKey} />
+            <AccountPanel
+              apiBaseUrl={apiBaseUrl}
+              account={account}
+              tenantSlug={selectedTenantSlug}
+              clerkPublishableKey={clerkPublishableKey}
+              tenantOverviews={account.isPlatformAdmin ? tenants : []}
+              onTenantDataChanged={account.isPlatformAdmin ? () => loadTenants(selectedTenantSlug) : undefined}
+            />
           )}
         </main>
       </div>
@@ -522,86 +574,4 @@ function getInitials(value: string): string {
     .map((word) => word[0])
     .join("")
     .toUpperCase();
-}
-
-function normalizeAdminPrimaryColor(value: string | null | undefined): string {
-  const trimmed = value?.trim() ?? "";
-
-  return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed.toLowerCase() : defaultAdminPrimaryColor;
-}
-
-function applyAdminColorScheme(colorScheme: AdminColorScheme) {
-  document.documentElement.dataset.theme = colorScheme;
-  document.documentElement.style.colorScheme = colorScheme;
-  window.localStorage.setItem(adminColorSchemeStorageKey, colorScheme);
-}
-
-function buildAdminThemeStyle(value: string): CSSProperties {
-  const primaryContainer = normalizeAdminPrimaryColor(value);
-  const primary = getReadableAccentColor(primaryContainer);
-  const primaryStrong = mixHexColor(primaryContainer, "#000000", getRelativeLuminance(primaryContainer) > 0.55 ? 0.5 : 0.18);
-
-  return {
-    "--primary": primary,
-    "--primary-container": primaryContainer,
-    "--on-primary-container": getReadableTextColor(primaryContainer),
-    "--primary-strong": primaryStrong,
-    "--on-primary-strong": getReadableTextColor(primaryStrong),
-    "--primary-soft": hexToRgba(primaryContainer, 0.08),
-    "--primary-soft-hover": hexToRgba(primaryContainer, 0.16),
-    "--primary-focus": hexToRgba(primaryContainer, 0.24),
-    "--primary-border": hexToRgba(primaryContainer, 0.32),
-    "--primary-shadow": hexToRgba(primaryContainer, 0.3)
-  } as CSSProperties;
-}
-
-function getReadableAccentColor(hexColor: string): string {
-  return getRelativeLuminance(hexColor) > 0.64 ? mixHexColor(hexColor, "#000000", 0.58) : hexColor;
-}
-
-function getReadableTextColor(hexColor: string): string {
-  return getRelativeLuminance(hexColor) > 0.56 ? "#171821" : "#ffffff";
-}
-
-function getRelativeLuminance(hexColor: string): number {
-  const [red, green, blue] = parseHexColor(hexColor);
-  const toLinearChannel = (channel: number) => {
-    const scaled = channel / 255;
-
-    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
-  };
-  const linearRed = toLinearChannel(red);
-  const linearGreen = toLinearChannel(green);
-  const linearBlue = toLinearChannel(blue);
-
-  return 0.2126 * linearRed + 0.7152 * linearGreen + 0.0722 * linearBlue;
-}
-
-function hexToRgba(hexColor: string, alpha: number): string {
-  const [red, green, blue] = parseHexColor(hexColor);
-
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-}
-
-function mixHexColor(sourceHex: string, targetHex: string, targetWeight: number): string {
-  const source = parseHexColor(sourceHex);
-  const target = parseHexColor(targetHex);
-  const boundedWeight = Math.min(Math.max(targetWeight, 0), 1);
-  const mixed: [number, number, number] = [
-    Math.round(source[0] * (1 - boundedWeight) + target[0] * boundedWeight),
-    Math.round(source[1] * (1 - boundedWeight) + target[1] * boundedWeight),
-    Math.round(source[2] * (1 - boundedWeight) + target[2] * boundedWeight)
-  ];
-
-  return `#${mixed.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-}
-
-function parseHexColor(hexColor: string): [number, number, number] {
-  const normalized = normalizeAdminPrimaryColor(hexColor).slice(1);
-
-  return [
-    Number.parseInt(normalized.slice(0, 2), 16),
-    Number.parseInt(normalized.slice(2, 4), 16),
-    Number.parseInt(normalized.slice(4, 6), 16)
-  ];
 }

@@ -64,6 +64,8 @@ function runSourceSmokeAssertions() {
   );
   const middlewareSource = readFileSync(resolve(__dirname, "../middleware.ts"), "utf8");
   const agentPageSource = readFileSync(resolve(__dirname, "../app/agent/page.tsx"), "utf8");
+  const agentConsoleSource = readFileSync(resolve(__dirname, "../app/components/agent-console.tsx"), "utf8");
+  const tenantThemeSource = readFileSync(resolve(__dirname, "../app/lib/tenant-theme.ts"), "utf8");
   const clerkAuthPanelSource = readFileSync(
     resolve(__dirname, "../app/components/clerk-auth-panel.tsx"),
     "utf8"
@@ -79,6 +81,9 @@ function runSourceSmokeAssertions() {
   const accountPanelSource = readFileSync(resolve(__dirname, "../app/components/account-panel.tsx"), "utf8");
   const accessPendingSource = readFileSync(resolve(__dirname, "../app/components/access-pending-panel.tsx"), "utf8");
   const nextConfigSource = readFileSync(resolve(__dirname, "../next.config.mjs"), "utf8");
+  const clientClerkSessionSource = readFileSync(resolve(__dirname, "../app/lib/client-clerk-session.ts"), "utf8");
+  const homePageSource = readFileSync(resolve(__dirname, "../app/page.tsx"), "utf8");
+  const rootLayoutSource = readFileSync(resolve(__dirname, "../app/layout.tsx"), "utf8");
 
   assert.equal(packageJson.dependencies["@platform/config"], "workspace:*");
   assert.match(adminAccessSource, /loadWorkspaceEnv/);
@@ -97,8 +102,8 @@ function runSourceSmokeAssertions() {
   assert.match(clerkSessionRouteSource, /httpOnly: true/);
   assert.match(clerkSessionRouteSource, /verifyClerkSessionToken/);
   assert.doesNotMatch(clerkSessionRouteSource, /hasClerkSessionCookie/);
-  assert.match(adminPageSource, /verifyClerkSessionToken/);
-  assert.match(adminKnowledgeBasePageSource, /verifyClerkSessionToken/);
+  assert.match(adminPageSource, /isAdminWebSessionAuthenticated/);
+  assert.match(adminKnowledgeBasePageSource, /isAdminWebSessionAuthenticated/);
   assert.match(adminKnowledgeBasePageSource, /redirect_url=\/admin\/knowledge-base/);
   assert.match(adminKnowledgeBasePageSource, /view="knowledge"/);
   assert.match(adminConsoleSource, /\/admin\/knowledge-base/);
@@ -111,6 +116,11 @@ function runSourceSmokeAssertions() {
   assert.match(adminConversationsPageSource, /initialConversationId=\{searchParams\?\.conversationId\}/);
   assert.match(conversationOpsPanelSource, /initialFilter = "pending_human"/);
   assert.match(conversationOpsPanelSource, /initialConversationId/);
+  assert.match(conversationOpsPanelSource, /shouldClaimConversation/);
+  assert.match(conversationOpsPanelSource, /Claim conversation/);
+  assert.match(conversationOpsPanelSource, /isAssignedToCurrentAgent/);
+  assert.match(conversationOpsPanelSource, /!canAgentReply/);
+  assert.match(agentConsoleSource, /currentUserId=\{currentUserId\}/);
   assert.match(adminKnowledgeBasePageSource, /initialKnowledgeBaseId=\{searchParams\?\.knowledgeBaseId\}/);
   assert.match(adminKnowledgeBasePageSource, /initialKnowledgeDocumentId=\{searchParams\?\.documentId\}/);
   assert.match(adminGlobalSearchSource, /\/search\?q=/);
@@ -125,17 +135,48 @@ function runSourceSmokeAssertions() {
   assert.match(middlewareSource, /\/admin\/:path\*/);
   assert.match(middlewareSource, /\/account/);
   assert.match(middlewareSource, /\/access-pending/);
-  assert.match(agentPageSource, /verifyClerkSessionToken/);
+  assert.match(agentPageSource, /isAdminWebSessionAuthenticated/);
+  assert.match(agentConsoleSource, /\/account\/me/);
+  assert.match(agentConsoleSource, /\/tenant-profile/);
+  assert.match(agentConsoleSource, /buildAdminThemeStyle\(themePrimaryColor\)/);
+  assert.doesNotMatch(agentConsoleSource, /NEXT_PUBLIC_DEFAULT_TENANT_SLUG/);
+  assert.match(tenantThemeSource, /--on-primary-container/);
+  const tenantTheme = loadTranspiledModule("app/lib/tenant-theme.ts");
+  const redTheme = tenantTheme.buildAdminThemeStyle("#dc2626");
+  assert.equal(redTheme["--primary-container"], "#dc2626");
+  assert.equal(redTheme["--on-primary-container"], "#ffffff");
   assert.doesNotMatch(adminPageSource, /hasClerkSessionCookie/);
   assert.doesNotMatch(agentPageSource, /hasClerkSessionCookie/);
   assert.match(clerkAuthPanelSource, /publishableKey/);
+  assert.match(clerkAuthPanelSource, /<SignIn/);
+  assert.match(clerkAuthPanelSource, /<SignUp/);
+  assert.match(rootLayoutSource, /ClerkProvider/);
+  assert.match(clerkAuthPanelSource, /Continue to workspace/);
+  assert.match(clerkAuthPanelSource, /Use another account/);
+  assert.match(clerkAuthPanelSource, /resolvePostAuthRoute/);
+  assert.doesNotMatch(clerkAuthPanelSource, /if \(token\) \{\s*await persistSession/);
   assert.doesNotMatch(clerkAuthPanelSource, /CLERK_SECRET_KEY|ADMIN_API_TOKEN|OPENAI_API_KEY|localStorage/);
   assert.doesNotMatch(clerkAuthPanelSource, /@latest/);
   assert.match(accountPanelSource, /\/members\/invitations/);
-  assert.match(accountPanelSource, /window\.Clerk\?\.signOut/);
+  assert.match(accountPanelSource, /signOutToHome/);
+  assert.match(accountPanelSource, /agent-invitation-quota/);
+  assert.match(accountPanelSource, /Tenant access overview/);
+  assert.match(agentConsoleSource, /signOutToHome/);
+  assert.match(agentConsoleSource, /agent-sign-out-button/);
+  assert.match(agentConsoleSource, /accountEmail/);
   assert.match(accessPendingSource, /account\/accept-invitation/);
+  assert.match(accessPendingSource, /signOutToHome/);
+  assert.match(homePageSource, /href="\/sign-in"/);
+  assert.match(homePageSource, /href="\/sign-up"/);
+  assert.doesNotMatch(homePageSource, /<select/i);
   assert.match(nextConfigSource, /Content-Security-Policy/);
   assert.match(nextConfigSource, /frame-ancestors 'none'/);
+  assert.match(clientClerkSessionSource, /session\?\.getToken/);
+  assert.match(clientClerkSessionSource, /\/api\/auth\/clerk\/session/);
+  assert.match(clientClerkSessionSource, /clerk\.signOut\?\./);
+  assert.doesNotMatch(clientClerkSessionSource, /cdn\.jsdelivr\.net|clerk\.browser\.js/);
+  assert.match(clientClerkSessionSource, /window\.location\.assign\("\/"\)/);
+  assert.match(adminConsoleSource, /45_000/);
 
   assert.match(answerDebugPanelSource, /\/chat\/answer-debug/);
   assert.match(answerDebugPanelSource, /Retrieved chunks/);
@@ -635,15 +676,15 @@ async function runRuntimeAssertions() {
       });
 
       try {
+        assert.throws(() => adminPage(), (error) => error.redirectUrl === "/sign-in?redirect_url=/admin");
         const response = await proxyRoute.GET(new Request("http://localhost:3000/api/admin/tenants"), {
           params: {
             path: ["tenants"]
           }
         });
 
-        assert.equal(response.status, 200);
-        assert.equal(capturedFetch.init.headers.get("x-admin-api-token"), "server-only-admin-token");
-        assert.equal(capturedFetch.init.headers.has("authorization"), false);
+        assert.equal(response.status, 401);
+        assert.equal(capturedFetch, undefined);
       } finally {
         global.fetch = originalFetch;
       }

@@ -44,3 +44,29 @@ Required before final acceptance:
 - Run full workspace typecheck, lint, test, build, `git diff --check`, and secret scan.
 - Start local services safely and complete browser QA against the real Clerk project.
 - Verify unmapped user denial, mapped tenant admin access, wrong-tenant denial, knowledge management, Answer Debug, widget grounded answer with citation, no-citation miss behavior, human handoff, agent reply, widget refresh recovery, and sign-out protection.
+
+## 2026-06-19 Identity, Isolation, and Agent Theme Update
+
+- Tenant membership is now constrained to OWNER/AGENT with ACTIVE/SUSPENDED/REVOKED status; Clerk user ids are unique first-class fields.
+- Platform Admin, Tenant Owner, Agent, pending Clerk users, and anonymous Widget visitors now have distinct server-enforced access paths.
+- Tenant Owner and Platform Admin invitations are one-time, hashed, expiring, and audited; public self-selected roles are not trusted.
+- Agent conversation reads are row-scoped to unassigned pending-human conversations or conversations assigned to that Agent.
+- Widget customer access now uses an HMAC-signed tenant/visitor session instead of trusting visitorId alone.
+- Agent theme colors now come from the Agent's authorized tenant public profile and reuse the Owner admin contrast/token algorithm.
+- Current Kasta public profile returns primaryColor `#dc2626`; Agent no longer falls back to the global yellow theme.
+- Workspace typecheck, lint, test, and build passed before the theme follow-up. Admin Web typecheck, tests, and production build also pass after the theme follow-up.
+- Real browser acceptance remains pending because this Codex session has no available browser instance; local services are running for user-side verification.
+- Agent handoff UI now requires an unassigned pending conversation to be atomically claimed before reply or end-human-support controls become available.
+- Clerk mode no longer accepts a legacy admin cookie as a page/proxy fallback. Admin and Agent clients refresh Clerk tokens before account bootstrap and every 45 seconds, and expired sessions redirect to sign-in instead of leaving a loading workspace.
+
+## 2026-06-19 Public Entry and Invitation Governance
+
+- `/` is now the public Solaris AI homepage with Sign in and Create account entry points; public sign-up does not expose a role selector.
+- New Clerk identities without an accepted invitation remain on `/access-pending`; tenant and role come only from an email-bound, one-time invitation.
+- Clerk authentication no longer auto-binds an existing user by matching email alone. Explicit bootstrap remains available only for controlled Platform Admin setup.
+- Agent invitations expire after 12 hours. Each tenant has an enforced active-code quota from 0 to 5, default 5; quota checks run inside a serializable transaction.
+- Platform Admin can see Owner, active Agent, suspended member, active invitation, and quota counts for every tenant and can adjust quota within 0-5. Tenant Owners can manage Agent invitations only in their own tenant.
+- Admin, Owner, and Agent sign-out clears Clerk and local httpOnly sessions and returns to `/`.
+- Migration `20260619010000_add_agent_invitation_quota` is applied locally.
+- Workspace typecheck, lint, test, build, `git diff --check`, and targeted secret scan passed. Browser QA passed for homepage desktop/mobile layout, Clerk sign-in readiness, and unauthenticated `/admin` redirect.
+- Real multi-account invitation acceptance, Owner/Agent routing, quota UI mutation, and sign-out remain concentrated manual acceptance items.

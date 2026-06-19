@@ -1,6 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { MembershipStatus, TenantRole } from "@platform/database";
-import type { CreatedTenantInvitation, TenantInvitationRecord, TenantMemberRecord } from "@platform/types";
+import type {
+  CreatedTenantInvitation,
+  TenantInvitationPolicyRecord,
+  TenantInvitationRecord,
+  TenantMemberRecord
+} from "@platform/types";
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -32,6 +37,34 @@ export class MembersService {
     return invitations.map(toInvitationRecord);
   }
 
+  async getInvitationPolicy(tenant: ResolvedTenant): Promise<TenantInvitationPolicyRecord> {
+    const [policy, activeAgentInvitationCount] = await Promise.all([
+      this.prisma.client.tenant.findUnique({
+        where: { id: tenant.id },
+        select: { agentInvitationQuota: true }
+      }),
+      this.prisma.client.tenantInvitation.count({
+        where: {
+          tenantId: tenant.id,
+          role: TenantRole.AGENT,
+          acceptedAt: null,
+          revokedAt: null,
+          expiresAt: { gt: new Date() }
+        }
+      })
+    ]);
+
+    if (!policy) {
+      throw new NotFoundException("Tenant not found.");
+    }
+
+    return {
+      agentInvitationQuota: policy.agentInvitationQuota,
+      activeAgentInvitationCount,
+      agentInvitationExpiresInHours: 12
+    };
+  }
+
   async createInvitation(
     tenant: ResolvedTenant,
     auth: AdminAuthContext,
@@ -45,7 +78,8 @@ export class MembersService {
 
     const email = input.email.trim().toLowerCase();
     const token = randomBytes(32).toString("base64url");
-    const expiresAt = new Date(Date.now() + (input.expiresInHours ?? 72) * 60 * 60 * 1000);
+    const expiresInHours = input.role === TenantRole.AGENT ? 12 : (input.expiresInHours ?? 72);
+    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
     const invitation = await this.prisma.client.$transaction(async (tx) => {
       await tx.tenantInvitation.updateMany({
         where: {
@@ -56,6 +90,27 @@ export class MembersService {
         },
         data: { revokedAt: new Date() }
       });
+
+      if (input.role === TenantRole.AGENT) {
+        const tenantPolicy = await tx.tenant.findUnique({
+          where: { id: tenant.id },
+          select: { agentInvitationQuota: true }
+        });
+        const activeInvitationCount = await tx.tenantInvitation.count({
+          where: {
+            tenantId: tenant.id,
+            role: TenantRole.AGENT,
+            acceptedAt: null,
+            revokedAt: null,
+            expiresAt: { gt: new Date() }
+          }
+        });
+
+        if (!tenantPolicy || activeInvitationCount >= tenantPolicy.agentInvitationQuota) {
+          throw new BadRequestException("The tenant has reached its active agent invitation limit.");
+        }
+      }
+
       const created = await tx.tenantInvitation.create({
         data: {
           tenantId: tenant.id,
@@ -78,7 +133,7 @@ export class MembersService {
         }
       });
       return created;
-    });
+    }, { isolationLevel: "Serializable" });
 
     return { ...toInvitationRecord(invitation), token };
   }

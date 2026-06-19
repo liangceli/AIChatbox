@@ -1,5 +1,10 @@
 import { TenantRole } from "@platform/database";
-import type { CreatedTenantInvitation, TenantInvitationRecord, TenantMemberRecord } from "@platform/types";
+import type {
+  CreatedTenantInvitation,
+  TenantInvitationPolicyRecord,
+  TenantInvitationRecord,
+  TenantMemberRecord
+} from "@platform/types";
 import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { RequireTenantRoles } from "../../common/admin-protection/access-policy.decorator";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
@@ -25,6 +30,11 @@ export class MembersController {
   @Get("invitations")
   listInvitations(@CurrentTenant() tenant: ResolvedTenant): Promise<TenantInvitationRecord[]> {
     return this.membersService.listInvitations(tenant);
+  }
+
+  @Get("invitation-policy")
+  getInvitationPolicy(@CurrentTenant() tenant: ResolvedTenant): Promise<TenantInvitationPolicyRecord> {
+    return this.membersService.getInvitationPolicy(tenant);
   }
 
   @Post("invitations")

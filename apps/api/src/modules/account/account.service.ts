@@ -93,6 +93,12 @@ export class AccountService {
         throw new NotFoundException("Invitation is invalid or expired.");
       }
 
+      const authenticatedEmail = auth.email?.trim().toLowerCase();
+
+      if (!authenticatedEmail || authenticatedEmail !== invitation.email.toLowerCase()) {
+        throw new ForbiddenException("Invitation was issued for a different Clerk email address.");
+      }
+
       const subjectUser = await tx.user.findUnique({ where: { clerkUserId: auth.clerkSubject } });
       const emailUser = await tx.user.findUnique({ where: { email: invitation.email } });
       const user = subjectUser ?? emailUser;

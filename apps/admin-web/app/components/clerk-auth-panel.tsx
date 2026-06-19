@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { SignIn, SignUp, useAuth, useClerk, useUser } from "@clerk/nextjs";
+import type { AccountRecord } from "@platform/types";
+import { useMemo, useState } from "react";
 
 type ClerkAuthPanelProps = {
   mode: "sign-in" | "sign-up";
@@ -9,160 +11,178 @@ type ClerkAuthPanelProps = {
   redirectUrl?: string;
 };
 
-declare global {
-  interface Window {
-    Clerk?: {
-      load: () => Promise<void>;
-      openSignIn: (options?: { redirectUrl?: string; afterSignInUrl?: string }) => void;
-      openSignUp: (options?: { redirectUrl?: string; afterSignUpUrl?: string }) => void;
-      redirectToSignIn?: (options?: { redirectUrl?: string; afterSignInUrl?: string }) => void;
-      redirectToSignUp?: (options?: { redirectUrl?: string; afterSignUpUrl?: string }) => void;
-      session?: {
-        getToken: (options?: { template?: string }) => Promise<string | null>;
-      } | null;
-      signOut?: () => Promise<void>;
-    };
+export function ClerkAuthPanel(props: ClerkAuthPanelProps) {
+  if (!props.publishableKey) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-panel auth-account-panel">
+          <a className="auth-home-link" href="/">Solaris AI</a>
+          <div className="inline-error" role="alert">Account authentication is not configured for this environment.</div>
+        </section>
+      </main>
+    );
   }
+
+  return <ClerkAccountFlow {...props} />;
 }
 
-export function ClerkAuthPanel({
-  mode,
-  publishableKey,
-  afterAuthUrl,
-  redirectUrl
-}: ClerkAuthPanelProps) {
-  const [status, setStatus] = useState("Loading secure sign-in...");
-  const [isReady, setIsReady] = useState(false);
+function ClerkAccountFlow({ mode, afterAuthUrl, redirectUrl }: ClerkAuthPanelProps) {
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { signOut } = useClerk();
+  const { user } = useUser();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string>();
   const safeRedirectUrl = useMemo(() => sanitizeRedirectUrl(redirectUrl) ?? afterAuthUrl, [
     afterAuthUrl,
     redirectUrl
   ]);
+  const currentEmail = user?.primaryEmailAddress?.emailAddress
+    ?? user?.emailAddresses?.[0]?.emailAddress
+    ?? "Clerk account";
 
-  useEffect(() => {
-    if (!publishableKey) {
-      setStatus("Clerk is not configured for this environment.");
-      return;
-    }
+  async function continueToWorkspace() {
+    setIsSubmitting(true);
+    setError(undefined);
 
-    const existingScript = document.querySelector<HTMLScriptElement>("script[data-clerk-js]");
-    const script = existingScript ?? document.createElement("script");
+    try {
+      const token = await getToken();
 
-    script.setAttribute("data-clerk-js", "true");
-    script.setAttribute("data-clerk-publishable-key", publishableKey);
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.src = "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5.111.0/dist/clerk.browser.js";
+      if (!token) throw new Error("No active Clerk session is available.");
 
-    script.onload = () => {
-      void initializeClerk();
-    };
-    script.onerror = () => {
-      setStatus("Unable to load Clerk. Check network access and Clerk publishable key.");
-    };
+      const sessionResponse = await fetch("/api/auth/clerk/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+        cache: "no-store"
+      });
 
-    if (!existingScript) {
-      document.head.appendChild(script);
-    } else if (window.Clerk) {
-      void initializeClerk();
-    }
-
-    async function initializeClerk() {
-      try {
-        await window.Clerk?.load();
-        setIsReady(true);
-        setStatus("Continue with Clerk to access the admin console.");
-
-        const token = await window.Clerk?.session?.getToken();
-
-        if (token) {
-          await persistSession(token);
-        }
-      } catch {
-        setStatus("Clerk sign-in could not be initialized.");
+      if (!sessionResponse.ok) {
+        throw new Error(`Session verification failed: ${await readFailureReason(sessionResponse)}`);
       }
+
+      const accountResponse = await fetch("/api/admin/account/me", { cache: "no-store" });
+
+      if (!accountResponse.ok) throw new Error(`Account lookup failed (${accountResponse.status}).`);
+
+      const account = (await accountResponse.json()) as AccountRecord;
+      window.location.assign(resolvePostAuthRoute(account, safeRedirectUrl));
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to open the assigned workspace.");
+      setIsSubmitting(false);
     }
-  }, [publishableKey, safeRedirectUrl]);
-
-  async function persistSession(token: string) {
-    const response = await fetch("/api/auth/clerk/session", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({ token }),
-      cache: "no-store"
-    });
-
-    if (!response.ok) {
-      const reason = await readFailureReason(response);
-      setStatus(`Signed in, but admin session could not be established. Reason: ${reason}`);
-      return;
-    }
-
-    window.location.assign(safeRedirectUrl);
   }
 
-  function openClerk() {
-    if (!window.Clerk || !isReady) {
-      return;
+  async function useAnotherAccount() {
+    setIsSubmitting(true);
+    setError(undefined);
+
+    try {
+      await signOut();
+    } finally {
+      await fetch("/api/auth/sign-out", { method: "POST" });
+      window.location.reload();
     }
-
-    if (mode === "sign-up") {
-      if (window.Clerk.redirectToSignUp) {
-        window.Clerk.redirectToSignUp({
-          redirectUrl: window.location.href,
-          afterSignUpUrl: window.location.href
-        });
-        return;
-      }
-
-      window.Clerk.openSignUp({
-        redirectUrl: window.location.href,
-        afterSignUpUrl: window.location.href
-      });
-      return;
-    }
-
-    if (window.Clerk.redirectToSignIn) {
-      window.Clerk.redirectToSignIn({
-        redirectUrl: window.location.href,
-        afterSignInUrl: window.location.href
-      });
-      return;
-    }
-
-    window.Clerk.openSignIn({
-      redirectUrl: window.location.href,
-      afterSignInUrl: window.location.href
-    });
   }
 
   return (
     <main className="auth-shell">
-      <section className="auth-panel">
-        <p className="auth-kicker">Alpha Admin Access</p>
-        <h1>{mode === "sign-up" ? "Create your admin identity" : "Sign in to Solaris AI"}</h1>
-        <p className="auth-copy">{status}</p>
-        <button className="auth-primary-button" type="button" onClick={openClerk} disabled={!isReady}>
-          {mode === "sign-up" ? "Sign up with Clerk" : "Sign in with Clerk"}
-        </button>
-        <a className="auth-secondary-link" href="/admin/access">
-          Local legacy access
-        </a>
+      <section className="auth-panel auth-account-panel">
+        <a className="auth-home-link" href="/" aria-label="Back to Solaris AI home">Solaris AI</a>
+        <div className="auth-mode-tabs" aria-label="Account access">
+          <a className={mode === "sign-in" ? "active" : ""} href="/sign-in">Sign in</a>
+          <a className={mode === "sign-up" ? "active" : ""} href="/sign-up">Sign up</a>
+        </div>
+
+        <header className="auth-heading">
+          <p className="auth-kicker">Secure workspace access</p>
+          <h1>{mode === "sign-up" ? "Create your Solaris AI account" : "Welcome back"}</h1>
+          <p className="auth-copy">
+            {!isLoaded
+              ? "Loading account access..."
+              : isSignedIn
+                ? "Confirm this account before opening its assigned workspace."
+                : mode === "sign-up"
+                  ? "Create your identity first. Your invitation assigns tenant and role after sign-up."
+                  : "Enter your account details to continue to your assigned workspace."}
+          </p>
+        </header>
+
+        {!isLoaded ? <div className="auth-loading-state">Loading account form...</div> : null}
+
+        {isLoaded && !isSignedIn ? (
+          <div className="clerk-form-host">
+            {mode === "sign-up" ? (
+              <SignUp
+                routing="hash"
+                signInUrl="/sign-in"
+                forceRedirectUrl="/sign-up"
+                fallbackRedirectUrl="/sign-up"
+                appearance={clerkAppearance}
+              />
+            ) : (
+              <SignIn
+                routing="hash"
+                signUpUrl="/sign-up"
+                forceRedirectUrl="/sign-in"
+                fallbackRedirectUrl="/sign-in"
+                appearance={clerkAppearance}
+              />
+            )}
+          </div>
+        ) : null}
+
+        {isLoaded && isSignedIn ? (
+          <div className="auth-session-confirmation">
+            <span className="material-symbols-outlined" aria-hidden="true">account_circle</span>
+            <div>
+              <small>Currently signed in</small>
+              <strong>{currentEmail}</strong>
+              <p>Tenant and role are verified by the server after you continue.</p>
+            </div>
+            <button className="auth-primary-button" type="button" disabled={isSubmitting} onClick={() => void continueToWorkspace()}>
+              {isSubmitting ? "Verifying access..." : "Continue to workspace"}
+            </button>
+            <button className="auth-secondary-button" type="button" disabled={isSubmitting} onClick={() => void useAnotherAccount()}>
+              Use another account
+            </button>
+          </div>
+        ) : null}
+
+        {error ? <div className="inline-error" role="alert">{error}</div> : null}
+
+        <p className="auth-role-note">
+          Platform Admin access is pre-authorized. Tenant Owners and Agents activate access with an email-bound invitation code.
+        </p>
+        <a className="auth-legacy-link" href="/admin/access">Local legacy access</a>
       </section>
     </main>
   );
 }
 
+const clerkAppearance = {
+  variables: {
+    colorPrimary: "#2563eb",
+    borderRadius: "6px"
+  },
+  elements: {
+    rootBox: { width: "100%" },
+    cardBox: { width: "100%", boxShadow: "none" },
+    card: { width: "100%", border: "1px solid rgba(0, 0, 0, 0.08)", boxShadow: "none" }
+  }
+};
+
+function resolvePostAuthRoute(account: AccountRecord, requestedRoute: string): string {
+  if (!account.mapped || account.defaultRoute === "/access-pending") return "/access-pending";
+  if (account.defaultRoute === "/admin" && requestedRoute.startsWith("/admin")) return requestedRoute;
+  if (account.defaultRoute === "/agent" && requestedRoute.startsWith("/agent")) return requestedRoute;
+  return account.defaultRoute;
+}
+
 async function readFailureReason(response: Response): Promise<string> {
   try {
-    const text = await response.text();
-    const body = JSON.parse(text) as { error?: unknown; reason?: unknown };
+    const body = JSON.parse(await response.text()) as { error?: unknown; reason?: unknown };
 
-    if (typeof body.reason === "string" && body.reason) {
-      return body.reason;
-    }
-
+    if (typeof body.reason === "string" && body.reason) return body.reason;
     return typeof body.error === "string" && body.error ? body.error : "unknown";
   } catch {
     return `http-${response.status}`;
@@ -170,9 +190,6 @@ async function readFailureReason(response: Response): Promise<string> {
 }
 
 function sanitizeRedirectUrl(value?: string): string | undefined {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
-    return undefined;
-  }
-
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return undefined;
   return value;
 }

@@ -1,10 +1,12 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { getAdminWebConfig } from "./lib/admin-access";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Support Platform Admin",
-  description: "Operational dashboard shell for a white-label, multi-tenant AI support platform."
+  title: "Solaris AI | Customer support operations",
+  description: "A secure, multi-tenant AI support platform for grounded answers and human handoff."
 };
 
 export default function RootLayout({
@@ -12,12 +14,28 @@ export default function RootLayout({
 }: Readonly<{
   children: ReactNode;
 }>) {
+  const publishableKey = getAdminWebConfig().clerkPublishableKey;
+  const content = (
+    <>
+      <ThemeBootstrap />
+      {children}
+    </>
+  );
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
+        {publishableKey ? <ClerkProvider publishableKey={publishableKey}>{content}</ClerkProvider> : content}
+      </body>
+    </html>
+  );
+}
+
+function ThemeBootstrap() {
+  return (
+    <script
+      dangerouslySetInnerHTML={{
+        __html: `
 try {
   var storedTheme = window.localStorage.getItem("admin-color-scheme");
   if (storedTheme === "dark" || storedTheme === "light") {
@@ -26,10 +44,7 @@ try {
   }
 } catch {}
 `
-          }}
-        />
-        {children}
-      </body>
-    </html>
+      }}
+    />
   );
 }

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AdminConsole } from "../../components/admin-console";
-import { getAdminWebConfig, isValidAdminSessionCookie, verifyClerkSessionToken } from "../../lib/admin-access";
+import { getAdminWebConfig, isAdminWebSessionAuthenticated } from "../../lib/admin-access";
 
 export default function AdminAccountPage() {
   const config = getAdminWebConfig();
@@ -9,7 +9,7 @@ export default function AdminAccountPage() {
   const legacySessionCookie = cookieStore.get(config.cookieName)?.value;
   const clerkSessionCookie = cookieStore.get(config.clerkSessionCookieName)?.value;
 
-  if (!verifyClerkSessionToken(clerkSessionCookie) && !isValidAdminSessionCookie(legacySessionCookie)) {
+  if (!isAdminWebSessionAuthenticated(clerkSessionCookie, legacySessionCookie)) {
     redirect(`${config.clerkSignInUrl}?redirect_url=/admin/account`);
   }
 

@@ -261,3 +261,26 @@ QA acceptance confirmed:
 2. Ask QA Codex to run the manual Clerk alpha route-map acceptance checks: no cookie redirects, forged session POST 401/no cookie, forged cookie rejection on `/admin` and `/agent`, forged proxy request 401, legacy local `/admin/access` still works when intentionally configured.
 3. Add route-handler tests for forged Clerk JWT rejection and stronger backend issuer/authorized-party tests.
 4. Complete real deployed alpha smoke only after user-owned Clerk, hosting, DB, CORS, OpenAI-if-enabled, and external widget settings are configured without pasting secrets into chat.
+## 2026-06-19 Security and Role Boundary Update
+
+- Added strict Platform Admin, Tenant Owner, Agent, pending-user, and anonymous visitor boundaries.
+- Owners receive only their tenant; only Platform Admin can enumerate/switch all tenants.
+- Agents are routed to `/agent` and can read only unassigned pending-human work or their own assigned conversations.
+- Added account identity, tenant membership, invitation acceptance, member suspension, secure sign-out, and audit persistence.
+- Added signed Widget sessions bound to tenant and visitor identity, with tamper/wrong-tenant regression coverage.
+- Added CSP/security headers, same-origin mutation checks, API no-store headers, production CORS validation, and targeted rate limits.
+- Owner primary colors now propagate to the corresponding Agent console through a safe public tenant profile; the same contrast algorithm is shared by both surfaces.
+- Automated typecheck, lint, test, and build are green. Final real-browser multi-role acceptance is still outstanding due unavailable Codex browser automation.
+- Fixed Agent handoff ownership UX: unassigned alerts must be claimed before the Agent can reply or end support, matching backend row-level authorization.
+- Fixed mixed-session regression: when Clerk is configured, legacy cookies cannot keep protected pages open; Clerk token renewal and explicit 401-to-sign-in recovery now cover Admin and Agent workspaces.
+
+## 2026-06-19 Homepage and Controlled Access Update
+
+- Added a public Solaris AI homepage at `/` with platform, workflow, security, sign-in, and sign-up entry points.
+- Registration creates identity only. No user can choose Admin, Owner, or Agent in the browser; access remains pending until an email-bound invitation is accepted.
+- Removed ordinary Clerk email auto-mapping and new-tenant implicit Owner creation, closing two invitation bypass paths. Controlled Platform Admin bootstrap is unchanged.
+- Added per-tenant Agent invitation governance: one-time hashed codes, fixed 12-hour Agent expiry, default quota 5, hard range 0-5, transactional enforcement, revocation, and audit logging.
+- Platform Admin tenant overview now reports Owner/Agent/suspended/invitation counts and allows quota adjustment. Owners remain restricted to their own tenant and Agent invitations.
+- Added Agent sign-out and changed all role sign-outs to clear both sessions and return to the homepage.
+- Local migration and all workspace checks passed. Browser smoke passed for public responsive layout, protected redirect, enabled Clerk sign-in, and a clean console.
+- Final acceptance still requires manual real-Clerk multi-role invitation and logout QA with separate Owner and Agent accounts.

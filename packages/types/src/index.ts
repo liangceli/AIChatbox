@@ -25,6 +25,11 @@ export interface TenantOverviewRecord {
   conversationCount: number;
   pendingHumanCount: number;
   knowledgeBaseCount: number;
+  ownerCount: number;
+  agentCount: number;
+  suspendedMemberCount: number;
+  activeAgentInvitationCount: number;
+  agentInvitationQuota: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +78,12 @@ export interface TenantInvitationRecord {
 
 export interface CreatedTenantInvitation extends TenantInvitationRecord {
   token: string;
+}
+
+export interface TenantInvitationPolicyRecord {
+  agentInvitationQuota: number;
+  activeAgentInvitationCount: number;
+  agentInvitationExpiresInHours: 12;
 }
 
 export interface TenantAiProfile {

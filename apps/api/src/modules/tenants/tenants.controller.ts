@@ -1,10 +1,13 @@
 import type { TenantAiProfile, TenantOverviewRecord } from "@platform/types";
 import { Body, Controller, Get, Inject, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AdminApiGuard } from "../../common/admin-protection/admin-api.guard";
+import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
+import { CurrentAdminAuth } from "../../common/admin-protection/current-admin-auth.decorator";
 import { RequirePlatformAdmin, RequireTenantRoles } from "../../common/admin-protection/access-policy.decorator";
 import { TenantRole } from "@platform/database";
 import { CreateTenantDto } from "./dto/create-tenant.dto";
 import { UpdateTenantAiProfileDto } from "./dto/update-tenant-ai-profile.dto";
+import { UpdateAgentInvitationQuotaDto } from "./dto/update-agent-invitation-quota.dto";
 import { TenantsService } from "./tenants.service";
 
 @Controller("tenants")
@@ -22,6 +25,16 @@ export class TenantsController {
   @RequirePlatformAdmin()
   async createTenant(@Body() body: CreateTenantDto): Promise<TenantOverviewRecord> {
     return this.tenantsService.createTenant(body);
+  }
+
+  @Patch(":tenantSlug/agent-invitation-quota")
+  @RequirePlatformAdmin()
+  async updateAgentInvitationQuota(
+    @Param("tenantSlug") tenantSlug: string,
+    @Body() body: UpdateAgentInvitationQuotaDto,
+    @CurrentAdminAuth() auth: AdminAuthContext
+  ): Promise<TenantOverviewRecord> {
+    return this.tenantsService.updateAgentInvitationQuota(tenantSlug, body.quota, auth.userId);
   }
 
   @Get(":tenantSlug/ai-profile")

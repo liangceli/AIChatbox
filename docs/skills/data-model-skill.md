@@ -100,3 +100,9 @@ Tenant AI profile foundation:
 ## Seed Data
 
 `packages/database/prisma/seed.ts` creates/upserts a `kasta` demo tenant, support admin user, role, AgentConfig, and default knowledge base. Kasta must remain seed/demo data only, not platform core logic.
+## Membership Security Models
+
+- `User.clerkUserId` is unique and first-class.
+- `Role` is a tenant membership with `TenantRole` and `MembershipStatus`; non-platform users are limited to one active tenant during invitation acceptance/provisioning.
+- `TenantInvitation` stores only a token hash and lifecycle timestamps. `AuditLog` records membership and invitation security events without storing bearer tokens.
+- `Tenant.agentInvitationQuota` is an integer with default 5 and database check range 0-5. It limits simultaneously active Agent invitations, not historical invitation records or active Agent memberships.

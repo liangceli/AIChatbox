@@ -12,6 +12,7 @@
     "clean": "node -e \"require('node:fs').rmSync('.next',{recursive:true,force:true})\""
   },
   "dependencies": {
+    "@clerk/nextjs": "6.39.5",
     "@platform/config": "workspace:*",
     "@platform/customer-widget": "workspace:*",
     "@platform/types": "workspace:*",

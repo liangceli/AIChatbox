@@ -45,9 +45,10 @@ import { SearchController } from "../src/modules/search/search.controller";
 import { SearchService } from "../src/modules/search/search.service";
 import { TenantsController } from "../src/modules/tenants/tenants.controller";
 import { UpdateTenantAiProfileDto } from "../src/modules/tenants/dto/update-tenant-ai-profile.dto";
+import { UpdateAgentInvitationQuotaDto } from "../src/modules/tenants/dto/update-agent-invitation-quota.dto";
 import { WidgetSessionService } from "../src/modules/widget-session/widget-session.service";
 import { MembersService } from "../src/modules/members/members.service";
-import { hashInvitationToken } from "../src/modules/account/account.service";
+import { AccountService, hashInvitationToken } from "../src/modules/account/account.service";
 import {
   buildAgentConfigPersistence,
   buildTenantAiProfile,
@@ -218,8 +219,15 @@ function createClerkAuthPrismaMock(users: ClerkAuthUserFixture[]): never {
         }
       },
       user: {
-        findFirst: async () => {
-          const user = users[0];
+        findFirst: async (query: unknown) => {
+          const queryText = JSON.stringify(query);
+          const user = users.find((candidate) => {
+            const clerkUserId = typeof candidate.metadata?.clerkUserId === "string"
+              ? candidate.metadata.clerkUserId
+              : undefined;
+
+            return Boolean(clerkUserId && queryText.includes(clerkUserId));
+          });
 
           return user
             ? {
@@ -468,6 +476,33 @@ async function testClerkAdminProtectionAcceptsMappedTenantUser() {
       )
     ),
     true
+  );
+}
+
+async function testClerkAdminProtectionDoesNotAutoBindMatchingEmail() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({
+      ADMIN_API_PROTECTION_MODE: "clerk",
+      CLERK_JWT_KEY: publicKey
+    }),
+    createClerkAuthPrismaMock([
+      {
+        tenantSlug: "demo",
+        email: "unbound@example.test",
+        isPlatformAdmin: false
+      }
+    ])
+  );
+
+  await assert.rejects(
+    () => guard.canActivate(createGuardContext({
+      authorization: `Bearer ${createClerkTestToken(privateKey, {
+        sub: "new-clerk-subject",
+        email: "unbound@example.test"
+      })}`
+    }, { tenant: baseInput.tenant })),
+    ForbiddenException
   );
 }
 
@@ -2725,6 +2760,64 @@ async function testAgentConversationListIsRowScoped() {
   ]);
 }
 
+async function testAgentClaimsUnassignedConversationBeforeEndingOrReplying() {
+  let claimWhere: Record<string, unknown> | undefined;
+  const auth = {
+    userId: "agent-1",
+    email: "agent@example.test",
+    isPlatformAdmin: false,
+    tenantId: baseInput.tenant.id,
+    tenantSlug: baseInput.tenant.slug,
+    roleName: TenantRole.AGENT,
+    membershipStatus: MembershipStatus.ACTIVE
+  };
+  const assignedUser = {
+    id: "agent-1",
+    email: "agent@example.test",
+    name: "Agent One"
+  };
+  const service = new ConversationsService({
+    client: {
+      role: {
+        findUnique: async () => ({
+          tenantId: baseInput.tenant.id,
+          userId: "agent-1",
+          name: TenantRole.AGENT,
+          status: MembershipStatus.ACTIVE
+        })
+      },
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+        conversation: {
+          findFirst: async () => ({ id: "conversation-1", status: ConversationStatus.PENDING_HUMAN }),
+          updateMany: async ({ where }: { where: Record<string, unknown> }) => {
+            claimWhere = where;
+            return { count: 1 };
+          }
+        }
+      }),
+      conversation: {
+        findFirst: async () => ({
+          ...createConversationRecord("visitor-1", ConversationStatus.PENDING_HUMAN),
+          assignedUserId: "agent-1",
+          assignedUser,
+          messages: []
+        })
+      }
+    }
+  } as never);
+
+  const detail = await service.startHumanSupport(
+    baseInput.tenant,
+    "conversation-1",
+    "agent-1",
+    "Agent claimed conversation.",
+    auth
+  );
+
+  assert.equal(detail.assignedUser?.id, "agent-1");
+  assert.deepEqual(claimWhere?.OR, [{ assignedUserId: null }, { assignedUserId: "agent-1" }]);
+}
+
 async function testWidgetSessionRejectsTamperingAndWrongTenant() {
   const previousSecret = process.env.WIDGET_SESSION_SECRET;
   process.env.WIDGET_SESSION_SECRET = "test-widget-secret-with-at-least-32-characters";
@@ -2772,6 +2865,110 @@ async function testTenantOwnerCannotInviteAnotherOwner() {
   assert.notEqual(hashInvitationToken("one-time-token"), "one-time-token");
 }
 
+async function testAgentInvitationsExpireAfterTwelveHoursAndRespectTenantQuota() {
+  let persistedExpiresAt: Date | undefined;
+  const createService = (activeInvitationCount: number) => new MembersService({
+    client: {
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+        tenantInvitation: {
+          updateMany: async () => ({ count: 0 }),
+          count: async () => activeInvitationCount,
+          create: async ({ data }: { data: { expiresAt: Date } }) => {
+            persistedExpiresAt = data.expiresAt;
+            return {
+              id: "invitation-1",
+              email: "agent@example.test",
+              role: TenantRole.AGENT,
+              expiresAt: data.expiresAt,
+              acceptedAt: null,
+              revokedAt: null,
+              createdAt: new Date()
+            };
+          }
+        },
+        tenant: {
+          findUnique: async () => ({ agentInvitationQuota: 5 })
+        },
+        auditLog: {
+          create: async () => ({})
+        }
+      })
+    }
+  } as never);
+  const auth = {
+    userId: "owner-1",
+    email: "owner@example.test",
+    isPlatformAdmin: false,
+    tenantId: baseInput.tenant.id,
+    tenantSlug: baseInput.tenant.slug,
+    roleName: TenantRole.OWNER,
+    membershipStatus: MembershipStatus.ACTIVE
+  };
+  const before = Date.now();
+
+  await createService(4).createInvitation(baseInput.tenant, auth, {
+    email: "agent@example.test",
+    role: TenantRole.AGENT,
+    expiresInHours: 168
+  });
+
+  assert.ok(persistedExpiresAt);
+  const expiresInMs = persistedExpiresAt.getTime() - before;
+  assert.ok(expiresInMs >= 12 * 60 * 60 * 1000 - 1_000);
+  assert.ok(expiresInMs <= 12 * 60 * 60 * 1000 + 1_000);
+
+  await assert.rejects(
+    () => createService(5).createInvitation(baseInput.tenant, auth, {
+      email: "another-agent@example.test",
+      role: TenantRole.AGENT
+    }),
+    BadRequestException
+  );
+}
+
+async function testAgentInvitationQuotaValidationAndPlatformPolicy() {
+  const validMinimum = plainToInstance(UpdateAgentInvitationQuotaDto, { quota: 0 });
+  const validMaximum = plainToInstance(UpdateAgentInvitationQuotaDto, { quota: 5 });
+  const invalidHigh = plainToInstance(UpdateAgentInvitationQuotaDto, { quota: 6 });
+
+  assert.equal(validateSync(validMinimum).length, 0);
+  assert.equal(validateSync(validMaximum).length, 0);
+  assert.ok(validateSync(invalidHigh).length > 0);
+  assert.deepEqual(
+    Reflect.getMetadata(ACCESS_POLICY_KEY, TenantsController.prototype.updateAgentInvitationQuota),
+    { platformOnly: true }
+  );
+}
+
+async function testInvitationAcceptanceRequiresMatchingVerifiedEmail() {
+  const service = new AccountService({
+    client: {
+      $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+        tenantInvitation: {
+          findUnique: async () => ({
+            id: "invitation-1",
+            tenantId: baseInput.tenant.id,
+            email: "invited@example.test",
+            role: TenantRole.AGENT,
+            acceptedAt: null,
+            revokedAt: null,
+            expiresAt: new Date(Date.now() + 60_000)
+          })
+        }
+      })
+    }
+  } as never);
+
+  await assert.rejects(
+    () => service.acceptInvitation({
+      clerkSubject: "clerk-user-1",
+      email: "different@example.test",
+      isPlatformAdmin: false
+    }, "one-time-token"),
+    ForbiddenException
+  );
+}
+
 async function testRoutePoliciesSeparatePlatformOwnerAndAgentAccess() {
   assert.deepEqual(
     Reflect.getMetadata(ACCESS_POLICY_KEY, TenantsController.prototype.listTenants),
@@ -2808,6 +3005,7 @@ async function run() {
   await testAdminProtectionGuardDisabledOnlyWhenExplicitlyAllowed();
   await testClerkAdminProtectionRejectsMissingAndInvalidTokens();
   await testClerkAdminProtectionAcceptsMappedTenantUser();
+  await testClerkAdminProtectionDoesNotAutoBindMatchingEmail();
   await testClerkAdminProtectionAttachesVerifiedAdminContext();
   await testClerkAdminProtectionRejectsWrongTenant();
   await testClerkAdminProtectionRejectsForgedSignature();
@@ -2866,8 +3064,12 @@ async function run() {
   await testAdminSearchIsGuardedTenantScopedAndSafe();
   await testSuspendedTenantMembershipIsRejected();
   await testAgentConversationListIsRowScoped();
+  await testAgentClaimsUnassignedConversationBeforeEndingOrReplying();
   await testWidgetSessionRejectsTamperingAndWrongTenant();
   await testTenantOwnerCannotInviteAnotherOwner();
+  await testAgentInvitationsExpireAfterTwelveHoursAndRespectTenantQuota();
+  await testAgentInvitationQuotaValidationAndPlatformPolicy();
+  await testInvitationAcceptanceRequiresMatchingVerifiedEmail();
   await testRoutePoliciesSeparatePlatformOwnerAndAgentAccess();
 }
 

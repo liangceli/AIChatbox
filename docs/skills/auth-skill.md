@@ -104,3 +104,17 @@ These checks confirm a user belongs to the current tenant. Admin API access in C
 - Protect tenant management with platform-admin authorization.
 - Protect admin/agent surfaces with tenant membership checks.
 - Keep auth generic and tenant-aware; do not add client-specific auth rules to platform core.
+## Current Role Model
+
+- Platform administration is `User.isPlatformAdmin`; tenant roles are typed OWNER or AGENT memberships with ACTIVE/SUSPENDED/REVOKED state.
+- Registration never grants a user-selected role. Access is established through a hashed, expiring tenant invitation or the controlled Clerk bootstrap command.
+- `/account/me` is the source of truth for client routing and allowed tenant display, but every API still enforces its own role and tenant policy.
+- When Clerk verification is configured, legacy cookies must never satisfy protected page or proxy authentication. Admin/Agent clients renew the Clerk JWT through the same-origin session route and redirect on 401.
+
+## Public Registration and Invitation Binding
+
+- Public Clerk sign-up creates identity only; never present a client-side role selector.
+- Ordinary Clerk requests map by `clerkUserId` or explicitly retained legacy subject metadata, never by unbound matching email.
+- Invitation acceptance requires the verified Clerk email to match the invitation email before binding `clerkUserId`.
+- Platform Admin creation remains an explicit bootstrap operation; never grant platform status through public registration.
+- Sign-out must call Clerk sign-out, clear the local httpOnly session, and redirect to `/`.

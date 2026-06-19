@@ -243,12 +243,10 @@ export class AdminApiGuard implements CanActivate {
   }
 
   private async findMappedUser(claims: ClerkJwtClaims, tenantSlug?: string) {
-    const email = resolveClaimEmail(claims);
     const user = await this.prisma!.client.user.findFirst({
       where: {
         OR: [
           { clerkUserId: claims.sub },
-          ...(email ? [{ email, clerkUserId: null }] : []),
           { metadata: { path: ["clerkUserId"], equals: claims.sub } },
           { metadata: { path: ["clerkSubject"], equals: claims.sub } },
           { metadata: { path: ["clerk_user_id"], equals: claims.sub } }

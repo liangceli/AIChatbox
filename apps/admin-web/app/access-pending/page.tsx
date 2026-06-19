@@ -11,5 +11,5 @@ export default function AccessPendingPage() {
     redirect(`${config.clerkSignInUrl}?redirect_url=/access-pending`);
   }
 
-  return <AccessPendingPanel />;
+  return <AccessPendingPanel clerkPublishableKey={config.clerkPublishableKey} />;
 }

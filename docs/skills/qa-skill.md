@@ -263,3 +263,17 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Manual alpha QA must distinguish local pass, staging/online pass, external embed pass, and real alpha-ready pass.
 - Fake/local test tokens, mocked Clerk, mocked OpenAI, or localhost-only flows do not count as online alpha evidence.
 - Real Clerk/OpenAI/deployment smoke requires user-owned dashboard/secret-manager setup and must not involve pasting secrets into chat.
+## Required Isolation Regression Set
+
+- Cover unmapped, suspended, wrong-tenant, forged JWT, issuer, authorized-party, Owner/Agent policy, Agent row scope, invitation replay/role escalation, and Widget token tampering.
+- Theme QA must compare Owner-configured primaryColor with Agent computed CSS tokens for the same authorized tenant, including readable foreground contrast in light and dark modes.
+- Auth regression must include an expired/forged Clerk cookie combined with a still-valid legacy cookie and assert that page/proxy access is denied in Clerk mode.
+
+## Invitation and Public Entry Regression Set
+
+- Assert public sign-up has no role selector and unmapped accounts remain pending.
+- Assert matching email alone does not auto-map a Clerk identity and mismatched-email invitation acceptance is forbidden.
+- Assert Agent invitations expire in 12 hours, reject creation at quota, and cannot exceed five active codes per tenant.
+- Assert only Platform Admin can change quota and Tenant Owners cannot invite Owners or access another tenant.
+- Assert Admin/Owner/Agent sign-out clears Clerk plus local sessions and returns to `/`.
+- Responsive browser smoke must cover `/` at desktop and mobile widths, protected-route redirect, Clerk button readiness, console errors, and horizontal overflow.

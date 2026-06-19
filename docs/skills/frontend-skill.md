@@ -206,3 +206,16 @@ Widget 行为：
 - Browser admin operations continue to call same-origin `/api/admin/...`; the server proxy forwards Clerk Bearer auth when present and falls back to legacy `ADMIN_API_TOKEN` only for local/dev legacy access.
 - `/admin/access` remains a local legacy fallback, not the primary staging/production auth path.
 - Only `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is browser-visible. Never expose `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `ADMIN_API_TOKEN`, `OPENAI_API_KEY`, database URLs, or session secrets.
+## Tenant Theme Propagation
+
+- Admin and Agent surfaces must use `apps/admin-web/app/lib/tenant-theme.ts` for primary, contrast, soft, border, focus, and shadow tokens.
+- Agent tenant identity must come from the active AGENT membership returned by `/api/admin/account/me`, never from a public query parameter or default tenant env value.
+- Agent theme data must be read from the redacted `/tenant-profile` contract; do not grant Agent access to the Owner-only tenant AI profile endpoint.
+- Agent pending-human UX must show Claim for unassigned work; reply and end-support controls remain disabled until `assignedUser.id` equals the current account user id.
+
+## Public Entry and Account UI
+
+- `/` is the public Solaris AI homepage and the destination after every role signs out.
+- `/sign-up` does not ask for a role. Unmapped users continue to `/access-pending`, where an email-bound invitation code activates access.
+- Platform Admin account UI shows per-tenant Owner, Agent, suspended member, active Agent code, and quota counts; quota controls are limited to 0-5.
+- Owner account UI can create/revoke Agent invitations only for the active authorized tenant. Agent UI includes an explicit Sign out command.

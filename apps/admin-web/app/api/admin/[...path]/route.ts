@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { getAdminWebConfig, isSameOriginRequest, isValidAdminSessionCookie, verifyClerkSessionToken } from "../../../lib/admin-access";
+import { getAdminWebConfig, isClerkSessionVerificationConfigured, isSameOriginRequest, isValidAdminSessionCookie, verifyClerkSessionToken } from "../../../lib/admin-access";
 
 type RouteContext = {
   params: {
@@ -33,13 +33,15 @@ async function proxyAdminRequest(request: Request, context: RouteContext) {
   const cookieStore = cookies();
   const clerkSessionCookie = cookieStore.get(config.clerkSessionCookieName)?.value;
   const legacySessionCookie = cookieStore.get(config.cookieName)?.value;
+  const clerkRequired = isClerkSessionVerificationConfigured();
   const useClerkSession = verifyClerkSessionToken(clerkSessionCookie);
+  const useLegacySession = !clerkRequired && isValidAdminSessionCookie(legacySessionCookie);
 
-  if (!useClerkSession && !isValidAdminSessionCookie(legacySessionCookie)) {
+  if (!useClerkSession && !useLegacySession) {
     return NextResponse.json({ error: "Admin web access is required." }, { status: 401 });
   }
 
-  if (!useClerkSession && !config.adminApiToken) {
+  if (useLegacySession && !config.adminApiToken) {
     return NextResponse.json({ error: "Admin proxy legacy token is not configured." }, { status: 500 });
   }
 

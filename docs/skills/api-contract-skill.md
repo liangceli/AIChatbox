@@ -279,3 +279,12 @@ Data shape:
 - Legacy `x-admin-api-token` / `Authorization: Bearer <ADMIN_API_TOKEN>` token protection remains only for the documented token fallback mode.
 - Customer widget/chat/customer conversation routes remain public customer-scoped and must not require Clerk.
 - API responses must not include Clerk JWTs, Clerk secret key, JWT verification key, admin tokens, auth headers, OpenAI keys, database URLs, or session secrets.
+## Identity and Membership Contracts
+
+- `GET /v1/account/me` returns only the verified current account, memberships, capabilities routing data, and tenant-safe aggregate counts.
+- `/v1/members` is OWNER/Platform scoped. Owner invitations are Platform-only; Tenant Owners can invite/manage Agents in their own tenant.
+- `POST /v1/widget/session` issues the signed visitor session required by chat, customer conversation, handoff, and customer realtime routes.
+- `GET /v1/members/invitation-policy` returns only the resolved tenant's Agent invitation quota, active count, and fixed 12-hour expiry.
+- `PATCH /v1/tenants/:tenantSlug/agent-invitation-quota` is Platform Admin-only, accepts `{ quota: 0..5 }`, and writes an audit event.
+- `GET /v1/tenants` includes per-tenant Owner/Agent/suspended/active-invitation counts and Agent invitation quota for Platform Admin UI only.
+- `POST /v1/account/accept-invitation` requires the verified Clerk email to match the email stored on the invitation.
