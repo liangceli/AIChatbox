@@ -8,9 +8,10 @@ import { AssistantReplyService } from "./assistant-reply.service";
 import { ChatService } from "./chat.service";
 import { LlmProviderResolverService } from "./llm-provider-resolver.service";
 import { OpenAiLlmProviderService } from "./openai-llm-provider.service";
+import { WidgetSessionModule } from "../widget-session/widget-session.module";
 
 @Module({
-  imports: [KnowledgeModule],
+  imports: [KnowledgeModule, WidgetSessionModule],
   controllers: [ChatController, AnswerDebugController],
   providers: [
     AdminApiGuard,

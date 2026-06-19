@@ -5,9 +5,11 @@ import type {
   ConversationSummary,
   SupportUserRecord
 } from "@platform/types";
+import { TenantRole } from "@platform/database";
 import { Body, Controller, Delete, Get, Inject, Param, Post, Query, UseGuards } from "@nestjs/common";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import { AdminApiGuard } from "../../common/admin-protection/admin-api.guard";
+import { RequireTenantRoles } from "../../common/admin-protection/access-policy.decorator";
 import { CurrentAdminAuth } from "../../common/admin-protection/current-admin-auth.decorator";
 import { CurrentTenant } from "../../common/tenant/current-tenant.decorator";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
@@ -17,6 +19,9 @@ import { RequestHandoffDto } from "./dto/request-handoff.dto";
 import { SendAgentReplyDto } from "./dto/send-agent-reply.dto";
 import { UpdateHumanSupportDto } from "./dto/update-human-support.dto";
 import { ConversationsService } from "./conversations.service";
+import { CurrentWidgetSession } from "../widget-session/current-widget-session.decorator";
+import { WidgetSessionGuard } from "../widget-session/widget-session.guard";
+import type { WidgetSessionContext } from "../widget-session/widget-session.types";
 
 @Controller("conversations")
 export class ConversationsController {
@@ -28,13 +33,15 @@ export class ConversationsController {
   @UseGuards(AdminApiGuard)
   async listConversations(
     @CurrentTenant() tenant: ResolvedTenant,
-    @Query() query: ListConversationsQueryDto
+    @Query() query: ListConversationsQueryDto,
+    @CurrentAdminAuth() adminAuth: AdminAuthContext
   ): Promise<ConversationListItem[]> {
-    return this.conversationsService.listConversations(tenant, query.status);
+    return this.conversationsService.listConversations(tenant, query.status, adminAuth);
   }
 
   @Get("support-users")
   @UseGuards(AdminApiGuard)
+  @RequireTenantRoles(TenantRole.OWNER)
   async listSupportUsers(@CurrentTenant() tenant: ResolvedTenant): Promise<SupportUserRecord[]> {
     return this.conversationsService.listSupportUsers(tenant);
   }
@@ -43,71 +50,80 @@ export class ConversationsController {
   @UseGuards(AdminApiGuard)
   async getConversation(
     @CurrentTenant() tenant: ResolvedTenant,
-    @Param("conversationId") conversationId: string
+    @Param("conversationId") conversationId: string,
+    @CurrentAdminAuth() adminAuth: AdminAuthContext
   ): Promise<ConversationSummary> {
-    return this.conversationsService.getConversation(tenant, conversationId);
+    return this.conversationsService.getConversation(tenant, conversationId, adminAuth);
   }
 
   @Get(":conversationId/detail")
   @UseGuards(AdminApiGuard)
   async getConversationDetail(
     @CurrentTenant() tenant: ResolvedTenant,
-    @Param("conversationId") conversationId: string
+    @Param("conversationId") conversationId: string,
+    @CurrentAdminAuth() adminAuth: AdminAuthContext
   ): Promise<ConversationDetail> {
-    return this.conversationsService.getConversationDetail(tenant, conversationId);
+    return this.conversationsService.getConversationDetail(tenant, conversationId, adminAuth);
   }
 
   @Get(":conversationId/customer-detail")
+  @UseGuards(WidgetSessionGuard)
   async getCustomerConversationDetail(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
-    @Query("visitorId") visitorId?: string
+    @CurrentWidgetSession() session: WidgetSessionContext
   ): Promise<ConversationDetail> {
-    return this.conversationsService.getCustomerConversationDetail(tenant, conversationId, visitorId);
+    return this.conversationsService.getCustomerConversationDetail(tenant, conversationId, session.visitorId);
   }
 
   @Get(":conversationId/messages")
   @UseGuards(AdminApiGuard)
   async listMessages(
     @CurrentTenant() tenant: ResolvedTenant,
-    @Param("conversationId") conversationId: string
+    @Param("conversationId") conversationId: string,
+    @CurrentAdminAuth() adminAuth: AdminAuthContext
   ): Promise<ChatMessageRecord[]> {
-    return this.conversationsService.listMessages(tenant, conversationId);
+    return this.conversationsService.listMessages(tenant, conversationId, adminAuth);
   }
 
   @Get(":conversationId/customer-messages")
+  @UseGuards(WidgetSessionGuard)
   async listCustomerMessages(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
-    @Query("visitorId") visitorId?: string
+    @CurrentWidgetSession() session: WidgetSessionContext
   ): Promise<ChatMessageRecord[]> {
-    return this.conversationsService.listCustomerMessages(tenant, conversationId, visitorId);
+    return this.conversationsService.listCustomerMessages(tenant, conversationId, session.visitorId);
   }
 
   @Post(":conversationId/handoff")
+  @UseGuards(WidgetSessionGuard)
   async requestHandoff(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
-    @Body() body: RequestHandoffDto
+    @Body() body: RequestHandoffDto,
+    @CurrentWidgetSession() session: WidgetSessionContext
   ): Promise<ConversationDetail> {
     return this.conversationsService.requestHandoff(
       tenant,
       conversationId,
-      body.visitorId,
+      session.visitorId,
       body.reason
     );
   }
 
   @Post(":conversationId/handoff/end")
+  @UseGuards(WidgetSessionGuard)
   async endCustomerHandoff(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
-    @Body() body: RequestHandoffDto
+    @Body() body: RequestHandoffDto,
+    @CurrentWidgetSession() session: WidgetSessionContext
   ): Promise<ConversationDetail> {
     return this.conversationsService.endCustomerHandoff(
       tenant,
       conversationId,
-      body.visitorId,
+      session.visitorId,
       body.reason
     );
   }
@@ -124,7 +140,8 @@ export class ConversationsController {
       tenant,
       conversationId,
       resolveActingUserId(adminAuth, body.userId),
-      body.reason
+      body.reason,
+      adminAuth
     );
   }
 
@@ -140,12 +157,14 @@ export class ConversationsController {
       tenant,
       conversationId,
       resolveActingUserId(adminAuth, body.userId),
-      body.reason
+      body.reason,
+      adminAuth
     );
   }
 
   @Post(":conversationId/assign")
   @UseGuards(AdminApiGuard)
+  @RequireTenantRoles(TenantRole.OWNER)
   async assignConversation(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string,
@@ -166,12 +185,14 @@ export class ConversationsController {
       tenant,
       conversationId,
       resolveActingUserId(adminAuth, body.userId),
-      body.message
+      body.message,
+      adminAuth
     );
   }
 
   @Delete(":conversationId/messages")
   @UseGuards(AdminApiGuard)
+  @RequireTenantRoles(TenantRole.OWNER)
   async clearMessageHistory(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string
@@ -181,6 +202,7 @@ export class ConversationsController {
 
   @Delete(":conversationId")
   @UseGuards(AdminApiGuard)
+  @RequireTenantRoles(TenantRole.OWNER)
   async deleteConversation(
     @CurrentTenant() tenant: ResolvedTenant,
     @Param("conversationId") conversationId: string
@@ -191,5 +213,5 @@ export class ConversationsController {
 }
 
 function resolveActingUserId(adminAuth: AdminAuthContext | undefined, bodyUserId: string | undefined): string {
-  return adminAuth?.userId ?? bodyUserId ?? "";
+  return adminAuth?.userId ?? bodyUserId?.trim() ?? "";
 }

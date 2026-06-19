@@ -185,6 +185,13 @@ export function isValidAccessToken(providedToken: string): boolean {
   return timingSafeCompare(providedToken.trim(), config.accessToken);
 }
 
+export function isSameOriginRequest(request: Request): boolean {
+  const origin = request.headers.get("origin");
+  const expectedOrigin = new URL(request.url).origin;
+
+  return Boolean(origin && origin === expectedOrigin);
+}
+
 function signSession(expiresAt: number, accessToken: string, sessionSecret: string): string {
   return createHmac("sha256", sessionSecret)
     .update(`${SESSION_PREFIX}.${expiresAt}.${accessToken}`)

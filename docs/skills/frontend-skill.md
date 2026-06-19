@@ -1,5 +1,18 @@
 # 前端 Skill
 
+## 2026-06-19 Admin Global Search
+
+- The admin topbar search is a tenant-scoped resource search, not an AI question box.
+- Empty input shows common navigation; queries of at least two characters debounce calls to protected `/api/admin/search` with the active `x-tenant-slug`.
+- Results are grouped into Navigation, Conversations, and Knowledge and support Ctrl/Cmd+K focus, Arrow Up/Down, Enter, Escape, pointer selection, loading/error/empty states, and click-outside dismissal.
+- Conversation results deep-link with `conversationId`; knowledge results deep-link with `knowledgeBaseId` and optional `documentId`, and destination panels initialize the selected resource from the URL.
+
+## 2026-06-19 Dashboard Metric Navigation
+
+- Dashboard metric cards are navigation links: Conversations opens `/admin/conversations?status=all`, Pending Human opens `/admin/conversations?status=pending_human`, and Knowledge Bases opens `/admin/knowledge-base`.
+- `/admin/conversations` resolves its initial All/Alerts filter from the `status` query and passes it through `AdminConsole` to `ConversationOpsPanel`.
+- Keep metric cards keyboard-focusable with a visible focus ring; do not replace them with click-only non-semantic containers.
+
 ## 2026-06-18 Admin Light Dark Theme Toggle
 
 - Admin web has a persistent light/dark mode stored in `localStorage` under `admin-color-scheme`; `app/layout.tsx` applies it to `document.documentElement.dataset.theme` before rendering children.

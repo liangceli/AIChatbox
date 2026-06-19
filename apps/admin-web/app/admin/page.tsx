@@ -16,5 +16,5 @@ export default function AdminPage() {
   const apiBaseUrl = "/api/admin";
   const tenantSlug = process.env.NEXT_PUBLIC_DEFAULT_TENANT_SLUG ?? "demo";
 
-  return <AdminConsole apiBaseUrl={apiBaseUrl} defaultTenantSlug={tenantSlug} />;
+  return <AdminConsole apiBaseUrl={apiBaseUrl} defaultTenantSlug={tenantSlug} clerkPublishableKey={config.clerkPublishableKey} />;
 }

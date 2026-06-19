@@ -1,4 +1,4 @@
-import { PrismaClient, TenantStatus } from "@prisma/client";
+import { PrismaClient, TenantRole, TenantStatus } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
@@ -51,12 +51,12 @@ async function main() {
       }
     },
     update: {
-      name: "SUPPORT_ADMIN"
+      name: TenantRole.OWNER
     },
     create: {
       tenantId: tenant.id,
       userId: user.id,
-      name: "SUPPORT_ADMIN"
+      name: TenantRole.OWNER
     }
   });
 

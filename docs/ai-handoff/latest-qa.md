@@ -1,5 +1,37 @@
 # 中文 Diff Review & QA Report
 
+## 2026-06-19 Tenant-Scoped Admin Global Search QA
+
+## 1. Conclusion
+
+Accepted at code, contract, and unauthenticated runtime-route level. Authenticated visual interaction remains a manual browser check with the real Clerk session.
+
+No P0/P1 issue was found in the global search implementation.
+
+## 2. Passed Checks
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| Admin auth boundary | Passed | SearchController is protected by AdminApiGuard. |
+| Tenant resolution | Passed | /v1/search is included in tenant resolution middleware. |
+| Tenant isolation | Passed | Conversation, knowledge-base, and knowledge-document queries each use the resolved tenant ID. |
+| Query validation | Passed | q is 2-100 characters and limit is 1-10. |
+| Safe response | Passed | Content previews are truncated to 160 characters and omit prompts, metadata, source locators, and secrets. |
+| Frontend request | Passed | Admin Web uses /api/admin/search with active x-tenant-slug and 250 ms debounce. |
+| Keyboard UX | Passed | Ctrl/Cmd+K, Arrow Up/Down, Enter, and Escape are covered by source regression. |
+| Conversation deep link | Passed | Result URL carries status=all and conversationId; destination initializes the selected conversation. |
+| Knowledge deep link | Passed | Result URL carries knowledgeBaseId/documentId; destination initializes the selected resource. |
+| Runtime route | Passed | API health is 200 and unauthenticated search returns expected 401, proving route registration and auth enforcement. |
+
+## 3. Automation
+
+Passed full workspace typecheck, lint, test, build, and git diff --check. API provider-behavior contains the real search scope/guard/validation regression; several unrelated packages still report existing placeholder tests.
+
+## 4. Remaining Manual Check
+
+With the real mapped Clerk browser session, search a known conversation message and knowledge document, confirm grouped results render correctly in light/dark themes, and confirm each result opens the exact resource without console errors.
+
+
 ## 2026-06-18 Clerk Local Business Loop QA Status
 
 ## 1. Conclusion

@@ -1,5 +1,12 @@
 # 后端 Skill
 
+## 2026-06-19 Admin Global Search Backend Notes
+
+- `GET /v1/search` is an admin-only tenant-scoped resource search protected by `AdminApiGuard` and tenant resolution middleware.
+- Conversation, knowledge-base, and knowledge-document Prisma queries must each include the resolved `tenant.id`; never trust a client-supplied tenant identifier inside the search query.
+- Search returns truncated safe summaries only. Do not return full message histories, raw prompts, safety instructions, metadata, source locators, auth data, or secrets.
+- Query length is 2-100 characters and per-resource result limit is capped at 10.
+
 ## 2026-06-17 Clerk Alpha Auth Backend Notes
 
 - `ADMIN_API_PROTECTION_MODE=clerk` is the alpha backend auth mode for protected admin/agent/platform routes.

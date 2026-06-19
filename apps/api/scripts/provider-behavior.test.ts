@@ -1,4 +1,4 @@
-import { ConversationStatus } from "@platform/database";
+import { ConversationStatus, MembershipStatus, TenantRole } from "@platform/database";
 import { loadAdminWebEnv, loadServerEnv, type ServerEnv } from "@platform/config";
 import assert from "node:assert/strict";
 import { createSign, generateKeyPairSync } from "node:crypto";
@@ -14,6 +14,7 @@ import {
 } from "@nestjs/common";
 import { GUARDS_METADATA } from "@nestjs/common/constants";
 import { AdminApiGuard } from "../src/common/admin-protection/admin-api.guard";
+import { ACCESS_POLICY_KEY } from "../src/common/admin-protection/access-policy.decorator";
 import { createTenantResolutionMiddleware } from "../src/common/tenant/tenant-resolution.middleware";
 import { AnswerDebugController } from "../src/modules/chat/answer-debug.controller";
 import { AnswerDebugService } from "../src/modules/chat/answer-debug.service";
@@ -26,6 +27,7 @@ import { buildOpenAiPrompt } from "../src/modules/chat/openai-prompt";
 import { ConversationsController } from "../src/modules/conversations/conversations.controller";
 import { ConversationsService } from "../src/modules/conversations/conversations.service";
 import { KnowledgeChunkingService } from "../src/modules/knowledge/knowledge-chunking.service";
+import { KnowledgeController } from "../src/modules/knowledge/knowledge.controller";
 import { KnowledgeRetrievalService } from "../src/modules/knowledge/knowledge-retrieval.service";
 import {
   createPinnedLookup,
@@ -38,8 +40,14 @@ import {
 } from "../src/modules/knowledge/knowledge-url-safety.service";
 import { RealtimeController } from "../src/modules/realtime/realtime.controller";
 import { RealtimeService } from "../src/modules/realtime/realtime.service";
+import { SearchResourcesQueryDto } from "../src/modules/search/dto/search-resources-query.dto";
+import { SearchController } from "../src/modules/search/search.controller";
+import { SearchService } from "../src/modules/search/search.service";
 import { TenantsController } from "../src/modules/tenants/tenants.controller";
 import { UpdateTenantAiProfileDto } from "../src/modules/tenants/dto/update-tenant-ai-profile.dto";
+import { WidgetSessionService } from "../src/modules/widget-session/widget-session.service";
+import { MembersService } from "../src/modules/members/members.service";
+import { hashInvitationToken } from "../src/modules/account/account.service";
 import {
   buildAgentConfigPersistence,
   buildTenantAiProfile,
@@ -94,6 +102,7 @@ type ClerkAuthUserFixture = {
   metadata?: Record<string, unknown>;
   isPlatformAdmin: boolean;
   roleName?: string;
+  membershipStatus?: string;
 };
 
 function createOpenAiEnv(overrides: Partial<ServerEnv> = {}): ServerEnv {
@@ -193,27 +202,35 @@ function createClerkAuthPrismaMock(users: ClerkAuthUserFixture[]): never {
   return {
     client: {
       role: {
-        findMany: async (query: { where?: { tenant?: { slug?: string } } }) =>
-          users
-            .filter((user) => user.tenantSlug === query.where?.tenant?.slug)
-            .map((user) => ({
-              name: user.roleName ?? "ADMIN",
-              user: {
+        findFirst: async (query: { where?: { userId?: string; tenant?: { slug?: string } } }) => {
+          const user = users.find((candidate) =>
+            candidate.tenantSlug === query.where?.tenant?.slug &&
+            (candidate.id ?? `id-${candidate.email}`) === query.where?.userId
+          );
+
+          return user
+            ? {
+                tenantId: `tenant-${user.tenantSlug}`,
+                name: user.roleName ?? "OWNER",
+                status: user.membershipStatus ?? "ACTIVE"
+              }
+            : null;
+        }
+      },
+      user: {
+        findFirst: async () => {
+          const user = users[0];
+
+          return user
+            ? {
                 id: user.id ?? `id-${user.email}`,
                 email: user.email,
+                clerkUserId: user.metadata?.clerkUserId ?? null,
                 metadata: user.metadata ?? null,
                 isPlatformAdmin: user.isPlatformAdmin
               }
-            }))
-      },
-      user: {
-        findMany: async () =>
-          users.map((user) => ({
-            id: user.id ?? `id-${user.email}`,
-            email: user.email,
-            metadata: user.metadata ?? null,
-            isPlatformAdmin: user.isPlatformAdmin
-          }))
+            : null;
+        }
       }
     }
   } as never;
@@ -470,7 +487,7 @@ async function testClerkAdminProtectionAttachesVerifiedAdminContext() {
           clerkUserId: "user-mapped"
         },
         isPlatformAdmin: false,
-        roleName: "ADMIN"
+        roleName: "OWNER"
       }
     ])
   );
@@ -495,8 +512,10 @@ async function testClerkAdminProtectionAttachesVerifiedAdminContext() {
     email: "agent@example.test",
     clerkSubject: "user-mapped",
     isPlatformAdmin: false,
+    tenantId: "tenant-demo",
     tenantSlug: "demo",
-    roleName: "ADMIN"
+    roleName: "OWNER",
+    membershipStatus: "ACTIVE"
   });
 }
 
@@ -1449,7 +1468,7 @@ async function testConversationAdminActionsPreferVerifiedAdminUser() {
     clerkSubject: "user-mapped",
     isPlatformAdmin: false,
     tenantSlug: "demo",
-    roleName: "ADMIN"
+        roleName: "OWNER"
   };
 
   await controller.startHumanSupport(
@@ -1843,7 +1862,8 @@ function createConversationServiceForAdminHumanMode(initialStatus: ConversationS
           id: "role-1",
           tenantId: "tenant-1",
           userId: "user-1",
-          name: "agent"
+          name: "AGENT",
+          status: "ACTIVE"
         })
       },
       $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
@@ -2574,6 +2594,207 @@ async function testProviderRunsOutsideDatabaseTransaction() {
   assert.equal(response.assistantMessage?.content, "assistant reply");
 }
 
+async function testAdminSearchIsGuardedTenantScopedAndSafe() {
+  const classGuards = Reflect.getMetadata(GUARDS_METADATA, SearchController) as unknown[];
+  assert.ok(classGuards.includes(AdminApiGuard));
+
+  const validQuery = plainToInstance(SearchResourcesQueryDto, { q: "refund", limit: "3" });
+  assert.equal(validateSync(validQuery).length, 0);
+  assert.equal(validQuery.limit, 3);
+  assert.ok(validateSync(plainToInstance(SearchResourcesQueryDto, { q: "x" })).length > 0);
+
+  const capturedWhere: Array<{ tenantId?: string }> = [];
+  const longContent = "refund ".repeat(40);
+  const service = new SearchService({
+    client: {
+      conversation: {
+        findMany: async ({ where }: { where: { tenantId?: string } }) => {
+          capturedWhere.push(where);
+          return [
+            {
+              id: "conversation-1",
+              subject: "Refund request",
+              status: "PENDING_HUMAN",
+              channel: "WIDGET",
+              customer: { name: null, email: null, visitorId: "visitor-1" },
+              assignedUser: { name: "Support Agent", email: "agent@example.test" },
+              messages: [{ content: longContent }]
+            }
+          ];
+        }
+      },
+      knowledgeBase: {
+        findMany: async ({ where }: { where: { tenantId?: string } }) => {
+          capturedWhere.push(where);
+          return [
+            {
+              id: "kb-1",
+              name: "Refund Policy",
+              description: "Customer refund guidance.",
+              _count: { documents: 1 }
+            }
+          ];
+        }
+      },
+      knowledgeDocument: {
+        findMany: async ({ where }: { where: { tenantId?: string } }) => {
+          capturedWhere.push(where);
+          return [
+            {
+              id: "doc-1",
+              knowledgeBaseId: "kb-1",
+              title: "Refund process",
+              status: "READY",
+              sourceUri: "https://example.test/refunds",
+              content: longContent,
+              knowledgeBase: { id: "kb-1", name: "Refund Policy" },
+              chunks: [{ content: longContent }]
+            }
+          ];
+        }
+      }
+    }
+  } as never);
+
+  const response = await service.search(
+    { id: "tenant-1", slug: "demo", name: "Demo" },
+    " refund ",
+    3
+  );
+
+  assert.equal(response.query, "refund");
+  assert.equal(response.results.length, 3);
+  assert.ok(capturedWhere.every((where) => where.tenantId === "tenant-1"));
+  assert.ok(response.results.every((result) => (result.description?.length ?? 0) <= 160));
+  assert.equal(response.results[0]?.conversationId, "conversation-1");
+  assert.equal(response.results[2]?.documentId, "doc-1");
+}
+
+async function testSuspendedTenantMembershipIsRejected() {
+  const { publicKey, privateKey } = createClerkTestKeys();
+  const guard = AdminApiGuard.createForTest(
+    loadServerEnv({ ADMIN_API_PROTECTION_MODE: "clerk", CLERK_JWT_KEY: publicKey }),
+    createClerkAuthPrismaMock([{
+      tenantSlug: "demo",
+      email: "suspended@example.test",
+      metadata: { clerkUserId: "user-suspended" },
+      isPlatformAdmin: false,
+      roleName: "AGENT",
+      membershipStatus: "SUSPENDED"
+    }])
+  );
+
+  await assert.rejects(
+    () => guard.canActivate(createGuardContext({
+      authorization: `Bearer ${createClerkTestToken(privateKey, {
+        sub: "user-suspended",
+        email: "suspended@example.test"
+      })}`
+    }, { tenant: baseInput.tenant })),
+    ForbiddenException
+  );
+}
+
+async function testAgentConversationListIsRowScoped() {
+  let capturedWhere: Record<string, unknown> | undefined;
+  const service = new ConversationsService({
+    client: {
+      conversation: {
+        findMany: async ({ where }: { where: Record<string, unknown> }) => {
+          capturedWhere = where;
+          return [];
+        }
+      }
+    }
+  } as never);
+
+  await service.listConversations(baseInput.tenant, "all", {
+    userId: "agent-1",
+    email: "agent@example.test",
+    isPlatformAdmin: false,
+    tenantId: baseInput.tenant.id,
+    tenantSlug: baseInput.tenant.slug,
+    roleName: TenantRole.AGENT,
+    membershipStatus: MembershipStatus.ACTIVE
+  });
+
+  assert.equal(capturedWhere?.tenantId, baseInput.tenant.id);
+  assert.deepEqual(capturedWhere?.OR, [
+    { assignedUserId: "agent-1" },
+    { status: ConversationStatus.PENDING_HUMAN, assignedUserId: null }
+  ]);
+}
+
+async function testWidgetSessionRejectsTamperingAndWrongTenant() {
+  const previousSecret = process.env.WIDGET_SESSION_SECRET;
+  process.env.WIDGET_SESSION_SECRET = "test-widget-secret-with-at-least-32-characters";
+
+  try {
+    const service = new WidgetSessionService();
+    const issued = service.issue(baseInput.tenant);
+    const verified = service.verify(issued.sessionToken, baseInput.tenant);
+
+    assert.equal(verified.tenantId, baseInput.tenant.id);
+    assert.equal(verified.visitorId, issued.visitorId);
+    assert.throws(
+      () => service.verify(`${issued.sessionToken.slice(0, -1)}x`, baseInput.tenant),
+      UnauthorizedException
+    );
+    assert.throws(
+      () => service.verify(issued.sessionToken, { ...baseInput.tenant, id: "tenant-other" }),
+      UnauthorizedException
+    );
+  } finally {
+    if (previousSecret === undefined) delete process.env.WIDGET_SESSION_SECRET;
+    else process.env.WIDGET_SESSION_SECRET = previousSecret;
+  }
+}
+
+async function testTenantOwnerCannotInviteAnotherOwner() {
+  const service = new MembersService({} as never);
+
+  await assert.rejects(
+    () => service.createInvitation(baseInput.tenant, {
+      userId: "owner-1",
+      email: "owner@example.test",
+      isPlatformAdmin: false,
+      tenantId: baseInput.tenant.id,
+      tenantSlug: baseInput.tenant.slug,
+      roleName: TenantRole.OWNER,
+      membershipStatus: MembershipStatus.ACTIVE
+    }, {
+      email: "second-owner@example.test",
+      role: TenantRole.OWNER
+    }),
+    ForbiddenException
+  );
+  assert.equal(hashInvitationToken("one-time-token"), hashInvitationToken("one-time-token"));
+  assert.notEqual(hashInvitationToken("one-time-token"), "one-time-token");
+}
+
+async function testRoutePoliciesSeparatePlatformOwnerAndAgentAccess() {
+  assert.deepEqual(
+    Reflect.getMetadata(ACCESS_POLICY_KEY, TenantsController.prototype.listTenants),
+    { platformOnly: true }
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(ACCESS_POLICY_KEY, TenantsController.prototype.getTenantAiProfile),
+    { tenantRoles: [TenantRole.OWNER] }
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(ACCESS_POLICY_KEY, KnowledgeController),
+    { tenantRoles: [TenantRole.OWNER] }
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(ACCESS_POLICY_KEY, SearchController),
+    { tenantRoles: [TenantRole.OWNER] }
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(ACCESS_POLICY_KEY, ConversationsController.prototype.listSupportUsers),
+    { tenantRoles: [TenantRole.OWNER] }
+  );
+}
+
 async function run() {
   await testDefaultConfigUsesDeterministic();
   await testDeterministicConfigDoesNotNeedOpenAi();
@@ -2642,6 +2863,12 @@ async function run() {
   await testLatestHumanModeStatusBlocksAiAfterAgentReply();
   await testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence();
   await testProviderRunsOutsideDatabaseTransaction();
+  await testAdminSearchIsGuardedTenantScopedAndSafe();
+  await testSuspendedTenantMembershipIsRejected();
+  await testAgentConversationListIsRowScoped();
+  await testWidgetSessionRejectsTamperingAndWrongTenant();
+  await testTenantOwnerCannotInviteAnotherOwner();
+  await testRoutePoliciesSeparatePlatformOwnerAndAgentAccess();
 }
 
 void run();

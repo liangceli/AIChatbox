@@ -48,7 +48,7 @@ export function createTenantResolutionMiddleware(prisma: PrismaClient) {
       });
 
       if (!tenant) {
-        next(new NotFoundException(`Tenant not found for slug: ${tenantSlug}`));
+        next(new NotFoundException("Tenant not found."));
         return;
       }
 

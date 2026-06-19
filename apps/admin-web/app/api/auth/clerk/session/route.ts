@@ -3,6 +3,7 @@ import {
   getAdminWebConfig,
   isClerkSessionVerificationConfigured,
   verifyClerkSessionTokenDetailed
+  ,isSameOriginRequest
 } from "../../../../lib/admin-access";
 
 export async function POST(request: Request) {
@@ -20,6 +21,10 @@ export async function POST(request: Request) {
 }
 
 async function handlePost(request: Request) {
+  if (!isSameOriginRequest(request)) {
+    return NextResponse.json({ error: "Cross-origin session requests are forbidden." }, { status: 403 });
+  }
+
   let token = "";
 
   try {

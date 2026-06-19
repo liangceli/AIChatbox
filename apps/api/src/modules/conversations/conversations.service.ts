@@ -1,8 +1,10 @@
 import {
   ConversationStatus,
+  MembershipStatus,
   MessageAuthor,
   MessageType,
   Prisma,
+  TenantRole,
   type Conversation,
   type Customer,
   type Message,
@@ -23,6 +25,7 @@ import {
   NotFoundException
 } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
+import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { toChatMessageRecord, toConversationSummary } from "../chat/chat.presenter";
 
@@ -40,11 +43,13 @@ export class ConversationsService {
 
   async listConversations(
     tenant: ResolvedTenant,
-    status?: string
+    status?: string,
+    auth?: AdminAuthContext
   ): Promise<ConversationListItem[]> {
     const normalizedStatus = status?.trim().toUpperCase();
     const where: Prisma.ConversationWhereInput = {
-      tenantId: tenant.id
+      tenantId: tenant.id,
+      ...buildConversationAccessWhere(auth)
     };
 
     if (normalizedStatus && normalizedStatus !== "ALL") {
@@ -70,7 +75,8 @@ export class ConversationsService {
   async listSupportUsers(tenant: ResolvedTenant): Promise<SupportUserRecord[]> {
     const roles = await this.prisma.client.role.findMany({
       where: {
-        tenantId: tenant.id
+        tenantId: tenant.id,
+        status: MembershipStatus.ACTIVE
       },
       include: {
         user: true
@@ -86,13 +92,16 @@ export class ConversationsService {
     }));
   }
 
-  async getConversation(tenant: ResolvedTenant, conversationId: string): Promise<ConversationSummary> {
-    const conversation = await this.prisma.client.conversation.findUnique({
+  async getConversation(
+    tenant: ResolvedTenant,
+    conversationId: string,
+    auth?: AdminAuthContext
+  ): Promise<ConversationSummary> {
+    const conversation = await this.prisma.client.conversation.findFirst({
       where: {
-        id_tenantId: {
-          id: conversationId,
-          tenantId: tenant.id
-        }
+        id: conversationId,
+        tenantId: tenant.id,
+        ...buildConversationAccessWhere(auth)
       }
     });
 
@@ -105,9 +114,10 @@ export class ConversationsService {
 
   async getConversationDetail(
     tenant: ResolvedTenant,
-    conversationId: string
+    conversationId: string,
+    auth?: AdminAuthContext
   ): Promise<ConversationDetail> {
-    const conversation = await this.loadConversationDetail(tenant.id, conversationId);
+    const conversation = await this.loadConversationDetail(tenant.id, conversationId, auth);
 
     return this.toConversationDetail(conversation);
   }
@@ -122,13 +132,16 @@ export class ConversationsService {
     return this.toConversationDetail(conversation);
   }
 
-  async listMessages(tenant: ResolvedTenant, conversationId: string): Promise<ChatMessageRecord[]> {
-    const conversation = await this.prisma.client.conversation.findUnique({
+  async listMessages(
+    tenant: ResolvedTenant,
+    conversationId: string,
+    auth?: AdminAuthContext
+  ): Promise<ChatMessageRecord[]> {
+    const conversation = await this.prisma.client.conversation.findFirst({
       where: {
-        id_tenantId: {
-          id: conversationId,
-          tenantId: tenant.id
-        }
+        id: conversationId,
+        tenantId: tenant.id,
+        ...buildConversationAccessWhere(auth)
       },
       select: {
         id: true
@@ -343,7 +356,8 @@ export class ConversationsService {
     tenant: ResolvedTenant,
     conversationId: string,
     userId?: string,
-    reason?: string
+    reason?: string,
+    auth?: AdminAuthContext
   ): Promise<ConversationDetail> {
     const normalizedUserId = userId?.trim();
 
@@ -354,24 +368,44 @@ export class ConversationsService {
     const normalizedReason = reason?.trim() || null;
 
     await this.prisma.client.$transaction(async (tx) => {
-      const conversation = await tx.conversation.findUnique({
-        where: {
-          id_tenantId: {
-            id: conversationId,
-            tenantId: tenant.id
-          }
-        },
-        select: {
+      const selection = {
           id: true,
           status: true
-        }
-      });
+        } as const;
+      const conversation = isTenantAgent(auth)
+        ? await tx.conversation.findFirst({
+            where: { id: conversationId, tenantId: tenant.id, ...buildConversationAccessWhere(auth) },
+            select: selection
+          })
+        : await tx.conversation.findUnique({
+            where: { id_tenantId: { id: conversationId, tenantId: tenant.id } },
+            select: selection
+          });
 
       if (!conversation) {
         throw new NotFoundException("Conversation not found.");
       }
 
       if (conversation.status === ConversationStatus.PENDING_HUMAN) {
+        if (isTenantAgent(auth)) {
+          const claimed = await tx.conversation.updateMany({
+            where: {
+              id: conversation.id,
+              tenantId: tenant.id,
+              OR: [{ assignedUserId: null }, { assignedUserId: normalizedUserId }]
+            },
+            data: {
+              assignedUserId: normalizedUserId,
+              ...(normalizedReason ? { handoffReason: normalizedReason } : {})
+            }
+          });
+
+          if (claimed.count !== 1) {
+            throw new ForbiddenException("Conversation is assigned to another agent.");
+          }
+          return;
+        }
+
         const data: Prisma.ConversationUpdateInput = {
           ...(normalizedUserId ? { assignedUser: { connect: { id: normalizedUserId } } } : {}),
           ...(normalizedReason ? { handoffReason: normalizedReason } : {})
@@ -426,14 +460,15 @@ export class ConversationsService {
       });
     });
 
-    return this.getConversationDetail(tenant, conversationId);
+    return this.getConversationDetail(tenant, conversationId, auth);
   }
 
   async endHumanSupport(
     tenant: ResolvedTenant,
     conversationId: string,
     userId?: string,
-    reason?: string
+    reason?: string,
+    auth?: AdminAuthContext
   ): Promise<ConversationDetail> {
     const normalizedUserId = userId?.trim();
 
@@ -444,18 +479,19 @@ export class ConversationsService {
     const normalizedReason = reason?.trim() || null;
 
     await this.prisma.client.$transaction(async (tx) => {
-      const conversation = await tx.conversation.findUnique({
-        where: {
-          id_tenantId: {
-            id: conversationId,
-            tenantId: tenant.id
-          }
-        },
-        select: {
+      const selection = {
           id: true,
           status: true
-        }
-      });
+        } as const;
+      const conversation = isTenantAgent(auth)
+        ? await tx.conversation.findFirst({
+            where: { id: conversationId, tenantId: tenant.id, assignedUserId: normalizedUserId },
+            select: selection
+          })
+        : await tx.conversation.findUnique({
+            where: { id_tenantId: { id: conversationId, tenantId: tenant.id } },
+            select: selection
+          });
 
       if (!conversation) {
         throw new NotFoundException("Conversation not found.");
@@ -513,7 +549,7 @@ export class ConversationsService {
       });
     });
 
-    return this.getConversationDetail(tenant, conversationId);
+    return this.getConversationDetail(tenant, conversationId, auth);
   }
 
   async assignConversation(
@@ -558,7 +594,8 @@ export class ConversationsService {
     tenant: ResolvedTenant,
     conversationId: string,
     userId: string,
-    message: string
+    message: string,
+    auth?: AdminAuthContext
   ): Promise<ConversationDetail> {
     const normalizedMessage = message.trim();
 
@@ -569,19 +606,20 @@ export class ConversationsService {
     await this.ensureTenantUser(tenant.id, userId);
 
     await this.prisma.client.$transaction(async (tx) => {
-      const conversation = await tx.conversation.findUnique({
-        where: {
-          id_tenantId: {
-            id: conversationId,
-            tenantId: tenant.id
-          }
-        },
-        select: {
+      const selection = {
           id: true,
           handoffRequestedAt: true,
           handoffReason: true
-        }
-      });
+        } as const;
+      const conversation = isTenantAgent(auth)
+        ? await tx.conversation.findFirst({
+            where: { id: conversationId, tenantId: tenant.id, assignedUserId: userId },
+            select: selection
+          })
+        : await tx.conversation.findUnique({
+            where: { id_tenantId: { id: conversationId, tenantId: tenant.id } },
+            select: selection
+          });
 
       if (!conversation) {
         throw new NotFoundException("Conversation not found.");
@@ -615,7 +653,7 @@ export class ConversationsService {
       });
     });
 
-    return this.getConversationDetail(tenant, conversationId);
+    return this.getConversationDetail(tenant, conversationId, auth);
   }
 
   async clearMessageHistory(
@@ -665,16 +703,10 @@ export class ConversationsService {
 
   private async loadConversationDetail(
     tenantId: string,
-    conversationId: string
+    conversationId: string,
+    auth?: AdminAuthContext
   ): Promise<ConversationWithRelations> {
-    const conversation = await this.prisma.client.conversation.findUnique({
-      where: {
-        id_tenantId: {
-          id: conversationId,
-          tenantId
-        }
-      },
-      include: {
+    const include = {
         customer: true,
         assignedUser: true,
         messages: {
@@ -689,8 +721,20 @@ export class ConversationsService {
             createdAt: "asc"
           }
         }
-      }
-    });
+      } as const;
+    const conversation = auth
+      ? await this.prisma.client.conversation.findFirst({
+          where: {
+            id: conversationId,
+            tenantId,
+            ...buildConversationAccessWhere(auth)
+          },
+          include
+        })
+      : await this.prisma.client.conversation.findUnique({
+          where: { id_tenantId: { id: conversationId, tenantId } },
+          include
+        });
 
     if (!conversation) {
       throw new NotFoundException("Conversation not found.");
@@ -762,6 +806,10 @@ export class ConversationsService {
     if (!membership) {
       throw new BadRequestException("Assigned user is not a member of this tenant.");
     }
+
+    if (membership.status !== MembershipStatus.ACTIVE) {
+      throw new ForbiddenException("Assigned user does not have active tenant access.");
+    }
   }
 
   private async ensureConversation(tenantId: string, conversationId: string): Promise<void> {
@@ -811,4 +859,25 @@ export class ConversationsService {
       messages: (conversation.messages ?? []).map((message) => toChatMessageRecord(message))
     };
   }
+}
+
+function isTenantAgent(auth?: AdminAuthContext): boolean {
+  return Boolean(auth && !auth.isPlatformAdmin && auth.roleName === TenantRole.AGENT);
+}
+
+function buildConversationAccessWhere(auth?: AdminAuthContext): Prisma.ConversationWhereInput {
+  if (!isTenantAgent(auth)) {
+    return {};
+  }
+
+  if (!auth?.userId || auth.membershipStatus !== MembershipStatus.ACTIVE) {
+    return { id: "__forbidden__" };
+  }
+
+  return {
+    OR: [
+      { assignedUserId: auth.userId },
+      { status: ConversationStatus.PENDING_HUMAN, assignedUserId: null }
+    ]
+  };
 }

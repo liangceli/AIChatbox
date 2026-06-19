@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { getAdminWebConfig, isValidAdminSessionCookie, verifyClerkSessionToken } from "../../../lib/admin-access";
+import { getAdminWebConfig, isSameOriginRequest, isValidAdminSessionCookie, verifyClerkSessionToken } from "../../../lib/admin-access";
 
 type RouteContext = {
   params: {
@@ -25,6 +25,10 @@ export async function DELETE(request: Request, context: RouteContext) {
 }
 
 async function proxyAdminRequest(request: Request, context: RouteContext) {
+  if (request.method !== "GET" && !isSameOriginRequest(request)) {
+    return NextResponse.json({ error: "Cross-origin admin requests are forbidden." }, { status: 403 });
+  }
+
   const config = getAdminWebConfig();
   const cookieStore = cookies();
   const clerkSessionCookie = cookieStore.get(config.clerkSessionCookieName)?.value;
@@ -76,6 +80,8 @@ async function proxyAdminRequest(request: Request, context: RouteContext) {
   if (cacheControl) {
     responseHeaders.set("cache-control", cacheControl);
   }
+
+  responseHeaders.set("cache-control", "no-store");
 
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,

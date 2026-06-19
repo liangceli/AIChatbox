@@ -29,6 +29,52 @@ export interface TenantOverviewRecord {
   updatedAt: string;
 }
 
+export type TenantMemberRole = "owner" | "agent";
+export type TenantMembershipStatus = "active" | "suspended" | "revoked";
+
+export interface AccountMembershipRecord {
+  tenantId: string;
+  tenantSlug: string;
+  tenantName: string;
+  role: TenantMemberRole;
+  status: TenantMembershipStatus;
+  conversationCount: number;
+  pendingHumanCount: number;
+  knowledgeBaseCount: number;
+}
+
+export interface AccountRecord {
+  mapped: boolean;
+  userId?: string;
+  email?: string;
+  name?: string | null;
+  isPlatformAdmin: boolean;
+  memberships: AccountMembershipRecord[];
+  defaultRoute: "/admin" | "/agent" | "/access-pending";
+}
+
+export interface TenantMemberRecord {
+  userId: string;
+  email: string;
+  name?: string | null;
+  role: TenantMemberRole;
+  status: TenantMembershipStatus;
+}
+
+export interface TenantInvitationRecord {
+  id: string;
+  email: string;
+  role: TenantMemberRole;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+}
+
+export interface CreatedTenantInvitation extends TenantInvitationRecord {
+  token: string;
+}
+
 export interface TenantAiProfile {
   assistantName: string;
   companyDisplayName: string;
@@ -172,6 +218,25 @@ export interface ConversationListItem extends ConversationSummary {
 
 export interface ConversationDetail extends ConversationListItem {
   messages: ChatMessageRecord[];
+}
+
+export type AdminSearchResultKind = "conversation" | "knowledge_base" | "knowledge_document";
+
+export interface AdminSearchResult {
+  id: string;
+  kind: AdminSearchResultKind;
+  title: string;
+  subtitle: string;
+  description?: string;
+  status?: string;
+  conversationId?: string;
+  knowledgeBaseId?: string;
+  documentId?: string;
+}
+
+export interface AdminSearchResponse {
+  query: string;
+  results: AdminSearchResult[];
 }
 
 export interface SendChatMessageRequest {

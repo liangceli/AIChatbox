@@ -1,6 +1,15 @@
 # Status
 
-Date: 2026-06-18
+Date: 2026-06-19
+
+Latest completed capability: tenant-scoped admin global search.
+- Search covers admin navigation, conversations, knowledge bases, and knowledge documents for the active tenant.
+- Protected GET /v1/search uses AdminApiGuard and resolved tenant scope; all Prisma search queries include tenantId.
+- Search results return safe truncated summaries and deep-link to exact conversation or knowledge resources.
+- Admin UI supports debounce, grouped results, Ctrl/Cmd+K, Arrow Up/Down, Enter, Escape, loading/error/empty states, and click-outside dismissal.
+- Full workspace typecheck, lint, test, and build passed; some non-core package tests remain existing placeholders.
+- Runtime search route is registered: unauthenticated requests return 401 rather than 404/500.
+- Authenticated visual search acceptance remains to be checked in the user browser.
 
 Latest director-facing update:
 - Real Clerk local sign-in was configured and exercised by the user.

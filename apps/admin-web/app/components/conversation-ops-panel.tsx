@@ -15,17 +15,23 @@ const customerAvatarUrl =
 export function ConversationOpsPanel({
   apiBaseUrl,
   tenantSlug,
+  initialFilter = "pending_human",
+  initialConversationId,
   allowAssignment = true
 }: {
   apiBaseUrl: string;
   tenantSlug: string;
+  initialFilter?: "all" | "pending_human";
+  initialConversationId?: string;
   allowAssignment?: boolean;
   allowAdminDeletes?: boolean;
 }) {
-  const [filter, setFilter] = useState<string>("pending_human");
+  const [filter, setFilter] = useState<string>(initialFilter);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [supportUsers, setSupportUsers] = useState<SupportUserRecord[]>([]);
-  const [selectedConversationId, setSelectedConversationId] = useState<string>();
+  const [selectedConversationId, setSelectedConversationId] = useState<string | undefined>(
+    initialConversationId
+  );
   const [conversationDetail, setConversationDetail] = useState<ConversationDetail | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [replyDraft, setReplyDraft] = useState("");
@@ -38,8 +44,23 @@ export function ConversationOpsPanel({
   const conversationHistoryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    void loadSupportUsers();
-  }, [tenantSlug]);
+    setFilter(initialFilter);
+  }, [initialFilter]);
+
+  useEffect(() => {
+    if (initialConversationId) {
+      setSelectedConversationId(initialConversationId);
+    }
+  }, [initialConversationId]);
+
+  useEffect(() => {
+    if (allowAssignment) {
+      void loadSupportUsers();
+    } else {
+      setSupportUsers([]);
+      setSelectedUserId("");
+    }
+  }, [allowAssignment, tenantSlug]);
 
   useEffect(() => {
     void loadConversations(filter);

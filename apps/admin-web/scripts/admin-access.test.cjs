@@ -49,7 +49,19 @@ function runSourceSmokeAssertions() {
     resolve(__dirname, "../app/admin/knowledge-base/page.tsx"),
     "utf8"
   );
+  const adminConversationsPageSource = readFileSync(
+    resolve(__dirname, "../app/admin/conversations/page.tsx"),
+    "utf8"
+  );
   const adminConsoleSource = readFileSync(resolve(__dirname, "../app/components/admin-console.tsx"), "utf8");
+  const adminGlobalSearchSource = readFileSync(
+    resolve(__dirname, "../app/components/admin-global-search.tsx"),
+    "utf8"
+  );
+  const conversationOpsPanelSource = readFileSync(
+    resolve(__dirname, "../app/components/conversation-ops-panel.tsx"),
+    "utf8"
+  );
   const middlewareSource = readFileSync(resolve(__dirname, "../middleware.ts"), "utf8");
   const agentPageSource = readFileSync(resolve(__dirname, "../app/agent/page.tsx"), "utf8");
   const clerkAuthPanelSource = readFileSync(
@@ -64,6 +76,9 @@ function runSourceSmokeAssertions() {
     resolve(__dirname, "../app/components/knowledge-base-panel.tsx"),
     "utf8"
   );
+  const accountPanelSource = readFileSync(resolve(__dirname, "../app/components/account-panel.tsx"), "utf8");
+  const accessPendingSource = readFileSync(resolve(__dirname, "../app/components/access-pending-panel.tsx"), "utf8");
+  const nextConfigSource = readFileSync(resolve(__dirname, "../next.config.mjs"), "utf8");
 
   assert.equal(packageJson.dependencies["@platform/config"], "workspace:*");
   assert.match(adminAccessSource, /loadWorkspaceEnv/);
@@ -87,13 +102,40 @@ function runSourceSmokeAssertions() {
   assert.match(adminKnowledgeBasePageSource, /redirect_url=\/admin\/knowledge-base/);
   assert.match(adminKnowledgeBasePageSource, /view="knowledge"/);
   assert.match(adminConsoleSource, /\/admin\/knowledge-base/);
+  assert.match(adminConsoleSource, /\/admin\/conversations\?status=all/);
+  assert.match(adminConsoleSource, /\/admin\/conversations\?status=pending_human/);
+  assert.match(adminConsoleSource, /stat-card-link/);
   assert.doesNotMatch(adminConsoleSource, /target: "knowledge"/);
+  assert.match(adminConversationsPageSource, /searchParams\?\.status === "all"/);
+  assert.match(adminConversationsPageSource, /conversationFilter=\{conversationFilter\}/);
+  assert.match(adminConversationsPageSource, /initialConversationId=\{searchParams\?\.conversationId\}/);
+  assert.match(conversationOpsPanelSource, /initialFilter = "pending_human"/);
+  assert.match(conversationOpsPanelSource, /initialConversationId/);
+  assert.match(adminKnowledgeBasePageSource, /initialKnowledgeBaseId=\{searchParams\?\.knowledgeBaseId\}/);
+  assert.match(adminKnowledgeBasePageSource, /initialKnowledgeDocumentId=\{searchParams\?\.documentId\}/);
+  assert.match(adminGlobalSearchSource, /\/search\?q=/);
+  assert.match(adminGlobalSearchSource, /"x-tenant-slug": tenantSlug/);
+  assert.match(adminGlobalSearchSource, /ArrowDown/);
+  assert.match(adminGlobalSearchSource, /ArrowUp/);
+  assert.match(adminGlobalSearchSource, /event\.key === "Enter"/);
+  assert.match(adminGlobalSearchSource, /event\.key === "Escape"/);
+  assert.match(adminGlobalSearchSource, /event\.key\.toLowerCase\(\) === "k"/);
+  assert.match(adminGlobalSearchSource, /conversationId=/);
+  assert.match(adminGlobalSearchSource, /knowledgeBaseId=/);
   assert.match(middlewareSource, /\/admin\/:path\*/);
+  assert.match(middlewareSource, /\/account/);
+  assert.match(middlewareSource, /\/access-pending/);
   assert.match(agentPageSource, /verifyClerkSessionToken/);
   assert.doesNotMatch(adminPageSource, /hasClerkSessionCookie/);
   assert.doesNotMatch(agentPageSource, /hasClerkSessionCookie/);
   assert.match(clerkAuthPanelSource, /publishableKey/);
   assert.doesNotMatch(clerkAuthPanelSource, /CLERK_SECRET_KEY|ADMIN_API_TOKEN|OPENAI_API_KEY|localStorage/);
+  assert.doesNotMatch(clerkAuthPanelSource, /@latest/);
+  assert.match(accountPanelSource, /\/members\/invitations/);
+  assert.match(accountPanelSource, /window\.Clerk\?\.signOut/);
+  assert.match(accessPendingSource, /account\/accept-invitation/);
+  assert.match(nextConfigSource, /Content-Security-Policy/);
+  assert.match(nextConfigSource, /frame-ancestors 'none'/);
 
   assert.match(answerDebugPanelSource, /\/chat\/answer-debug/);
   assert.match(answerDebugPanelSource, /Retrieved chunks/);
@@ -417,7 +459,8 @@ async function runRuntimeAssertions() {
       new Request("http://localhost:3000/api/auth/clerk/session", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          origin: "http://localhost:3000"
         },
         body: JSON.stringify({ token: validToken })
       })
@@ -427,12 +470,29 @@ async function runRuntimeAssertions() {
     assert.deepEqual(cookieSetCalls(response), []);
   });
 
+  await withAdminWebEnv({ CLERK_JWT_KEY: publicKey }, async () => {
+    const response = await sessionRoute.POST(
+      new Request("http://localhost:3000/api/auth/clerk/session", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "https://attacker.example"
+        },
+        body: JSON.stringify({ token: validToken })
+      })
+    );
+
+    assert.equal(response.status, 403);
+    assert.deepEqual(cookieSetCalls(response), []);
+  });
+
   await withAdminWebEnv({ CLERK_JWT_KEY: "not-a-public-key" }, async () => {
     const response = await sessionRoute.POST(
       new Request("http://localhost:3000/api/auth/clerk/session", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          origin: "http://localhost:3000"
         },
         body: JSON.stringify({ token: validToken })
       })
@@ -447,7 +507,8 @@ async function runRuntimeAssertions() {
       new Request("http://localhost:3000/api/auth/clerk/session", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          origin: "http://localhost:3000"
         },
         body: JSON.stringify({ token: forgedToken })
       })
@@ -462,7 +523,8 @@ async function runRuntimeAssertions() {
       new Request("http://localhost:3000/api/auth/clerk/session", {
         method: "POST",
         headers: {
-          "content-type": "application/json"
+          "content-type": "application/json",
+          origin: "http://localhost:3000"
         },
         body: JSON.stringify({ token: validToken })
       })

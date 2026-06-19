@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
-import { getAdminWebConfig } from "../../../lib/admin-access";
+import { getAdminWebConfig, isSameOriginRequest } from "../../../lib/admin-access";
 
-export async function POST() {
+export async function POST(request: Request) {
+  if (!isSameOriginRequest(request)) {
+    return NextResponse.json({ error: "Cross-origin sign-out requests are forbidden." }, { status: 403 });
+  }
+
   const config = getAdminWebConfig();
   const response = NextResponse.json({ ok: true });
 

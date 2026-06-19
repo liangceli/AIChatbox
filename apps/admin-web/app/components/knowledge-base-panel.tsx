@@ -15,10 +15,14 @@ type IngestionMethod = "file" | "url";
 
 export function KnowledgeBasePanel({
   apiBaseUrl,
-  tenantSlug
+  tenantSlug,
+  initialKnowledgeBaseId,
+  initialDocumentId
 }: {
   apiBaseUrl: string;
   tenantSlug: string;
+  initialKnowledgeBaseId?: string;
+  initialDocumentId?: string;
 }) {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseRecord[]>([]);
   const [documents, setDocuments] = useState<KnowledgeDocumentRecord[]>([]);
@@ -39,8 +43,8 @@ export function KnowledgeBasePanel({
     setDocuments([]);
     setSelectedDocumentId(undefined);
     setDocumentDetail(undefined);
-    void loadKnowledgeBases();
-  }, [tenantSlug]);
+    void loadKnowledgeBases(initialKnowledgeBaseId);
+  }, [initialKnowledgeBaseId, tenantSlug]);
 
   useEffect(() => {
     if (!selectedKnowledgeBaseId) {
@@ -50,8 +54,11 @@ export function KnowledgeBasePanel({
       return;
     }
 
-    void loadDocuments(selectedKnowledgeBaseId);
-  }, [selectedKnowledgeBaseId, tenantSlug]);
+    void loadDocuments(
+      selectedKnowledgeBaseId,
+      selectedKnowledgeBaseId === initialKnowledgeBaseId ? initialDocumentId : undefined
+    );
+  }, [initialDocumentId, initialKnowledgeBaseId, selectedKnowledgeBaseId, tenantSlug]);
 
   useEffect(() => {
     if (!selectedKnowledgeBaseId || !selectedDocumentId) {

@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { TenantAiProfile, TenantOverviewRecord } from "@platform/types";
+import type { AccountRecord, TenantAiProfile, TenantOverviewRecord } from "@platform/types";
+import { AdminGlobalSearch } from "./admin-global-search";
 import { ConversationOpsPanel } from "./conversation-ops-panel";
 import { KnowledgeBasePanel } from "./knowledge-base-panel";
 import { TenantAiProfilePanel } from "./tenant-ai-profile-panel";
+import { AccountPanel } from "./account-panel";
 
 const defaultAdminPrimaryColor = "#fec931";
 const adminColorSchemeStorageKey = "admin-color-scheme";
@@ -18,7 +21,7 @@ const drawerNavigationItems = [
   { label: "Analytics", icon: "bar_chart", comingSoon: true },
   { label: "Settings", icon: "settings", target: "settings", href: "/admin" },
   { label: "Support", icon: "help", separated: true, comingSoon: true },
-  { label: "Account", icon: "account_circle", comingSoon: true }
+  { label: "Account", icon: "account_circle", href: "/admin/account" }
 ];
 
 const profileImageUrl =
@@ -27,13 +30,24 @@ const profileImageUrl =
 export function AdminConsole({
   apiBaseUrl,
   defaultTenantSlug,
-  view = "dashboard"
+  view = "dashboard",
+  conversationFilter = "pending_human",
+  initialConversationId,
+  initialKnowledgeBaseId,
+  initialKnowledgeDocumentId,
+  clerkPublishableKey
 }: {
   apiBaseUrl: string;
   defaultTenantSlug: string;
-  view?: "dashboard" | "knowledge" | "conversations";
+  view?: "dashboard" | "knowledge" | "conversations" | "account";
+  conversationFilter?: "all" | "pending_human";
+  initialConversationId?: string;
+  initialKnowledgeBaseId?: string;
+  initialKnowledgeDocumentId?: string;
+  clerkPublishableKey?: string;
 }) {
   const [tenants, setTenants] = useState<TenantOverviewRecord[]>([]);
+  const [account, setAccount] = useState<AccountRecord>();
   const [selectedTenantSlug, setSelectedTenantSlug] = useState(defaultTenantSlug);
   const [error, setError] = useState<string>();
   const [isLoadingTenants, setIsLoadingTenants] = useState(true);
@@ -41,7 +55,7 @@ export function AdminConsole({
   const [themePrimaryColor, setThemePrimaryColor] = useState(defaultAdminPrimaryColor);
   const [colorScheme, setColorScheme] = useState<AdminColorScheme>("light");
   const [activeNavigationItem, setActiveNavigationItem] = useState(
-    view === "conversations" ? "Conversations" : view === "knowledge" ? "Knowledge Base" : "Dashboard"
+    view === "conversations" ? "Conversations" : view === "knowledge" ? "Knowledge Base" : view === "account" ? "Account" : "Dashboard"
   );
   const [navigationNotice, setNavigationNotice] = useState<string>();
   const dashboardRef = useRef<HTMLElement>(null);
@@ -81,8 +95,66 @@ export function AdminConsole({
   }
 
   useEffect(() => {
-    void loadTenants();
-  }, [apiBaseUrl]);
+    let isCurrent = true;
+
+    async function loadAccountAndTenants() {
+      setIsLoadingTenants(true);
+      setError(undefined);
+
+      try {
+        const accountResponse = await fetch(`${apiBaseUrl}/account/me`, { cache: "no-store" });
+
+        if (!accountResponse.ok) {
+          throw new Error(`Account request failed with status ${accountResponse.status}`);
+        }
+
+        const accountPayload = (await accountResponse.json()) as AccountRecord;
+
+        if (!accountPayload.mapped || accountPayload.defaultRoute === "/access-pending") {
+          window.location.assign("/access-pending");
+          return;
+        }
+
+        if (accountPayload.defaultRoute === "/agent") {
+          window.location.assign("/agent");
+          return;
+        }
+
+        if (!isCurrent) return;
+        setAccount(accountPayload);
+
+        if (accountPayload.isPlatformAdmin) {
+          await loadTenants();
+          return;
+        }
+
+        const ownerTenants = accountPayload.memberships
+          .filter((membership) => membership.role === "owner" && membership.status === "active")
+          .map((membership): TenantOverviewRecord => ({
+            id: membership.tenantId,
+            slug: membership.tenantSlug,
+            name: membership.tenantName,
+            status: membership.status,
+            conversationCount: membership.conversationCount,
+            pendingHumanCount: membership.pendingHumanCount,
+            knowledgeBaseCount: membership.knowledgeBaseCount,
+            createdAt: "",
+            updatedAt: ""
+          }));
+        setTenants(ownerTenants);
+        setSelectedTenantSlug(ownerTenants[0]?.slug ?? defaultTenantSlug);
+        setIsLoadingTenants(false);
+      } catch (requestError: unknown) {
+        if (isCurrent) {
+          setError(requestError instanceof Error ? requestError.message : "Unable to load account.");
+          setIsLoadingTenants(false);
+        }
+      }
+    }
+
+    void loadAccountAndTenants();
+    return () => { isCurrent = false; };
+  }, [apiBaseUrl, defaultTenantSlug]);
 
   useEffect(() => {
     const storedTheme = window.localStorage.getItem(adminColorSchemeStorageKey);
@@ -157,21 +229,24 @@ export function AdminConsole({
       value: activeTenant.conversationCount,
       helper: "+12% vs LW",
       icon: "chat_bubble",
-      tone: "standard"
+      tone: "standard",
+      href: "/admin/conversations?status=all"
     },
     {
       label: "Pending Human",
       value: activeTenant.pendingHumanCount,
       helper: "Needs attention",
       icon: "person_alert",
-      tone: "urgent"
+      tone: "urgent",
+      href: "/admin/conversations?status=pending_human"
     },
     {
       label: "Knowledge Bases",
       value: activeTenant.knowledgeBaseCount,
       helper: "Active",
       icon: "terminal",
-      tone: "muted"
+      tone: "muted",
+      href: "/admin/knowledge-base"
     }
   ];
 
@@ -269,6 +344,7 @@ export function AdminConsole({
           <select
             aria-label="Tenant"
             value={selectedTenantSlug}
+            disabled={!account?.isPlatformAdmin}
             onChange={(event) => {
               setSelectedTenantSlug(event.target.value);
               setIsMobileMenuOpen(false);
@@ -286,7 +362,7 @@ export function AdminConsole({
             <strong>{tenantName}</strong>
             <small>Tenant</small>
           </span>
-          <Icon name="unfold_more" className="tenant-unfold" />
+          {account?.isPlatformAdmin ? <Icon name="unfold_more" className="tenant-unfold" /> : null}
         </label>
 
         <nav className="drawer-nav">
@@ -337,10 +413,7 @@ export function AdminConsole({
             <h1>Solaris AI</h1>
           </div>
 
-          <label className="topbar-search">
-            <Icon name="search" />
-            <input type="search" placeholder="Search resources..." />
-          </label>
+          <AdminGlobalSearch apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
 
           <div className="topbar-actions">
             <button type="button" className="topbar-notification" aria-label="Notifications">
@@ -358,13 +431,15 @@ export function AdminConsole({
             </button>
             <div className="topbar-divider" />
             <button type="button" className="deploy-button primary-btn">Deploy</button>
-            <img alt="User Profile" className="profile-avatar" src={profileImageUrl} />
+            <Link href="/admin/account" aria-label="Open account"><img alt="User Profile" className="profile-avatar" src={profileImageUrl} /></Link>
           </div>
       </header>
 
       <div className="admin-screen">
         <main className="admin-page-content" id="workspace">
-          {view === "dashboard" ? (
+          {!account ? (
+            <p className="admin-loading-state">Loading authorized workspace...</p>
+          ) : view === "dashboard" ? (
             <>
               <section
                 ref={dashboardRef}
@@ -373,7 +448,12 @@ export function AdminConsole({
                 tabIndex={-1}
               >
                 {metricCards.map((metric) => (
-                  <article key={metric.label} className={`stat-card glass-card ${metric.tone}`}>
+                  <Link
+                    key={metric.label}
+                    href={metric.href}
+                    className={`stat-card stat-card-link glass-card ${metric.tone}`}
+                    aria-label={`Open ${metric.label}`}
+                  >
                     <span className="stat-icon">
                       <Icon name={metric.icon} />
                     </span>
@@ -382,11 +462,11 @@ export function AdminConsole({
                       <h2>{metric.value.toLocaleString()}</h2>
                       <small>{metric.helper}</small>
                     </div>
-                  </article>
+                  </Link>
                 ))}
               </section>
 
-              <div ref={settingsRef} className="nav-section" tabIndex={-1}>
+              <div ref={settingsRef} className="nav-section" id="ai-profile" tabIndex={-1}>
                 <TenantAiProfilePanel
                   apiBaseUrl={apiBaseUrl}
                   tenantSlug={selectedTenantSlug}
@@ -396,17 +476,26 @@ export function AdminConsole({
             </>
           ) : view === "knowledge" ? (
             <section className="nav-section admin-knowledge-page" aria-label="Knowledge Base" tabIndex={-1}>
-              <KnowledgeBasePanel apiBaseUrl={apiBaseUrl} tenantSlug={selectedTenantSlug} />
+              <KnowledgeBasePanel
+                apiBaseUrl={apiBaseUrl}
+                tenantSlug={selectedTenantSlug}
+                initialKnowledgeBaseId={initialKnowledgeBaseId}
+                initialDocumentId={initialKnowledgeDocumentId}
+              />
             </section>
-          ) : (
+          ) : view === "conversations" ? (
             <section className="nav-section admin-conversations-page" aria-label="Conversations" tabIndex={-1}>
               <ConversationOpsPanel
                 apiBaseUrl={apiBaseUrl}
                 tenantSlug={selectedTenantSlug}
+                initialFilter={conversationFilter}
+                initialConversationId={initialConversationId}
                 allowAssignment
                 allowAdminDeletes
               />
             </section>
+          ) : (
+            <AccountPanel apiBaseUrl={apiBaseUrl} account={account} tenantSlug={selectedTenantSlug} clerkPublishableKey={clerkPublishableKey} />
           )}
         </main>
       </div>

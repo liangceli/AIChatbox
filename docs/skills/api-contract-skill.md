@@ -1,5 +1,12 @@
 # API Contract Skill
 
+## 2026-06-19 Admin Global Search Contract
+
+- `GET /v1/search?q=<2-100 chars>&limit=<1-10>` requires admin protection and `x-tenant-slug` through the admin-web same-origin proxy.
+- Response shape is `AdminSearchResponse`: normalized `query` plus safe `results` of kind `conversation`, `knowledge_base`, or `knowledge_document`.
+- Result identifiers support admin-web deep links through `conversationId`, `knowledgeBaseId`, and optional `documentId`; API responses do not construct frontend URLs.
+- Search responses may include short display titles, status, assignment/customer identifiers, source labels, and truncated content previews. They must not include secrets, raw metadata, prompts, or cross-tenant records.
+
 ## 2026-06-17 Clerk Alpha Auth Contract
 
 - Protected admin/agent/platform APIs can run in `ADMIN_API_PROTECTION_MODE=clerk`.

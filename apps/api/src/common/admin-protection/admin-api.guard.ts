@@ -1,4 +1,5 @@
 import { loadServerEnv, type ServerEnv } from "@platform/config";
+import { MembershipStatus, TenantStatus } from "@platform/database";
 import {
   CanActivate,
   ExecutionContext,
@@ -12,6 +13,7 @@ import type { Request } from "express";
 import { PrismaService } from "../prisma/prisma.service";
 import type { TenantRequest } from "../tenant/tenant.types";
 import type { AdminAuthenticatedRequest } from "./admin-auth-context";
+import { ACCESS_POLICY_KEY, type AccessPolicy } from "./access-policy.decorator";
 
 const ADMIN_TOKEN_HEADER = "x-admin-api-token";
 
@@ -68,7 +70,7 @@ export class AdminApiGuard implements CanActivate {
     }
 
     const claims = this.verifyClerkJwt(token);
-    await this.authorizeClerkClaims(request, claims);
+    await this.authorizeClerkClaims(request, claims, resolveAccessPolicy(context));
 
     return true;
   }
@@ -186,7 +188,8 @@ export class AdminApiGuard implements CanActivate {
 
   private async authorizeClerkClaims(
     request: AdminAuthenticatedRequest & TenantRequest,
-    claims: ClerkJwtClaims
+    claims: ClerkJwtClaims,
+    policy: AccessPolicy
   ): Promise<void> {
     if (!this.prisma) {
       throw new UnauthorizedException("Clerk tenant authorization is not configured.");
@@ -196,75 +199,92 @@ export class AdminApiGuard implements CanActivate {
     const mappedUser = await this.findMappedUser(claims, tenantSlug);
 
     if (!mappedUser) {
+      if (policy.allowUnmapped) {
+        request.adminAuth = {
+          email: resolveClaimEmail(claims),
+          clerkSubject: claims.sub,
+          isPlatformAdmin: false,
+          tenantSlug
+        };
+        return;
+      }
+
       throw new ForbiddenException("Clerk user is not mapped to this tenant.");
     }
 
-    if (!tenantSlug && !mappedUser.user.isPlatformAdmin) {
+    if (policy.platformOnly && !mappedUser.user.isPlatformAdmin) {
+      throw new ForbiddenException("Platform admin access is required.");
+    }
+
+    if (tenantSlug && !mappedUser.user.isPlatformAdmin) {
+      if (!mappedUser.role || mappedUser.role.status !== MembershipStatus.ACTIVE) {
+        throw new ForbiddenException("Active tenant membership is required.");
+      }
+
+      if (policy.tenantRoles?.length && !policy.tenantRoles.includes(mappedUser.role.name)) {
+        throw new ForbiddenException("Tenant role is not permitted for this operation.");
+      }
+    }
+
+    if (!tenantSlug && !policy.allowUnmapped && !mappedUser.user.isPlatformAdmin) {
       throw new ForbiddenException("Platform admin access is required.");
     }
 
     request.adminAuth = {
       userId: mappedUser.user.id,
       email: mappedUser.user.email,
-      clerkSubject: typeof claims.sub === "string" ? claims.sub : undefined,
+      clerkSubject: claims.sub,
       isPlatformAdmin: mappedUser.user.isPlatformAdmin,
+      tenantId: mappedUser.role?.tenantId,
       tenantSlug,
-      roleName: mappedUser.roleName
+      roleName: mappedUser.role?.name ?? null,
+      membershipStatus: mappedUser.role?.status ?? null
     };
   }
 
   private async findMappedUser(claims: ClerkJwtClaims, tenantSlug?: string) {
     const email = resolveClaimEmail(claims);
+    const user = await this.prisma!.client.user.findFirst({
+      where: {
+        OR: [
+          { clerkUserId: claims.sub },
+          ...(email ? [{ email, clerkUserId: null }] : []),
+          { metadata: { path: ["clerkUserId"], equals: claims.sub } },
+          { metadata: { path: ["clerkSubject"], equals: claims.sub } },
+          { metadata: { path: ["clerk_user_id"], equals: claims.sub } }
+        ]
+      }
+    });
 
-    if (tenantSlug) {
-      const roles = await this.prisma!.client.role.findMany({
-        where: {
-          tenant: {
-            slug: tenantSlug
-          }
-        },
-        include: {
-          user: true
-        }
-      });
-
-      const role = roles.find((candidate) => isUserMappedToClerk(candidate.user, claims.sub, email));
-
-      return role
-        ? {
-            user: role.user,
-            roleName: role.name
-          }
-        : undefined;
+    if (!user) {
+      return undefined;
     }
 
-    const users = await this.prisma!.client.user.findMany();
-    const user = users.find((candidate) => isUserMappedToClerk(candidate, claims.sub, email));
+    const role = tenantSlug
+      ? await this.prisma!.client.role.findFirst({
+          where: {
+            userId: user.id,
+            tenant: { slug: tenantSlug, status: TenantStatus.ACTIVE }
+          }
+        })
+      : null;
 
-    return user
-      ? {
-          user,
-          roleName: null
-        }
-      : undefined;
+    if (tenantSlug && !role && !user.isPlatformAdmin) {
+      return undefined;
+    }
+
+    return { user, role };
   }
 }
 
 type ClerkJwtClaims = {
-  sub?: unknown;
+  sub: string;
   exp?: unknown;
   nbf?: unknown;
   iss?: unknown;
   azp?: unknown;
   email?: unknown;
   primary_email?: unknown;
-};
-
-type MappedUser = {
-  id: string;
-  email: string;
-  isPlatformAdmin: boolean;
-  metadata?: unknown;
 };
 
 function parseBase64UrlJson(value: string): unknown {
@@ -305,22 +325,15 @@ function resolveTenantSlugFromRequest(request: Request): string | undefined {
   return tenantSlug?.trim() || undefined;
 }
 
-function isUserMappedToClerk(user: MappedUser, clerkSubject: unknown, email?: string): boolean {
-  const normalizedEmail = email?.toLowerCase();
+function resolveAccessPolicy(context: ExecutionContext): AccessPolicy {
+  const handler = typeof context.getHandler === "function" ? context.getHandler() : undefined;
+  const controller = typeof context.getClass === "function" ? context.getClass() : undefined;
+  const handlerPolicy = handler
+    ? Reflect.getMetadata(ACCESS_POLICY_KEY, handler) as AccessPolicy | undefined
+    : undefined;
+  const classPolicy = controller
+    ? Reflect.getMetadata(ACCESS_POLICY_KEY, controller) as AccessPolicy | undefined
+    : undefined;
 
-  if (normalizedEmail && user.email.toLowerCase() === normalizedEmail) {
-    return true;
-  }
-
-  if (!clerkSubject || typeof clerkSubject !== "string") {
-    return false;
-  }
-
-  const metadata = user.metadata as Record<string, unknown> | null | undefined;
-
-  return (
-    metadata?.clerkUserId === clerkSubject ||
-    metadata?.clerkSubject === clerkSubject ||
-    metadata?.clerk_user_id === clerkSubject
-  );
+  return handlerPolicy ?? classPolicy ?? {};
 }

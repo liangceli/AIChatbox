@@ -3,6 +3,8 @@ import type { ConversationDetail, ConversationListItem } from "@platform/types";
 import { Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
+import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
+import { MembershipStatus, TenantRole } from "@platform/database";
 import { ConversationsService } from "../conversations/conversations.service";
 
 @Injectable()
@@ -12,20 +14,25 @@ export class RealtimeService {
     @Inject(ConversationsService) private readonly conversationsService: ConversationsService
   ) {}
 
-  async createSnapshot(tenant: ResolvedTenant, status?: string): Promise<{
+  async createSnapshot(tenant: ResolvedTenant, status?: string, auth?: AdminAuthContext): Promise<{
     conversations: ConversationListItem[];
     pendingHumanCount: number;
     activeConversation: ConversationDetail | null;
   }> {
-    const conversations = await this.conversationsService.listConversations(tenant, status || "all");
+    const conversations = await this.conversationsService.listConversations(tenant, status || "all", auth);
     const pendingHumanCount = await this.prisma.client.conversation.count({
       where: {
         tenantId: tenant.id,
-        status: ConversationStatus.PENDING_HUMAN
+        status: ConversationStatus.PENDING_HUMAN,
+        ...(auth && !auth.isPlatformAdmin && auth.roleName === TenantRole.AGENT
+          ? auth.userId && auth.membershipStatus === MembershipStatus.ACTIVE
+            ? { OR: [{ assignedUserId: auth.userId }, { assignedUserId: null }] }
+            : { id: "__forbidden__" }
+          : {})
       }
     });
     const activeConversation = conversations[0]
-      ? await this.conversationsService.getConversationDetail(tenant, conversations[0].id)
+      ? await this.conversationsService.getConversationDetail(tenant, conversations[0].id, auth)
       : null;
 
     return {

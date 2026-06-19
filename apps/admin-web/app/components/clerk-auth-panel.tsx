@@ -20,6 +20,7 @@ declare global {
       session?: {
         getToken: (options?: { template?: string }) => Promise<string | null>;
       } | null;
+      signOut?: () => Promise<void>;
     };
   }
 }
@@ -50,7 +51,7 @@ export function ClerkAuthPanel({
     script.setAttribute("data-clerk-publishable-key", publishableKey);
     script.async = true;
     script.crossOrigin = "anonymous";
-    script.src = "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@latest/dist/clerk.browser.js";
+    script.src = "https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5.111.0/dist/clerk.browser.js";
 
     script.onload = () => {
       void initializeClerk();

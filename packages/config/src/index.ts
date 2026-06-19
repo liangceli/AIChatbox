@@ -27,6 +27,8 @@ export const serverEnvSchema = z
     CLERK_ISSUER: z.string().optional(),
     CLERK_AUTHORIZED_PARTIES: z.string().optional(),
     CLERK_CLOCK_SKEW_SECONDS: z.coerce.number().int().min(0).max(3600).default(0),
+    WIDGET_SESSION_SECRET: z.string().min(32).optional(),
+    WIDGET_SESSION_TTL_SECONDS: z.coerce.number().int().min(300).max(2592000).default(604800),
     API_INTERNAL_BASE_URL: z.string().min(1).default("http://localhost:4000/v1"),
     ADMIN_WEB_ACCESS_TOKEN: z.string().optional(),
     ADMIN_WEB_SESSION_COOKIE_NAME: z.string().min(1).default("platform_admin_session"),
@@ -82,6 +84,22 @@ export const serverEnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ["CLERK_JWT_KEY"],
         message: "CLERK_JWT_KEY is required when ADMIN_API_PROTECTION_MODE=clerk."
+      });
+    }
+
+    if (env.NODE_ENV === "production" && !env.WIDGET_SESSION_SECRET?.trim() && !env.ADMIN_WEB_SESSION_SECRET?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["WIDGET_SESSION_SECRET"],
+        message: "WIDGET_SESSION_SECRET is required in production."
+      });
+    }
+
+    if (env.NODE_ENV === "production" && !env.CORS_ALLOWED_ORIGINS?.trim()) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["CORS_ALLOWED_ORIGINS"],
+        message: "CORS_ALLOWED_ORIGINS is required in production."
       });
     }
   });

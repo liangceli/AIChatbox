@@ -1,4 +1,4 @@
-import { ConversationStatus, Prisma, TenantStatus } from "@platform/database";
+import { ConversationStatus, MembershipStatus, Prisma, TenantRole, TenantStatus } from "@platform/database";
 import type { PublicTenantAiProfile, TenantAiProfile, TenantOverviewRecord } from "@platform/types";
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -149,11 +149,23 @@ export class TenantsService {
           }
         });
 
+        const otherMembership = await tx.role.findFirst({
+          where: {
+            userId: user.id,
+            tenantId: { not: createdTenant.id },
+            status: MembershipStatus.ACTIVE
+          }
+        });
+
+        if (otherMembership && !user.isPlatformAdmin) {
+          throw new ConflictException("The initial owner already belongs to another tenant.");
+        }
+
         await tx.role.create({
           data: {
             tenantId: createdTenant.id,
             userId: user.id,
-            name: "SUPPORT_ADMIN"
+            name: TenantRole.OWNER
           }
         });
       }

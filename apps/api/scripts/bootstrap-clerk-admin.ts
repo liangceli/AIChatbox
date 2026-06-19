@@ -1,10 +1,10 @@
 import "../src/load-env";
-import { prisma } from "@platform/database";
+import { prisma, TenantRole } from "@platform/database";
 
 const tenantSlug = requiredEnv("CLERK_BOOTSTRAP_TENANT_SLUG");
 const email = requiredEnv("CLERK_BOOTSTRAP_EMAIL").toLowerCase();
 const clerkUserId = requiredEnv("CLERK_BOOTSTRAP_USER_ID");
-const roleName = process.env.CLERK_BOOTSTRAP_ROLE?.trim() || "ADMIN";
+const roleName = parseRole(process.env.CLERK_BOOTSTRAP_ROLE);
 const displayName = process.env.CLERK_BOOTSTRAP_NAME?.trim() || null;
 const isPlatformAdmin = process.env.CLERK_BOOTSTRAP_PLATFORM_ADMIN === "true";
 
@@ -30,6 +30,7 @@ async function main() {
     update: {
       name: displayName ?? undefined,
       isPlatformAdmin,
+      clerkUserId,
       metadata: {
         clerkUserId
       }
@@ -38,6 +39,7 @@ async function main() {
       email,
       name: displayName,
       isPlatformAdmin,
+      clerkUserId,
       metadata: {
         clerkUserId
       }
@@ -66,6 +68,20 @@ async function main() {
   });
 
   console.log(`Mapped Clerk user ${user.email} to tenant ${tenant.slug} as ${roleName}.`);
+}
+
+function parseRole(value?: string): TenantRole {
+  const normalized = value?.trim().toUpperCase();
+
+  if (!normalized || normalized === "ADMIN" || normalized === "SUPPORT_ADMIN" || normalized === "OWNER") {
+    return TenantRole.OWNER;
+  }
+
+  if (normalized === "AGENT") {
+    return TenantRole.AGENT;
+  }
+
+  throw new Error("CLERK_BOOTSTRAP_ROLE must be OWNER or AGENT.");
 }
 
 function requiredEnv(name: string): string {

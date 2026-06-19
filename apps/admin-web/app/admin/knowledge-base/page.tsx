@@ -3,7 +3,14 @@ import { redirect } from "next/navigation";
 import { AdminConsole } from "../../components/admin-console";
 import { getAdminWebConfig, isValidAdminSessionCookie, verifyClerkSessionToken } from "../../lib/admin-access";
 
-export default function AdminKnowledgeBasePage() {
+export default function AdminKnowledgeBasePage({
+  searchParams
+}: {
+  searchParams?: {
+    knowledgeBaseId?: string;
+    documentId?: string;
+  };
+}) {
   const config = getAdminWebConfig();
   const cookieStore = cookies();
   const legacySessionCookie = cookieStore.get(config.cookieName)?.value;
@@ -16,5 +23,14 @@ export default function AdminKnowledgeBasePage() {
   const apiBaseUrl = "/api/admin";
   const tenantSlug = process.env.NEXT_PUBLIC_DEFAULT_TENANT_SLUG ?? "demo";
 
-  return <AdminConsole apiBaseUrl={apiBaseUrl} defaultTenantSlug={tenantSlug} view="knowledge" />;
+  return (
+    <AdminConsole
+      apiBaseUrl={apiBaseUrl}
+      defaultTenantSlug={tenantSlug}
+      view="knowledge"
+      initialKnowledgeBaseId={searchParams?.knowledgeBaseId}
+      initialKnowledgeDocumentId={searchParams?.documentId}
+      clerkPublishableKey={config.clerkPublishableKey}
+    />
+  );
 }

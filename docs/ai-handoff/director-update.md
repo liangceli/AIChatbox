@@ -1,5 +1,44 @@
 # Director Update
 
+## 2026-06-19 Tenant-Scoped Admin Global Search
+
+## 1. Completed Capability
+
+The admin topbar search is now functional instead of decorative. It searches the active tenant across navigation, conversations, knowledge bases, and knowledge documents, then deep-links to the selected resource.
+
+## 2. Security and Runtime Contract
+
+- Added protected GET /v1/search with 2-100 character query validation and a capped per-resource limit.
+- Search is protected by AdminApiGuard and tenant resolution middleware.
+- Every conversation, knowledge-base, and knowledge-document Prisma query includes the resolved tenant ID.
+- Responses contain safe truncated summaries only and do not expose prompts, raw metadata, source locators, auth data, or secrets.
+- Admin Web calls the endpoint through the existing same-origin /api/admin proxy with the active x-tenant-slug.
+
+## 3. User Workflow
+
+- Empty search shows common admin destinations.
+- Two or more characters trigger a 250 ms debounced tenant resource search.
+- Results are grouped into Navigation, Conversations, and Knowledge.
+- Ctrl/Cmd+K, Arrow Up/Down, Enter, Escape, click selection, click-outside dismissal, loading, error, and empty states are supported.
+- Conversation results open the exact conversation; knowledge results open the exact knowledge base/document.
+
+## 4. Verification
+
+Passed:
+
+- Full workspace typecheck, lint, test, and build.
+- Admin Web typecheck, test, and production build after the final shortcut change.
+- API search guard, validation, tenant-scope, safe-preview, and result-shape regression tests.
+- Admin Web source regressions for endpoint usage, tenant header, keyboard controls, and deep-link parameters.
+- Runtime API health returned 200 and unauthenticated /v1/search returned 401 rather than 404/500.
+- git diff --check passed with Windows LF/CRLF warnings only.
+
+Authenticated visual search acceptance remains a manual browser check because the automated browser does not own the user Clerk session.
+
+## 5. Overall Project Conclusion
+
+Global search is implemented and code-verified. The broader project remains RETURN FOR FIXES until the previously listed Knowledge -> Widget -> human handoff -> agent reply browser loop is fully accepted.
+
 ## 2026-06-18 Clerk Local Business Loop Progress
 
 ## 1. Current Outcome

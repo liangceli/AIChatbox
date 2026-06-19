@@ -19,5 +19,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*", "/agent"]
+  matcher: ["/admin/:path*", "/agent", "/account", "/access-pending"]
 };

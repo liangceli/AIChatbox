@@ -22,6 +22,17 @@ enum TenantStatus {
   ARCHIVED
 }
 
+enum TenantRole {
+  OWNER
+  AGENT
+}
+
+enum MembershipStatus {
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
 enum ConversationChannel {
   WIDGET
   EMAIL
@@ -76,11 +87,14 @@ model Tenant {
   knowledgeDocs   KnowledgeDocument[]
   knowledgeChunks KnowledgeChunk[]
   agentConfig     AgentConfig?
+  invitations     TenantInvitation[]
+  auditLogs       AuditLog[]
 }
 
 model User {
   id                    String          @id @default(cuid())
   email                 String          @unique
+  clerkUserId           String?         @unique
   name                  String?
   isPlatformAdmin       Boolean         @default(false)
   metadata              Json?
@@ -89,23 +103,62 @@ model User {
   roles                 Role[]
   assignedConversations Conversation[]  @relation("AssignedConversations")
   authoredMessages      Message[]       @relation("AuthoredMessages")
+  sentInvitations       TenantInvitation[] @relation("InvitationSender")
+  auditLogs             AuditLog[]
 }
 
-/// Tenant-scoped user membership with a role label.
-/// This remains intentionally lightweight and is not a full RBAC design.
+/// Tenant-scoped membership. Platform administration remains a separate User flag.
 model Role {
-  id        String   @id @default(cuid())
+  id        String           @id @default(cuid())
   tenantId  String
   userId    String
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      TenantRole
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([id, tenantId])
   @@unique([tenantId, userId])
   @@index([tenantId, name])
+  @@index([userId, status])
+}
+
+model TenantInvitation {
+  id              String     @id @default(cuid())
+  tenantId        String
+  email           String
+  role            TenantRole
+  tokenHash       String     @unique
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+  invitedByUserId String
+  createdAt       DateTime   @default(now())
+  tenant          Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy       User       @relation("InvitationSender", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, email, expiresAt])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  tenantId       String?
+  actorUserId    String?
+  action         String
+  resourceType   String
+  resourceId     String?
+  outcome        String
+  requestId      String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  tenant         Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  actorUser      User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
 }
 
 model Customer {

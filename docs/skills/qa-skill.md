@@ -1,5 +1,20 @@
 # QA Skill
 
+## 2026-06-19 Admin Global Search QA
+
+- `/v1/search` must reject missing/invalid admin auth and missing tenant scope, and every Prisma resource query must use the resolved tenant ID.
+- Validate 2-100 character queries, 1-10 limits, safe truncated previews, and no raw prompts/metadata/secrets in responses.
+- Admin search must cover navigation, conversations, knowledge bases, and documents with loading/error/empty states, Ctrl/Cmd+K focus, and keyboard selection.
+- Clicking a conversation result should open that exact conversation; clicking a document should open its exact knowledge base/document detail.
+- Wrong-tenant search results must never be returned.
+
+## 2026-06-19 Dashboard Metric Navigation QA
+
+- Clicking Conversations on `/admin` should navigate to `/admin/conversations?status=all` and show the All filter.
+- Clicking Pending Human should navigate to `/admin/conversations?status=pending_human` and show the Alerts filter.
+- Clicking Knowledge Bases should navigate to `/admin/knowledge-base`.
+- All three metric cards must remain keyboard-focusable and expose a visible focus state.
+
 ## 2026-06-18 Admin Light Dark Theme QA
 
 - The admin topbar theme button should be icon-only and toggle `document.documentElement.dataset.theme` between `light` and `dark`.

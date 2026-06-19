@@ -7,7 +7,6 @@ import type {
   SendChatMessageResponse,
   WidgetBootstrapOptions
 } from "@platform/types";
-import { persistAnonymousVisitorId, resolveAnonymousVisitorId } from "@platform/utils";
 
 const shellStyle: CSSProperties = {
   width: 560,
@@ -239,7 +238,6 @@ const authorLabels: Record<MessageAuthorType, string> = {
 export function CustomerWidget({
   tenantSlug,
   apiBaseUrl,
-  visitorId: initialVisitorId,
   theme,
   initialProfile
 }: WidgetBootstrapOptions & {
@@ -247,7 +245,8 @@ export function CustomerWidget({
 }) {
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [draft, setDraft] = useState("");
-  const [visitorId, setVisitorId] = useState<string>(initialVisitorId ?? "");
+  const [visitorId, setVisitorId] = useState("");
+  const [widgetSessionToken, setWidgetSessionToken] = useState("");
   const [error, setError] = useState<string>();
   const [profile, setProfile] = useState<PublicTenantAiProfile | undefined>(initialProfile);
   const [isSending, setIsSending] = useState(false);
@@ -256,10 +255,48 @@ export function CustomerWidget({
   const messageListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setVisitorId(resolveAnonymousVisitorId(tenantSlug, initialVisitorId) ?? "");
-    setConversation(null);
-    setError(undefined);
-  }, [initialVisitorId, tenantSlug]);
+    let isMounted = true;
+
+    async function bootstrapSession() {
+      setConversation(null);
+      setVisitorId("");
+      setWidgetSessionToken("");
+      setError(undefined);
+
+      const storedToken = readWidgetSessionToken(tenantSlug);
+      let response = await requestWidgetSession(apiBaseUrl, tenantSlug, storedToken);
+
+      if (!response.ok && storedToken) {
+        removeWidgetSessionToken(tenantSlug);
+        removeConversationId(tenantSlug);
+        response = await requestWidgetSession(apiBaseUrl, tenantSlug);
+      }
+
+      if (!response.ok) {
+        if (isMounted) {
+          setError(`Secure widget session failed with status ${response.status}`);
+        }
+        return;
+      }
+
+      const payload = (await response.json()) as {
+        sessionToken: string;
+        visitorId: string;
+      };
+
+      if (isMounted) {
+        persistWidgetSessionToken(tenantSlug, payload.sessionToken);
+        setWidgetSessionToken(payload.sessionToken);
+        setVisitorId(payload.visitorId);
+      }
+    }
+
+    void bootstrapSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [apiBaseUrl, tenantSlug]);
 
   useEffect(() => {
     let isMounted = true;
@@ -294,7 +331,7 @@ export function CustomerWidget({
   }, [apiBaseUrl, tenantSlug]);
 
   useEffect(() => {
-    if (!visitorId) {
+    if (!visitorId || !widgetSessionToken) {
       return;
     }
 
@@ -309,10 +346,11 @@ export function CustomerWidget({
     async function restoreConversation() {
       try {
         const response = await fetch(
-          `${apiBaseUrl}/conversations/${storedConversationId}/customer-detail?visitorId=${encodeURIComponent(visitorId)}`,
+          `${apiBaseUrl}/conversations/${storedConversationId}/customer-detail`,
           {
             headers: {
-              "x-tenant-slug": tenantSlug
+              "x-tenant-slug": tenantSlug,
+              "x-widget-session": widgetSessionToken
             }
           }
         );
@@ -340,7 +378,7 @@ export function CustomerWidget({
     return () => {
       isMounted = false;
     };
-  }, [apiBaseUrl, tenantSlug, visitorId]);
+  }, [apiBaseUrl, tenantSlug, visitorId, widgetSessionToken]);
 
   useEffect(() => {
     if (conversation?.id) {
@@ -349,12 +387,12 @@ export function CustomerWidget({
   }, [conversation?.id, tenantSlug]);
 
   useEffect(() => {
-    if (!conversation?.id) {
+    if (!conversation?.id || !widgetSessionToken) {
       return;
     }
 
     const events = new EventSource(
-      `${apiBaseUrl}/realtime/customer-conversation?tenantSlug=${encodeURIComponent(tenantSlug)}&conversationId=${encodeURIComponent(conversation.id)}&visitorId=${encodeURIComponent(visitorId)}`
+      `${apiBaseUrl}/realtime/customer-conversation?tenantSlug=${encodeURIComponent(tenantSlug)}&conversationId=${encodeURIComponent(conversation.id)}&widgetSession=${encodeURIComponent(widgetSessionToken)}`
     );
 
     events.addEventListener("customer_conversation_snapshot", (event) => {
@@ -374,7 +412,7 @@ export function CustomerWidget({
     return () => {
       events.close();
     };
-  }, [apiBaseUrl, tenantSlug, conversation?.id, visitorId]);
+  }, [apiBaseUrl, tenantSlug, conversation?.id, widgetSessionToken]);
 
   const isPendingHuman = conversation?.status === "pending_human";
   const messages = conversation?.messages ?? [];
@@ -427,7 +465,7 @@ export function CustomerWidget({
 
     const message = draft.trim();
 
-    if (!message || isSending || !visitorId) {
+    if (!message || isSending || !visitorId || !widgetSessionToken) {
       return;
     }
 
@@ -439,12 +477,12 @@ export function CustomerWidget({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-tenant-slug": tenantSlug
+          "x-tenant-slug": tenantSlug,
+          "x-widget-session": widgetSessionToken
         },
         body: JSON.stringify({
           message,
-          conversationId: conversation?.id,
-          visitorId
+          conversationId: conversation?.id
         })
       });
 
@@ -470,7 +508,6 @@ export function CustomerWidget({
         isHandoffPending: payload.conversation.status === "pending_human",
         messages: payload.messages
       }));
-      setVisitorId(persistAnonymousVisitorId(tenantSlug, payload.visitorId));
       setDraft("");
     } catch (submissionError: unknown) {
       setError(submissionError instanceof Error ? submissionError.message : "Unable to send message.");
@@ -480,7 +517,7 @@ export function CustomerWidget({
   }
 
   async function requestHandoff() {
-    if (!conversation?.id || !visitorId || isPendingHuman || isRequestingHandoff) {
+    if (!conversation?.id || !widgetSessionToken || isPendingHuman || isRequestingHandoff) {
       return;
     }
 
@@ -492,10 +529,10 @@ export function CustomerWidget({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-tenant-slug": tenantSlug
+          "x-tenant-slug": tenantSlug,
+          "x-widget-session": widgetSessionToken
         },
         body: JSON.stringify({
-          visitorId,
           reason: "Customer requested human support from the widget."
         })
       });
@@ -516,7 +553,7 @@ export function CustomerWidget({
   }
 
   async function endHandoff() {
-    if (!conversation?.id || !visitorId || !isPendingHuman || isEndingHandoff) {
+    if (!conversation?.id || !widgetSessionToken || !isPendingHuman || isEndingHandoff) {
       return;
     }
 
@@ -528,10 +565,10 @@ export function CustomerWidget({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-tenant-slug": tenantSlug
+          "x-tenant-slug": tenantSlug,
+          "x-widget-session": widgetSessionToken
         },
         body: JSON.stringify({
-          visitorId,
           reason: "Customer ended human support from the widget."
         })
       });
@@ -554,10 +591,11 @@ export function CustomerWidget({
   async function loadConversationDetail(conversationId: string) {
     try {
       const response = await fetch(
-        `${apiBaseUrl}/conversations/${conversationId}/customer-detail?visitorId=${encodeURIComponent(visitorId)}`,
+        `${apiBaseUrl}/conversations/${conversationId}/customer-detail`,
         {
         headers: {
-          "x-tenant-slug": tenantSlug
+          "x-tenant-slug": tenantSlug,
+          "x-widget-session": widgetSessionToken
         }
         }
       );
@@ -747,6 +785,41 @@ function getInitials(value: string): string {
 
 function getConversationStorageKey(tenantSlug: string): string {
   return `customer-widget:${tenantSlug}:conversation-id`;
+}
+
+function getWidgetSessionStorageKey(tenantSlug: string): string {
+  return `customer-widget:${tenantSlug}:secure-session`;
+}
+
+function readWidgetSessionToken(tenantSlug: string): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(getWidgetSessionStorageKey(tenantSlug));
+}
+
+function persistWidgetSessionToken(tenantSlug: string, token: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(getWidgetSessionStorageKey(tenantSlug), token);
+  }
+}
+
+function removeWidgetSessionToken(tenantSlug: string): void {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(getWidgetSessionStorageKey(tenantSlug));
+  }
+}
+
+function requestWidgetSession(apiBaseUrl: string, tenantSlug: string, sessionToken?: string | null) {
+  return fetch(`${apiBaseUrl}/widget/session`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-tenant-slug": tenantSlug
+    },
+    body: JSON.stringify(sessionToken ? { sessionToken } : {})
+  });
 }
 
 function readConversationId(tenantSlug: string): string | null {
