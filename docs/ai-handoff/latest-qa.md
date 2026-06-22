@@ -1,5 +1,19 @@
 # 中文 Diff Review & QA Report
 
+## 2026-06-22 Avatar and Table Knowledge QA
+
+Code, contract, security boundary, automated regression, production build, and service health checks pass. Authenticated browser interaction and the exact referenced workbook remain manual evidence.
+
+- PASS: Avatar target is exclusively `auth.userId`; client cannot provide another user ID.
+- PASS: Image allowlist, base64/size/signature checks, rate limit, audit event, crop output, and Admin/Agent rendering paths.
+- PASS: Table route is OWNER-protected and resolved-tenant scoped.
+- PASS: Multi-sheet XLSX Q&A, descriptive answer headers, quoted CSV, generic labelled records, sheet/row locators, and invalid signatures.
+- PASS: Existing TXT/Markdown/JSON and URL ingestion paths remain unchanged.
+- PASS: Cross-origin writes return 403; same-origin unauthenticated writes return 401.
+- PASS: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, `git diff --check`, health checks, and zero-match diff secret scan.
+
+Manual checks: crop/update as each role, upload the actual `thread_qa.xlsx`, run Answer Debug against several rows, inspect citation sheet/row, test non-Q&A fallback, and confirm Agent/wrong-tenant upload denial.
+
 ## 2026-06-19 Tenant-Scoped Admin Global Search QA
 
 ## 1. Conclusion

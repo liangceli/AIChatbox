@@ -1,6 +1,15 @@
 # Status
 
-Date: 2026-06-19
+Date: 2026-06-22
+
+Latest completed capability: user-owned cropped avatars and structured CSV/XLSX knowledge ingestion.
+- `/account` and `/admin/account` let the verified mapped user crop and replace only their own avatar.
+- Admin and Agent surfaces render the account avatar; tenant assistant avatar remains a separate tenant setting.
+- Knowledge Base accepts CSV/XLSX through a protected multipart endpoint and extracts Q&A or generic labelled records with sheet/row evidence.
+- OWNER role and resolved tenant scope remain mandatory for knowledge ingestion.
+- Upload limits, signature checks, avatar rate limiting, audit logging, and authenticated-user-only mutation are enforced.
+- Full workspace typecheck/lint/test/build, `git diff --check`, health checks, and targeted secret scan passed.
+- Manual authenticated browser acceptance remains. The supplied `thread_qa.xlsx` path is currently missing.
 
 Latest completed capability: tenant-scoped admin global search.
 - Search covers admin navigation, conversations, knowledge bases, and knowledge documents for the active tenant.

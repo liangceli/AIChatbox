@@ -79,6 +79,7 @@ function runSourceSmokeAssertions() {
     "utf8"
   );
   const accountPanelSource = readFileSync(resolve(__dirname, "../app/components/account-panel.tsx"), "utf8");
+  const userAvatarEditorSource = readFileSync(resolve(__dirname, "../app/components/user-avatar-editor.tsx"), "utf8");
   const accessPendingSource = readFileSync(resolve(__dirname, "../app/components/access-pending-panel.tsx"), "utf8");
   const nextConfigSource = readFileSync(resolve(__dirname, "../next.config.mjs"), "utf8");
   const clientClerkSessionSource = readFileSync(resolve(__dirname, "../app/lib/client-clerk-session.ts"), "utf8");
@@ -86,6 +87,11 @@ function runSourceSmokeAssertions() {
   const rootLayoutSource = readFileSync(resolve(__dirname, "../app/layout.tsx"), "utf8");
 
   assert.equal(packageJson.dependencies["@platform/config"], "workspace:*");
+  assert.equal(packageJson.dependencies["react-easy-crop"], "5.5.3");
+  assert.match(userAvatarEditorSource, /Cropper/);
+  assert.match(userAvatarEditorSource, /account\/me\/avatar/);
+  assert.match(userAvatarEditorSource, /image\/png,image\/jpeg,image\/webp/);
+  assert.match(accountPanelSource, /UserAvatarEditor/);
   assert.match(adminAccessSource, /loadWorkspaceEnv/);
   assert.match(adminAccessSource, /loadAdminWebEnv/);
   assert.match(adminAccessSource, /ADMIN_WEB_CLERK_SESSION_COOKIE_NAME/);

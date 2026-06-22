@@ -118,3 +118,9 @@ These checks confirm a user belongs to the current tenant. Admin API access in C
 - Invitation acceptance requires the verified Clerk email to match the invitation email before binding `clerkUserId`.
 - Platform Admin creation remains an explicit bootstrap operation; never grant platform status through public registration.
 - Sign-out must call Clerk sign-out, clear the local httpOnly session, and redirect to `/`.
+
+## User Profile Mutation Boundary
+
+- User avatar updates are account-scoped, not tenant branding changes.
+- `PATCH /v1/account/me/avatar` derives its target only from verified `AdminAuthContext.userId`; never add a request userId field.
+- Unmapped identities cannot mutate an avatar. Successful updates write an audit event without image content.

@@ -326,3 +326,10 @@ API 启动入口：
 - Create invitations in a serializable transaction so concurrent requests cannot exceed quota.
 - Only Platform Admin can mutate quotas; every quota change must write an `AuditLog`.
 - Tenant creation stores support contact branding only and must not implicitly create an Owner membership.
+
+## Structured File Ingestion
+
+- CSV/XLSX parsing runs in the API after AdminApiGuard and OWNER/tenant resolution through `KnowledgeTableImportService`.
+- Keep multipart files in memory only within the 5 MB limit; reject invalid extensions/signatures, binary CSV, oversized sheets, and excessive extracted text.
+- Unknown schemas become labelled structured records; do not fabricate Question/Answer pairing.
+- Persist source sheet/row markers in normalized content and `KnowledgeChunk.sourceLocator`.

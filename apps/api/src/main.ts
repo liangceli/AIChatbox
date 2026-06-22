@@ -27,6 +27,7 @@ async function bootstrap() {
   app.use("/v1/widget/session", createRateLimitMiddleware(30, 60_000));
   app.use("/v1/chat/messages", createRateLimitMiddleware(20, 60_000));
   app.use("/v1/account/accept-invitation", createRateLimitMiddleware(10, 60_000));
+  app.use("/v1/account/me/avatar", createRateLimitMiddleware(10, 60_000));
   app.use("/v1/members/invitations", createRateLimitMiddleware(30, 60_000));
   app.setGlobalPrefix("v1");
   app.useGlobalPipes(

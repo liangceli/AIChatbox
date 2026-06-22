@@ -21,6 +21,7 @@ export function AgentConsole({
   const [resolvedTenantSlug, setResolvedTenantSlug] = useState("");
   const [currentUserId, setCurrentUserId] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
+  const [accountAvatarUrl, setAccountAvatarUrl] = useState<string>();
   const [themePrimaryColor, setThemePrimaryColor] = useState(defaultAdminPrimaryColor);
   const [error, setError] = useState<string>();
 
@@ -73,6 +74,7 @@ export function AgentConsole({
         setResolvedTenantSlug(membership.tenantSlug);
         setCurrentUserId(account.userId || "");
         setAccountEmail(account.email || "Agent account");
+        setAccountAvatarUrl(account.avatarUrl || undefined);
       })
       .catch((requestError: unknown) => setError(requestError instanceof Error ? requestError.message : "Unable to load account."));
   }, [apiBaseUrl, clerkPublishableKey]);
@@ -137,6 +139,9 @@ export function AgentConsole({
             <a href="/account">Account</a>
           </nav>
           <span className="agent-account-label">{accountEmail || "Signed-in Agent"}</span>
+          <a className="agent-account-avatar" href="/account" aria-label="Open account">
+            {accountAvatarUrl ? <img src={accountAvatarUrl} alt="User profile" /> : <span aria-hidden="true">{(accountEmail || "A").charAt(0).toUpperCase()}</span>}
+          </a>
           <button className="agent-sign-out-button" type="button" onClick={() => void signOutToHome(clerkPublishableKey)}>
             <span className="material-symbols-outlined" aria-hidden="true">logout</span>
             Sign out

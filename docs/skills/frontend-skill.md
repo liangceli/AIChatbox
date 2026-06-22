@@ -219,3 +219,11 @@ Widget 行为：
 - `/sign-up` does not ask for a role. Unmapped users continue to `/access-pending`, where an email-bound invitation code activates access.
 - Platform Admin account UI shows per-tenant Owner, Agent, suspended member, active Agent code, and quota counts; quota controls are limited to 0-5.
 - Owner account UI can create/revoke Agent invitations only for the active authorized tenant. Agent UI includes an explicit Sign out command.
+
+## 2026-06-22 Avatar and Knowledge Upload UI
+
+- `/account` and `/admin/account` reuse `UserAvatarEditor`; the client crops to 512x512 and sends through the same-origin proxy.
+- Account avatar is user-owned. It must not overwrite the tenant assistant avatar from AI Profile.
+- Admin topbar and Agent header read `AccountRecord.avatarUrl` with an initials fallback.
+- CSV/XLSX uses multipart without manually setting the Content-Type boundary; existing text files keep their JSON ingestion path.
+- Show extracted record/Q&A counts and direct operators to chunk preview when structured fallback was used.

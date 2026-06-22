@@ -10,6 +10,7 @@ import type {
   TenantOverviewRecord
 } from "@platform/types";
 import { signOutToHome } from "../lib/client-clerk-session";
+import { UserAvatarEditor } from "./user-avatar-editor";
 
 export function AccountPanel({
   apiBaseUrl,
@@ -17,7 +18,8 @@ export function AccountPanel({
   tenantSlug,
   clerkPublishableKey,
   tenantOverviews = [],
-  onTenantDataChanged
+  onTenantDataChanged,
+  onAccountChanged
 }: {
   apiBaseUrl: string;
   account: AccountRecord;
@@ -25,6 +27,7 @@ export function AccountPanel({
   clerkPublishableKey?: string;
   tenantOverviews?: TenantOverviewRecord[];
   onTenantDataChanged?: () => Promise<void>;
+  onAccountChanged?: (account: AccountRecord) => void;
 }) {
   const [members, setMembers] = useState<TenantMemberRecord[]>([]);
   const [invitations, setInvitations] = useState<TenantInvitationRecord[]>([]);
@@ -154,6 +157,8 @@ export function AccountPanel({
         </div>
         <button type="button" className="secondary-btn" onClick={() => void signOutToHome(clerkPublishableKey)}>Sign out</button>
       </header>
+
+      <UserAvatarEditor apiBaseUrl={apiBaseUrl} account={account} onAccountChanged={onAccountChanged} />
 
       <div className="account-memberships">
         {account.memberships.map((membership) => (

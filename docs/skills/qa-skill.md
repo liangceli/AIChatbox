@@ -277,3 +277,10 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Assert only Platform Admin can change quota and Tenant Owners cannot invite Owners or access another tenant.
 - Assert Admin/Owner/Agent sign-out clears Clerk plus local sessions and returns to `/`.
 - Responsive browser smoke must cover `/` at desktop and mobile widths, protected-route redirect, Clerk button readiness, console errors, and horizontal overflow.
+
+## Avatar and Table Import Regression Set
+
+- Avatar: allow PNG/JPEG/WebP, reject signature mismatch/oversize, assert authenticated-user-only writes, and verify Admin/Agent rendering plus reload persistence.
+- Table: cover multi-sheet XLSX Q&A, descriptive headers, generic schemas, quoted CSV, sheet/row locators, corrupt XLSX, binary CSV, limits, and text-ingestion regression.
+- Authorization: Owner can upload only to the resolved tenant; Agent, unmapped, wrong-tenant, and unauthenticated callers are denied.
+- Manual QA must run Answer Debug against the actual uploaded workbook and verify citation evidence.

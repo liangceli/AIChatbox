@@ -5,8 +5,11 @@ export interface ChunkedKnowledgeContent {
   content: string;
   tokenCount: number;
   sourceLocator?: {
-    startOffset: number;
-    endOffset: number;
+    startOffset?: number;
+    endOffset?: number;
+    sheet?: string;
+    startRow?: number;
+    endRow?: number;
   };
 }
 
@@ -64,17 +67,24 @@ export class KnowledgeChunkingService {
         const trimmedStartOffset = normalized.indexOf(rawChunk, start);
         const trimmedEndOffset = trimmedStartOffset + rawChunk.length;
 
+        const tableLocators = [...rawChunk.matchAll(/\[Sheet: ([^\]|]+) \| Row: (\d+)\]/g)];
+        const sourceLocator: NonNullable<ChunkedKnowledgeContent["sourceLocator"]> = canUseSourceOffsets && trimmedStartOffset >= 0
+          ? { startOffset: trimmedStartOffset, endOffset: trimmedEndOffset }
+          : {};
+
+        if (tableLocators.length > 0) {
+          const first = tableLocators[0];
+          const last = tableLocators[tableLocators.length - 1];
+          sourceLocator.sheet = first?.[1]?.trim();
+          sourceLocator.startRow = Number(first?.[2]);
+          sourceLocator.endRow = Number(last?.[2]);
+        }
+
         chunks.push({
           chunkIndex,
           content: rawChunk,
           tokenCount: rawChunk.split(/\s+/).filter(Boolean).length,
-          sourceLocator:
-            canUseSourceOffsets && trimmedStartOffset >= 0
-              ? {
-                  startOffset: trimmedStartOffset,
-                  endOffset: trimmedEndOffset
-                }
-              : undefined
+          sourceLocator: Object.keys(sourceLocator).length > 0 ? sourceLocator : undefined
         });
         chunkIndex += 1;
       }

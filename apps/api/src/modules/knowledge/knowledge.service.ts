@@ -4,6 +4,7 @@ import type {
   KnowledgeChunkRecord,
   KnowledgeDocumentDetail,
   KnowledgeDocumentRecord,
+  ImportKnowledgeFileResult,
   ImportUrlKnowledgeDocumentResult
 } from "@platform/types";
 import { slugify } from "@platform/utils";
@@ -23,6 +24,7 @@ import { CreateManualKnowledgeDocumentDto } from "./dto/create-manual-knowledge-
 import { ImportUrlKnowledgeDocumentDto } from "./dto/import-url-knowledge-document.dto";
 import { KnowledgeChunkingService } from "./knowledge-chunking.service";
 import { KnowledgeUrlImportService } from "./knowledge-url-import.service";
+import { KnowledgeTableImportService, type UploadedKnowledgeFile } from "./knowledge-table-import.service";
 import {
   toKnowledgeBaseRecord,
   toKnowledgeChunkRecord,
@@ -39,7 +41,9 @@ export class KnowledgeService {
     @Inject(KnowledgeChunkingService)
     private readonly knowledgeChunkingService: KnowledgeChunkingService,
     @Inject(KnowledgeUrlImportService)
-    private readonly knowledgeUrlImportService: KnowledgeUrlImportService
+    private readonly knowledgeUrlImportService: KnowledgeUrlImportService,
+    @Inject(KnowledgeTableImportService)
+    private readonly knowledgeTableImportService: KnowledgeTableImportService
   ) {}
 
   async listKnowledgeBases(tenant: ResolvedTenant): Promise<KnowledgeBaseRecord[]> {
@@ -221,6 +225,36 @@ export class KnowledgeService {
         importedAt: new Date().toISOString()
       }
     });
+  }
+
+  async importFileDocument(
+    tenant: ResolvedTenant,
+    knowledgeBaseId: string,
+    file?: UploadedKnowledgeFile
+  ): Promise<ImportKnowledgeFileResult> {
+    await this.ensureKnowledgeBase(tenant, knowledgeBaseId);
+
+    if (!file) {
+      throw new BadRequestException("Choose a CSV or XLSX file to import.");
+    }
+
+    const parsed = await this.knowledgeTableImportService.parse(file);
+    const safeFileName = file.originalname.replace(/[\\/\u0000-\u001f]+/g, "_").slice(0, 180);
+    const document = await this.createManualDocument(tenant, knowledgeBaseId, {
+      title: safeFileName,
+      content: parsed.content,
+      sourceType: "file",
+      sourceUri: safeFileName,
+      metadata: {
+        fileName: safeFileName,
+        fileType: file.mimetype || "application/octet-stream",
+        fileSize: file.size,
+        ingestionMethod: "table-file",
+        tableExtraction: parsed.summary
+      }
+    });
+
+    return { document, extraction: parsed.summary };
   }
 
   async importUrlDocuments(

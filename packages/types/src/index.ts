@@ -53,6 +53,7 @@ export interface AccountRecord {
   userId?: string;
   email?: string;
   name?: string | null;
+  avatarUrl?: string | null;
   isPlatformAdmin: boolean;
   memberships: AccountMembershipRecord[];
   defaultRoute: "/admin" | "/agent" | "/access-pending";
@@ -277,6 +278,20 @@ export interface CreateKnowledgeDocumentRequest {
   sourceType?: "manual" | "file" | "url" | "integration";
   sourceUri?: string;
   metadata?: JsonObject;
+}
+
+export interface KnowledgeTableExtractionSummary {
+  format: "csv" | "xlsx";
+  sheetCount: number;
+  recordCount: number;
+  qaRecordCount: number;
+  structuredRecordCount: number;
+  warnings: string[];
+}
+
+export interface ImportKnowledgeFileResult {
+  document: KnowledgeDocumentRecord;
+  extraction: KnowledgeTableExtractionSummary;
 }
 
 export interface ImportUrlKnowledgeDocumentRequest {

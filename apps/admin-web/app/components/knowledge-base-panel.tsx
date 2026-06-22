@@ -3,6 +3,7 @@
 import type {
   CreateKnowledgeBaseRequest,
   CreateKnowledgeDocumentRequest,
+  ImportKnowledgeFileResult,
   ImportUrlKnowledgeDocumentRequest,
   KnowledgeBaseRecord,
   KnowledgeDocumentDetail,
@@ -70,10 +71,11 @@ export function KnowledgeBasePanel({
   }, [selectedKnowledgeBaseId, selectedDocumentId, tenantSlug]);
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
     const response = await fetch(`${apiBaseUrl}${path}`, {
       ...init,
       headers: {
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...(init?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
         "x-tenant-slug": tenantSlug,
         ...init?.headers
       }
@@ -167,6 +169,15 @@ export function KnowledgeBasePanel({
   }
 
   async function uploadKnowledgeFile(knowledgeBaseId: string, file: File) {
+    if (/\.(?:csv|xlsx)$/i.test(file.name)) {
+      const formData = new FormData();
+      formData.append("file", file);
+      return request<ImportKnowledgeFileResult>(
+        `/knowledge-bases/${knowledgeBaseId}/documents/import-file`,
+        { method: "POST", body: formData }
+      );
+    }
+
     const content = await file.text();
     const payload: CreateKnowledgeDocumentRequest = {
       title: file.name,
@@ -181,10 +192,11 @@ export function KnowledgeBasePanel({
       }
     };
 
-    return request<KnowledgeDocumentRecord>(`/knowledge-bases/${knowledgeBaseId}/documents`, {
+    const document = await request<KnowledgeDocumentRecord>(`/knowledge-bases/${knowledgeBaseId}/documents`, {
       method: "POST",
       body: JSON.stringify(payload)
     });
+    return { document };
   }
 
   async function importKnowledgeUrl(knowledgeBaseId: string) {
@@ -236,9 +248,12 @@ export function KnowledgeBasePanel({
       }
 
       let createdDocument: KnowledgeDocumentRecord | undefined;
+      let extractionSummary: ImportKnowledgeFileResult["extraction"] | undefined;
 
       if (ingestionMethod === "file" && file) {
-        createdDocument = await uploadKnowledgeFile(targetKnowledgeBaseId, file);
+        const uploadResult = await uploadKnowledgeFile(targetKnowledgeBaseId, file);
+        createdDocument = uploadResult.document;
+        extractionSummary = "extraction" in uploadResult ? uploadResult.extraction : undefined;
         fileInput.value = "";
       } else if (ingestionMethod === "url") {
         createdDocument = await importKnowledgeUrl(targetKnowledgeBaseId);
@@ -249,7 +264,9 @@ export function KnowledgeBasePanel({
       await loadKnowledgeBases(targetKnowledgeBaseId);
       await loadDocuments(targetKnowledgeBaseId, createdDocument?.id);
       setStatusMessage(
-        createdDocument
+        extractionSummary
+          ? `${createdDocument?.title ?? "Table"} imported ${extractionSummary.recordCount} records (${extractionSummary.qaRecordCount} Q&A).${extractionSummary.warnings.length ? " Some sheets used structured-record fallback; review the chunk preview." : ""}`
+          : createdDocument
           ? `${createdDocument.title} is ready for knowledge QA.`
           : "Knowledge base created."
       );
@@ -407,7 +424,7 @@ export function KnowledgeBasePanel({
                 value={ingestionMethod}
                 onChange={(event) => setIngestionMethod(event.target.value as IngestionMethod)}
               >
-                <option value="file">Text File Upload</option>
+                <option value="file">File Upload</option>
                 <option value="url">URL Import</option>
               </select>
             </label>
@@ -417,10 +434,10 @@ export function KnowledgeBasePanel({
                 <input
                   name="knowledgeFile"
                   type="file"
-                  accept=".txt,.md,.csv,.json,text/plain,text/markdown,application/json"
+                  accept=".txt,.md,.csv,.xlsx,.json,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 />
                 <Icon name="cloud_upload" />
-                <span>Tap to upload <strong>browse</strong></span>
+                <span>TXT, Markdown, JSON, CSV, or XLSX</span>
               </label>
             ) : (
               <label>

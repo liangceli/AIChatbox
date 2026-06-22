@@ -164,6 +164,12 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 ## Workflow State
 
+## 2026-06-22 Current Increment
+
+- Mapped users can crop and update their own avatar; Admin and Agent headers consume the authenticated account avatar.
+- Knowledge ingestion accepts server-parsed CSV/XLSX with adaptive Q&A/structured extraction and sheet/row citation locators.
+- Full workspace typecheck, lint, test, and build pass. Authenticated visual QA and the exact missing `thread_qa.xlsx` remain manual checks.
+
 - This project uses the repository-based AI handoff workflow.
 - Codex Chat 1 is Project Context & Docs: maintain `docs/skills`, project memory, and handoff docs.
 - Do not use this chat for Project Director decisions, implementation, or QA execution unless explicitly asked.

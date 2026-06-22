@@ -1,5 +1,28 @@
 # Director Update
 
+## 2026-06-22 User Avatars and Structured Knowledge Imports
+
+### Completed capability
+
+- Every mapped Clerk user can upload, crop, and replace their own profile photo from `/account` or `/admin/account`.
+- The saved user avatar replaces the former hardcoded admin image and is also shown in the Agent header.
+- Knowledge Base file ingestion now accepts `.csv` and `.xlsx` in addition to the existing text formats.
+- Server-side extraction detects common and descriptive Question/Answer columns, preserves quoted CSV values, imports other layouts as labelled structured records, and records sheet/row locators for chunk citations.
+
+### Security and tenant boundary
+
+- Avatar mutation derives the target user exclusively from verified auth context. The request cannot supply a user ID.
+- Avatar data is format/signature checked, cropped to 512x512, capped at 512 KB, rate-limited, and audit logged.
+- Table upload remains protected by `AdminApiGuard`, resolved tenant scope, and OWNER policy.
+- XLSX/CSV uploads are capped at 5 MB, 25 sheets, 10,000 rows per sheet, 100 columns, and 5 million extracted characters.
+
+### Verification and remaining acceptance
+
+- Full workspace `typecheck`, `lint`, `test`, and `build` passed; `git diff --check` and targeted secret scan passed.
+- Admin/API health checks pass on ports 3000/4000; port 3001 is unused.
+- Authenticated visual crop/upload and real Knowledge UI upload remain manual because the browser controller was unavailable.
+- The referenced `thread_qa.xlsx` is missing from the supplied Downloads path and attachment cache, so generated equivalent fixtures passed but that exact workbook was not inspected.
+
 ## 2026-06-19 Tenant-Scoped Admin Global Search
 
 ## 1. Completed Capability

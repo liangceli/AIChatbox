@@ -6,6 +6,7 @@ import { KnowledgeRetrievalService } from "./knowledge-retrieval.service";
 import { KnowledgeService } from "./knowledge.service";
 import { KnowledgeUrlImportService } from "./knowledge-url-import.service";
 import { KnowledgeUrlSafetyService } from "./knowledge-url-safety.service";
+import { KnowledgeTableImportService } from "./knowledge-table-import.service";
 
 @Module({
   controllers: [KnowledgeController],
@@ -13,6 +14,7 @@ import { KnowledgeUrlSafetyService } from "./knowledge-url-safety.service";
     AdminApiGuard,
     KnowledgeChunkingService,
     KnowledgeRetrievalService,
+    KnowledgeTableImportService,
     KnowledgeUrlSafetyService,
     KnowledgeUrlImportService,
     KnowledgeService

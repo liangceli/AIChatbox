@@ -3,9 +3,11 @@ import type {
   KnowledgeChunkRecord,
   KnowledgeDocumentDetail,
   KnowledgeDocumentRecord,
+  ImportKnowledgeFileResult,
   ImportUrlKnowledgeDocumentResult
 } from "@platform/types";
-import { Body, Controller, Delete, Get, Inject, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Inject, Param, Post, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { AdminApiGuard } from "../../common/admin-protection/admin-api.guard";
 import { RequireTenantRoles } from "../../common/admin-protection/access-policy.decorator";
 import { TenantRole } from "@platform/database";
@@ -17,6 +19,7 @@ import { ImportUrlsKnowledgeDocumentDto } from "./dto/import-urls-knowledge-docu
 import { ImportUrlKnowledgeDocumentDto } from "./dto/import-url-knowledge-document.dto";
 import { ReprocessKnowledgeDocumentDto } from "./dto/reprocess-knowledge-document.dto";
 import { KnowledgeService } from "./knowledge.service";
+import type { UploadedKnowledgeFile } from "./knowledge-table-import.service";
 
 @Controller("knowledge-bases")
 @UseGuards(AdminApiGuard)
@@ -60,6 +63,16 @@ export class KnowledgeController {
     @Body() body: CreateManualKnowledgeDocumentDto
   ): Promise<KnowledgeDocumentRecord> {
     return this.knowledgeService.createManualDocument(tenant, knowledgeBaseId, body);
+  }
+
+  @Post(":knowledgeBaseId/documents/import-file")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 5 * 1024 * 1024, files: 1 } }))
+  async importFileDocument(
+    @CurrentTenant() tenant: ResolvedTenant,
+    @Param("knowledgeBaseId") knowledgeBaseId: string,
+    @UploadedFile() file?: UploadedKnowledgeFile
+  ): Promise<ImportKnowledgeFileResult> {
+    return this.knowledgeService.importFileDocument(tenant, knowledgeBaseId, file);
   }
 
   @Post(":knowledgeBaseId/documents/import-url")

@@ -171,6 +171,13 @@ Prisma 模型：
 - 不要把 prompt 写死为 Kasta。
 - 后续真实 LLM prompt 应使用 AgentConfig 作为输入之一。
 
+## Structured Table Knowledge
+
+- CSV/XLSX imports normalize each usable row into explicit Question/Answer text or labelled field/value text.
+- Unknown schemas use structured fallback; do not fabricate a Q&A pairing when confidence is insufficient.
+- Sheet name and source row markers travel into chunk source locators so Answer Debug and citations remain traceable.
+- Table import feeds the existing deterministic/OpenAI retrieval path; no model-side spreadsheet reader is trusted at answer time.
+
 ## LLM Provider Boundary
 
 已完成：

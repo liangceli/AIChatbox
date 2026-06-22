@@ -106,3 +106,9 @@ Tenant AI profile foundation:
 - `Role` is a tenant membership with `TenantRole` and `MembershipStatus`; non-platform users are limited to one active tenant during invitation acceptance/provisioning.
 - `TenantInvitation` stores only a token hash and lifecycle timestamps. `AuditLog` records membership and invitation security events without storing bearer tokens.
 - `Tenant.agentInvitationQuota` is an integer with default 5 and database check range 0-5. It limits simultaneously active Agent invitations, not historical invitation records or active Agent memberships.
+
+## User Avatar and Table Source Metadata
+
+- User avatar currently persists as `User.metadata.avatarUrl`; it is platform-user data returned through the authenticated account shape.
+- Table document metadata stores safe file facts and an extraction summary, not the uploaded binary workbook.
+- Normalized CSV/XLSX content remains in `KnowledgeDocument.content`; chunks include sheet/row locator fields plus optional text offsets.

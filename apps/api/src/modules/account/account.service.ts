@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { MembershipStatus } from "@platform/database";
 import type { AccountRecord } from "@platform/types";
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import { PrismaService } from "../../common/prisma/prisma.service";
 
@@ -73,10 +73,44 @@ export class AccountService {
       userId: user.id,
       email: user.email,
       name: user.name,
+      avatarUrl: readAvatarUrl(user.metadata),
       isPlatformAdmin: user.isPlatformAdmin,
       memberships,
       defaultRoute
     };
+  }
+
+  async updateAvatar(auth: AdminAuthContext, avatarDataUrl: string): Promise<AccountRecord> {
+    if (!auth.userId) {
+      throw new ForbiddenException("A mapped account is required to update an avatar.");
+    }
+
+    validateAvatarDataUrl(avatarDataUrl);
+
+    await this.prisma.client.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: auth.userId } });
+
+      if (!user) {
+        throw new NotFoundException("Account mapping no longer exists.");
+      }
+
+      const metadata = isPlainObject(user.metadata) ? user.metadata : {};
+      await tx.user.update({
+        where: { id: user.id },
+        data: { metadata: { ...metadata, avatarUrl: avatarDataUrl } }
+      });
+      await tx.auditLog.create({
+        data: {
+          actorUserId: user.id,
+          action: "account.avatar.updated",
+          resourceType: "user",
+          resourceId: user.id,
+          outcome: "success"
+        }
+      });
+    });
+
+    return this.getMe(auth);
   }
 
   async acceptInvitation(auth: AdminAuthContext, token: string): Promise<AccountRecord> {
@@ -172,6 +206,43 @@ export class AccountService {
 
     return this.getMe({ ...auth, userId });
   }
+}
+
+const maximumAvatarBytes = 512 * 1024;
+
+export function validateAvatarDataUrl(value: string): void {
+  const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+
+  if (!match) {
+    throw new BadRequestException("Avatar must be a PNG, JPEG, or WebP image.");
+  }
+
+  const bytes = Buffer.from(match[2] ?? "", "base64");
+
+  if (bytes.length === 0 || bytes.length > maximumAvatarBytes) {
+    throw new BadRequestException("Avatar must be no larger than 512 KB after cropping.");
+  }
+
+  const type = match[1];
+  const isPng = type === "png" && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  const isJpeg = type === "jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isWebp = type === "webp" && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP";
+
+  if (!isPng && !isJpeg && !isWebp) {
+    throw new BadRequestException("Avatar image signature does not match its declared format.");
+  }
+}
+
+function readAvatarUrl(value: unknown): string | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  return typeof value.avatarUrl === "string" ? value.avatarUrl : null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function hashInvitationToken(token: string): string {

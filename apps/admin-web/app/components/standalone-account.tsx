@@ -26,6 +26,7 @@ export function StandaloneAccount({ clerkPublishableKey }: { clerkPublishableKey
           account={account}
           tenantSlug={account.memberships.find((membership) => membership.status === "active")?.tenantSlug ?? ""}
           clerkPublishableKey={clerkPublishableKey}
+          onAccountChanged={setAccount}
         />
       ) : error ? <div className="inline-error">{error}</div> : <p>Loading account...</p>}
     </main>

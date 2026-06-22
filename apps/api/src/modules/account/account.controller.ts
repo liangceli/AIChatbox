@@ -1,11 +1,12 @@
 import type { AccountRecord } from "@platform/types";
-import { Body, Controller, Get, Inject, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Inject, Patch, Post, UseGuards } from "@nestjs/common";
 import { AllowAuthenticatedClerk } from "../../common/admin-protection/access-policy.decorator";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import { AdminApiGuard } from "../../common/admin-protection/admin-api.guard";
 import { CurrentAdminAuth } from "../../common/admin-protection/current-admin-auth.decorator";
 import { AccountService } from "./account.service";
 import { AcceptInvitationDto } from "./dto/accept-invitation.dto";
+import { UpdateAccountAvatarDto } from "./dto/update-account-avatar.dto";
 
 @Controller("account")
 @UseGuards(AdminApiGuard)
@@ -16,6 +17,14 @@ export class AccountController {
   @Get("me")
   getMe(@CurrentAdminAuth() auth: AdminAuthContext): Promise<AccountRecord> {
     return this.accountService.getMe(auth);
+  }
+
+  @Patch("me/avatar")
+  updateAvatar(
+    @CurrentAdminAuth() auth: AdminAuthContext,
+    @Body() body: UpdateAccountAvatarDto
+  ): Promise<AccountRecord> {
+    return this.accountService.updateAvatar(auth, body.avatarDataUrl);
   }
 
   @Post("accept-invitation")

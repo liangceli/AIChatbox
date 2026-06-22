@@ -288,3 +288,10 @@ Data shape:
 - `PATCH /v1/tenants/:tenantSlug/agent-invitation-quota` is Platform Admin-only, accepts `{ quota: 0..5 }`, and writes an audit event.
 - `GET /v1/tenants` includes per-tenant Owner/Agent/suspended/active-invitation counts and Agent invitation quota for Platform Admin UI only.
 - `POST /v1/account/accept-invitation` requires the verified Clerk email to match the email stored on the invitation.
+
+## 2026-06-22 Avatar and Table Import Contracts
+
+- `PATCH /v1/account/me/avatar` accepts `{ avatarDataUrl }` for the verified mapped user only and returns refreshed `AccountRecord.avatarUrl`.
+- `POST /v1/knowledge-bases/:knowledgeBaseId/documents/import-file` accepts multipart field `file` for `.csv` or `.xlsx` and returns `{ document, extraction }`.
+- Table import inherits OWNER policy and resolved tenant scoping; multipart data is never identity evidence.
+- `extraction` reports format, sheets, records, Q&A records, structured fallback records, and warnings.

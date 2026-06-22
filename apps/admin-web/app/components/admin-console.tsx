@@ -28,9 +28,6 @@ const drawerNavigationItems = [
   { label: "Account", icon: "account_circle", href: "/admin/account" }
 ];
 
-const profileImageUrl =
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuCn5u1vN6rNspRKGCTnzyMfAhnhm2Lk2G_BH5F-X0q9lOdEyB4sxfXsM8KwfBQfr-QSf-Ao7FU0K3zw0juKN7bHDVIuD9GnWPAwuGIvhUf-ZbyRzdEx2cl4N3h6l6Xfs4tu8fATVqHqYgxpHIdO-CNsZC3sBRXShn0jdjtp2ZvfOOTMDoFVbdjxmGWoFisXO_fLKtrMlJk279dVYaAk920zoRPdRWJAlTsNPPd9aRdE2HRnBaYAbEIeMnEBMm1TfFhYxSRmnFQME5Z1";
-
 export function AdminConsole({
   apiBaseUrl,
   defaultTenantSlug,
@@ -476,7 +473,15 @@ export function AdminConsole({
             </button>
             <div className="topbar-divider" />
             <button type="button" className="deploy-button primary-btn">Deploy</button>
-            <Link href="/admin/account" aria-label="Open account"><img alt="User Profile" className="profile-avatar" src={profileImageUrl} /></Link>
+            <Link href="/admin/account" className="profile-avatar-link" aria-label="Open account">
+              {account?.avatarUrl ? (
+                <img alt="User profile" className="profile-avatar" src={account.avatarUrl} />
+              ) : (
+                <span className="profile-avatar profile-avatar-fallback" aria-hidden="true">
+                  {(account?.name || account?.email || "U").charAt(0).toUpperCase()}
+                </span>
+              )}
+            </Link>
           </div>
       </header>
 
@@ -547,6 +552,7 @@ export function AdminConsole({
               clerkPublishableKey={clerkPublishableKey}
               tenantOverviews={account.isPlatformAdmin ? tenants : []}
               onTenantDataChanged={account.isPlatformAdmin ? () => loadTenants(selectedTenantSlug) : undefined}
+              onAccountChanged={setAccount}
             />
           )}
         </main>
