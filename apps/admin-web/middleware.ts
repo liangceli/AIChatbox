@@ -3,13 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 const CLERK_SESSION_COOKIE = process.env.ADMIN_WEB_CLERK_SESSION_COOKIE_NAME || "platform_clerk_session";
 const LEGACY_SESSION_COOKIE = process.env.ADMIN_WEB_SESSION_COOKIE_NAME || "platform_admin_session";
 const SIGN_IN_URL = process.env.CLERK_SIGN_IN_URL || "/sign-in";
-const CLERK_CONFIGURED = Boolean(process.env.CLERK_JWT_KEY?.trim());
 
 export function middleware(request: NextRequest) {
   const hasClerkSession = Boolean(request.cookies.get(CLERK_SESSION_COOKIE)?.value);
   const hasLegacySession = Boolean(request.cookies.get(LEGACY_SESSION_COOKIE)?.value);
 
-  if (CLERK_CONFIGURED ? hasClerkSession : hasLegacySession) {
+  // Middleware is only a fast presence gate. Protected pages and the API proxy
+  // perform the authoritative signature/mode verification server-side.
+  if (hasClerkSession || hasLegacySession) {
     return NextResponse.next();
   }
 

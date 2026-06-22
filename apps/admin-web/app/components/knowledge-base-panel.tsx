@@ -9,7 +9,7 @@ import type {
   KnowledgeDocumentDetail,
   KnowledgeDocumentRecord
 } from "@platform/types";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { AnswerDebugPanel } from "./answer-debug-panel";
 
 type IngestionMethod = "file" | "url";
@@ -33,11 +33,13 @@ export function KnowledgeBasePanel({
   const [knowledgeBaseName, setKnowledgeBaseName] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
   const [ingestionMethod, setIngestionMethod] = useState<IngestionMethod>("file");
+  const [selectedFile, setSelectedFile] = useState<File>();
   const [error, setError] = useState<string>();
   const [statusMessage, setStatusMessage] = useState<string>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeAction, setActiveAction] = useState<string>();
 
   useEffect(() => {
@@ -215,10 +217,7 @@ export function KnowledgeBasePanel({
 
   async function handleIngestSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = event.currentTarget;
-    const rawFileInput = form.elements.namedItem("knowledgeFile");
-    const fileInput = rawFileInput instanceof HTMLInputElement ? rawFileInput : null;
-    const file = fileInput?.files?.[0];
+    const file = selectedFile;
 
     if (!knowledgeBaseName.trim() && !selectedKnowledgeBaseId) {
       setError("Create or select a knowledge base before adding a document.");
@@ -254,7 +253,8 @@ export function KnowledgeBasePanel({
         const uploadResult = await uploadKnowledgeFile(targetKnowledgeBaseId, file);
         createdDocument = uploadResult.document;
         extractionSummary = "extraction" in uploadResult ? uploadResult.extraction : undefined;
-        fileInput.value = "";
+        setSelectedFile(undefined);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       } else if (ingestionMethod === "url") {
         createdDocument = await importKnowledgeUrl(targetKnowledgeBaseId);
         setSourceUrl("");
@@ -275,6 +275,28 @@ export function KnowledgeBasePanel({
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  function chooseKnowledgeFile(file?: File) {
+    if (!file) return;
+    const extension = file.name.toLowerCase().split(".").pop();
+    const allowedExtensions = new Set(["txt", "md", "json", "csv", "xlsx"]);
+
+    if (!extension || !allowedExtensions.has(extension)) {
+      setSelectedFile(undefined);
+      setError("Choose a TXT, Markdown, JSON, CSV, or XLSX file.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setSelectedFile(undefined);
+      setError("Files must be 5 MB or smaller.");
+      return;
+    }
+
+    setSelectedFile(file);
+    setError(undefined);
+    setStatusMessage(undefined);
   }
 
   async function runDocumentAction(action: "reprocess" | "archive" | "delete") {
@@ -430,15 +452,46 @@ export function KnowledgeBasePanel({
             </label>
 
             {ingestionMethod === "file" ? (
-              <label className="upload-dropzone">
+              <div
+                className={`upload-dropzone${selectedFile ? " has-file" : ""}`}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  chooseKnowledgeFile(event.dataTransfer.files[0]);
+                }}
+              >
                 <input
+                  ref={fileInputRef}
                   name="knowledgeFile"
                   type="file"
                   accept=".txt,.md,.csv,.xlsx,.json,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(event) => chooseKnowledgeFile(event.target.files?.[0])}
                 />
-                <Icon name="cloud_upload" />
-                <span>TXT, Markdown, JSON, CSV, or XLSX</span>
-              </label>
+                {selectedFile ? (
+                  <div className="selected-upload-file" role="status">
+                    <Icon name="description" />
+                    <strong title={selectedFile.name}>{selectedFile.name}</strong>
+                    <span>{formatFileSize(selectedFile.size)}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${selectedFile.name}`}
+                      onClick={() => {
+                        setSelectedFile(undefined);
+                        if (fileInputRef.current) fileInputRef.current.value = "";
+                      }}
+                    >
+                      <Icon name="close" />
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" className="upload-dropzone-action" onClick={() => fileInputRef.current?.click()}>
+                    <Icon name="cloud_upload" />
+                    <strong>Select file</strong>
+                    <span>or drag it here</span>
+                    <small>TXT, Markdown, JSON, CSV, or XLSX - max 5 MB</small>
+                  </button>
+                )}
+              </div>
             ) : (
               <label>
                 <span>Source URL</span>
@@ -634,6 +687,12 @@ function formatDate(value?: string | null): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function toErrorMessage(error: unknown, fallback: string): string {

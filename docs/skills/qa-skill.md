@@ -280,6 +280,10 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 ## Avatar and Table Import Regression Set
 
+- File-control QA must confirm click selection and drag/drop both populate visible filename/size state, removal clears it, successful ingestion clears it, and Start Ingestion uses that controlled file.
+- CSP QA must assert explicit same-origin/blob worker permission and no Clerk worker violation after a hard refresh.
+- Auth redirect QA must distinguish session-route/account success from protected-page success and fail if valid Clerk login loops back to `/sign-in`.
+
 - Avatar: allow PNG/JPEG/WebP, reject signature mismatch/oversize, assert authenticated-user-only writes, and verify Admin/Agent rendering plus reload persistence.
 - Table: cover multi-sheet XLSX Q&A, descriptive headers, generic schemas, quoted CSV, sheet/row locators, corrupt XLSX, binary CSV, limits, and text-ingestion regression.
 - Authorization: Owner can upload only to the resolved tenant; Agent, unmapped, wrong-tenant, and unauthenticated callers are denied.

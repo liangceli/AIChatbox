@@ -3,6 +3,9 @@
 Date: 2026-06-22
 
 Latest completed capability: user-owned cropped avatars and structured CSV/XLSX knowledge ingestion.
+- Follow-up: the Knowledge upload control now visibly attaches the selected file, supports drag/drop/removal, and no longer relies on an invisible full-card input.
+- Follow-up: Clerk blob workers are explicitly allowed by CSP; Next cache was rebuilt cleanly and only ports 3000/4000 remain active.
+- Follow-up: valid Clerk login no longer loops from `/admin` back to `/sign-in`; middleware accepts either session-cookie presence while page/proxy still enforce full configured-mode verification.
 - `/account` and `/admin/account` let the verified mapped user crop and replace only their own avatar.
 - Admin and Agent surfaces render the account avatar; tenant assistant avatar remains a separate tenant setting.
 - Knowledge Base accepts CSV/XLSX through a protected multipart endpoint and extracts Q&A or generic labelled records with sheet/row evidence.

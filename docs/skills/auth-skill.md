@@ -124,3 +124,8 @@ These checks confirm a user belongs to the current tenant. Admin API access in C
 - User avatar updates are account-scoped, not tenant branding changes.
 - `PATCH /v1/account/me/avatar` derives its target only from verified `AdminAuthContext.userId`; never add a request userId field.
 - Unmapped identities cannot mutate an avatar. Successful updates write an audit event without image content.
+
+## Middleware Session Gate
+
+- Next middleware must not infer Clerk mode from root env values because edge middleware may not load repository-root env the same way as server routes.
+- Middleware accepts Clerk-cookie or legacy-cookie presence only as a fast gate. Protected pages and `/api/admin/...` perform the authoritative configured-mode signature verification and must reject forged/expired Clerk plus legacy fallback in Clerk mode.

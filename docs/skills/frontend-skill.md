@@ -222,6 +222,11 @@ Widget 行为：
 
 ## 2026-06-22 Avatar and Knowledge Upload UI
 
+- Knowledge file selection is controlled React state. Always show selected filename and size, provide remove and drag/drop actions, and clear both state and native input after successful ingestion.
+- Do not use a transparent full-dropzone file input as the only interaction signal; users need visible attachment confirmation before ingestion.
+- Clerk browser workers require the explicit CSP directive `worker-src 'self' blob:`.
+- After `/api/auth/clerk/session` and `/api/admin/account/me` succeed, `/admin` navigation must not be rejected by middleware solely because middleware cannot see root Clerk env values.
+
 - `/account` and `/admin/account` reuse `UserAvatarEditor`; the client crops to 512x512 and sends through the same-origin proxy.
 - Account avatar is user-owned. It must not overwrite the tenant assistant avatar from AI Profile.
 - Admin topbar and Agent header read `AccountRecord.avatarUrl` with an initials fallback.

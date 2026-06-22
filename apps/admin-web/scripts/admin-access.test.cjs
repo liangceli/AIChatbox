@@ -141,6 +141,8 @@ function runSourceSmokeAssertions() {
   assert.match(middlewareSource, /\/admin\/:path\*/);
   assert.match(middlewareSource, /\/account/);
   assert.match(middlewareSource, /\/access-pending/);
+  assert.match(middlewareSource, /hasClerkSession \|\| hasLegacySession/);
+  assert.doesNotMatch(middlewareSource, /CLERK_CONFIGURED/);
   assert.match(agentPageSource, /isAdminWebSessionAuthenticated/);
   assert.match(agentConsoleSource, /\/account\/me/);
   assert.match(agentConsoleSource, /\/tenant-profile/);
@@ -177,6 +179,7 @@ function runSourceSmokeAssertions() {
   assert.doesNotMatch(homePageSource, /<select/i);
   assert.match(nextConfigSource, /Content-Security-Policy/);
   assert.match(nextConfigSource, /frame-ancestors 'none'/);
+  assert.match(nextConfigSource, /worker-src 'self' blob:/);
   assert.match(clientClerkSessionSource, /session\?\.getToken/);
   assert.match(clientClerkSessionSource, /\/api\/auth\/clerk\/session/);
   assert.match(clientClerkSessionSource, /clerk\.signOut\?\./);
@@ -192,6 +195,9 @@ function runSourceSmokeAssertions() {
   assert.match(knowledgeBasePanelSource, /reprocess/);
   assert.match(knowledgeBasePanelSource, /archive/);
   assert.match(knowledgeBasePanelSource, /delete/);
+  assert.match(knowledgeBasePanelSource, /selectedFile/);
+  assert.match(knowledgeBasePanelSource, /Select file/);
+  assert.match(knowledgeBasePanelSource, /onDrop/);
 }
 
 function loadTranspiledModule(relativePath, requireMap = {}) {

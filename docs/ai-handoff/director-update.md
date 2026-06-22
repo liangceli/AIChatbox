@@ -2,6 +2,18 @@
 
 ## 2026-06-22 User Avatars and Structured Knowledge Imports
 
+### Upload control follow-up
+
+- Knowledge file selection is now controlled state with an explicit Select file action, drag/drop, selected filename/size, remove action, extension validation, and 5 MB client limit.
+- CSP now explicitly permits only same-origin/blob workers so Clerk no longer falls back to blocked `script-src` worker handling.
+- A clean Next build/cache reset removed the stale manifest error; runtime is back on ports 3000/4000 only.
+
+### Clerk redirect-loop follow-up
+
+- Fixed a middleware mode-detection bug that redirected a valid Clerk session back to `/sign-in` after both session verification and account lookup returned 200.
+- Middleware is now only a cookie-presence fast gate. Protected pages and the same-origin proxy remain the authoritative Clerk signature/mode verification boundaries.
+- Admin typecheck, auth regression tests, production build, clean restart, and 3000/4000 health checks pass.
+
 ### Completed capability
 
 - Every mapped Clerk user can upload, crop, and replace their own profile photo from `/account` or `/admin/account`.

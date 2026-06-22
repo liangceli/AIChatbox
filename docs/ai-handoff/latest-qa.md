@@ -2,6 +2,11 @@
 
 ## 2026-06-22 Avatar and Table Knowledge QA
 
+- Follow-up PASS: controlled file selection, visible filename/size, drag/drop, remove action, client extension/size validation, and multipart path source assertions.
+- Follow-up PASS: CSP contains `worker-src 'self' blob:`; clean Admin build/typecheck/test pass and runtime headers expose the updated policy.
+- Follow-up PASS: stale Next process/cache was removed; 3000 and 4000 are healthy and 3001 is unused.
+- Follow-up PASS: logs proved Clerk session creation and `/account/me` were both 200 before a middleware redirect loop. Middleware mode inference was removed, source regression added, and final page/proxy verification remains unchanged.
+
 Code, contract, security boundary, automated regression, production build, and service health checks pass. Authenticated browser interaction and the exact referenced workbook remain manual evidence.
 
 - PASS: Avatar target is exclusively `auth.userId`; client cannot provide another user ID.
