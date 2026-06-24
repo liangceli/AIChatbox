@@ -264,12 +264,21 @@ export function CustomerWidget({
       setError(undefined);
 
       const storedToken = readWidgetSessionToken(tenantSlug);
-      let response = await requestWidgetSession(apiBaseUrl, tenantSlug, storedToken);
+      let response: Response;
 
-      if (!response.ok && storedToken) {
-        removeWidgetSessionToken(tenantSlug);
-        removeConversationId(tenantSlug);
-        response = await requestWidgetSession(apiBaseUrl, tenantSlug);
+      try {
+        response = await requestWidgetSession(apiBaseUrl, tenantSlug, storedToken);
+
+        if (!response.ok && storedToken) {
+          removeWidgetSessionToken(tenantSlug);
+          removeConversationId(tenantSlug);
+          response = await requestWidgetSession(apiBaseUrl, tenantSlug);
+        }
+      } catch {
+        if (isMounted) {
+          setError("Secure widget session failed. Please check the API connection.");
+        }
+        return;
       }
 
       if (!response.ok) {

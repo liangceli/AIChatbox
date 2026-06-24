@@ -395,36 +395,44 @@ export function KnowledgeBasePanel({
               </div>
             ) : (
               <div className="knowledge-document-list">
-                {documents.map((document) => (
-                  <button
-                    key={document.id}
-                    type="button"
-                    className={selectedDocumentId === document.id ? "selected" : undefined}
-                    onClick={() => setSelectedDocumentId(document.id)}
-                  >
-                    <div>
-                      <strong>{document.title}</strong>
-                      <span>{formatSource(document)}</span>
+                {documents.map((document) => {
+                  const isSelected = selectedDocumentId === document.id;
+                  const shouldShowDetail = isSelected && documentDetail?.id === document.id;
+
+                  return (
+                    <div key={document.id} className="knowledge-document-row">
+                      <button
+                        type="button"
+                        className={isSelected ? "selected" : undefined}
+                        onClick={() => setSelectedDocumentId(document.id)}
+                      >
+                        <div>
+                          <strong>{document.title}</strong>
+                          <span>{formatSource(document)}</span>
+                        </div>
+                        <div className="knowledge-document-facts">
+                          <span className={`status-pill ${document.status}`}>{document.status}</span>
+                          <span>{document.chunkCount} chunks</span>
+                          <span>{formatDate(document.ingestedAt ?? document.updatedAt)}</span>
+                        </div>
+                      </button>
+
+                      {isSelected && isLoadingDetail ? (
+                        <div className="knowledge-empty-state inline">Loading selected document...</div>
+                      ) : null}
+
+                      {shouldShowDetail ? (
+                        <KnowledgeDocumentInspector
+                          document={documentDetail}
+                          activeAction={activeAction}
+                          onAction={runDocumentAction}
+                        />
+                      ) : null}
                     </div>
-                    <div className="knowledge-document-facts">
-                      <span className={`status-pill ${document.status}`}>{document.status}</span>
-                      <span>{document.chunkCount} chunks</span>
-                      <span>{formatDate(document.ingestedAt ?? document.updatedAt)}</span>
-                    </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             )}
-
-            {isLoadingDetail ? (
-              <div className="knowledge-empty-state">Loading selected document...</div>
-            ) : documentDetail ? (
-              <KnowledgeDocumentInspector
-                document={documentDetail}
-                activeAction={activeAction}
-                onAction={runDocumentAction}
-              />
-            ) : null}
           </section>
         </div>
 

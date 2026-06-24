@@ -281,8 +281,10 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 ## Avatar and Table Import Regression Set
 
 - File-control QA must confirm click selection and drag/drop both populate visible filename/size state, removal clears it, successful ingestion clears it, and Start Ingestion uses that controlled file.
+- Knowledge document UI QA must confirm selecting any document expands its preview directly below that row, not below the entire list.
 - CSP QA must assert explicit same-origin/blob worker permission and no Clerk worker violation after a hard refresh.
 - Auth redirect QA must distinguish session-route/account success from protected-page success and fail if valid Clerk login loops back to `/sign-in`.
+- Widget host QA must open `/chat`, confirm the response CSP allows the configured `NEXT_PUBLIC_API_BASE_URL`, and verify widget session connection failures show an in-widget error rather than a Next runtime overlay.
 
 - Avatar: allow PNG/JPEG/WebP, reject signature mismatch/oversize, assert authenticated-user-only writes, and verify Admin/Agent rendering plus reload persistence.
 - Table: cover multi-sheet XLSX Q&A, descriptive headers, generic schemas, quoted CSV, sheet/row locators, corrupt XLSX, binary CSV, limits, and text-ingestion regression.

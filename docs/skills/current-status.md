@@ -168,6 +168,7 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 - Mapped users can crop and update their own avatar; Admin and Agent headers consume the authenticated account avatar.
 - Knowledge ingestion accepts server-parsed CSV/XLSX with adaptive Q&A/structured extraction and sheet/row citation locators.
+- `/chat` customer widget host now allows local API connections in Admin Web CSP and handles widget session network failures as an in-widget error instead of a page-level runtime crash.
 - Full workspace typecheck, lint, test, and build pass. Authenticated visual QA and the exact missing `thread_qa.xlsx` remain manual checks.
 
 - This project uses the repository-based AI handoff workflow.

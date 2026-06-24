@@ -232,3 +232,6 @@ Widget 行为：
 - Admin topbar and Agent header read `AccountRecord.avatarUrl` with an initials fallback.
 - CSV/XLSX uses multipart without manually setting the Content-Type boundary; existing text files keep their JSON ingestion path.
 - Show extracted record/Q&A counts and direct operators to chunk preview when structured fallback was used.
+- Knowledge document preview is an inline expansion directly under the selected document row, not a separate detail panel after the full document list.
+- `/chat` hosts the customer widget inside Admin Web but the widget still calls the public API directly through `NEXT_PUBLIC_API_BASE_URL`; Admin Web CSP must allow local widget API connections such as `http://localhost:4000` and `http://127.0.0.1:4000`.
+- Customer widget bootstrap must catch network/session fetch failures and render an in-widget error state instead of throwing a React/Next runtime overlay.
