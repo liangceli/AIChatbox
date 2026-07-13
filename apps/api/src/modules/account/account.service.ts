@@ -4,6 +4,7 @@ import type { AccountRecord } from "@platform/types";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import { PrismaService } from "../../common/prisma/prisma.service";
+import { humanSupportStatusWhere } from "../conversations/conversation-status";
 
 @Injectable()
 export class AccountService {
@@ -46,7 +47,7 @@ export class AccountService {
       by: ["tenantId"],
       where: {
         tenantId: { in: user.roles.map((membership) => membership.tenantId) },
-        status: "PENDING_HUMAN"
+        status: humanSupportStatusWhere()
       },
       _count: { _all: true }
     });

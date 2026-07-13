@@ -1,4 +1,4 @@
-import { Prisma } from "@platform/database";
+import { KnowledgeChunkStatus, KnowledgeDocumentStatus, Prisma } from "@platform/database";
 import type { AdminSearchResponse, AdminSearchResult } from "@platform/types";
 import { Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -69,7 +69,15 @@ export class SearchService {
         },
         include: {
           _count: {
-            select: { documents: true }
+            select: {
+              documents: {
+                where: {
+                  status: {
+                    not: KnowledgeDocumentStatus.DELETED
+                  }
+                }
+              }
+            }
           }
         },
         orderBy: { updatedAt: "desc" },
@@ -78,12 +86,15 @@ export class SearchService {
       this.prisma.client.knowledgeDocument.findMany({
         where: {
           tenantId: tenant.id,
+          status: {
+            not: KnowledgeDocumentStatus.DELETED
+          },
           OR: [
             { title: textFilter },
             { sourceUri: textFilter },
             { content: textFilter },
             { knowledgeBase: { is: { name: textFilter } } },
-            { chunks: { some: { content: textFilter } } }
+            { chunks: { some: { content: textFilter, status: KnowledgeChunkStatus.READY } } }
           ]
         },
         include: {
@@ -91,7 +102,7 @@ export class SearchService {
             select: { id: true, name: true }
           },
           chunks: {
-            where: { content: textFilter },
+            where: { content: textFilter, status: KnowledgeChunkStatus.READY },
             orderBy: { chunkIndex: "asc" },
             take: 1,
             select: { content: true }

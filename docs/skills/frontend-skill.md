@@ -1,5 +1,12 @@
 # 前端 Skill
 
+## 2026-06-24 Admin Web Next Cache Reliability
+
+- `apps/admin-web` local development must start through `node scripts/dev-server.cjs`, not raw `next dev`.
+- `apps/admin-web` production build must start through `node scripts/build-server.cjs`, not raw `next build`.
+- Both scripts clear only `.next` before launching Next so stale Windows/Next CSS, HMR, or app-router build artifacts do not detach `globals.css` or fail with stale page module errors after repeated local cycles.
+- Do not add CSS cache workarounds to runtime components.
+
 ## 2026-06-19 Admin Global Search
 
 - The admin topbar search is a tenant-scoped resource search, not an AI question box.
@@ -232,6 +239,7 @@ Widget 行为：
 - Admin topbar and Agent header read `AccountRecord.avatarUrl` with an initials fallback.
 - CSV/XLSX uses multipart without manually setting the Content-Type boundary; existing text files keep their JSON ingestion path.
 - Show extracted record/Q&A counts and direct operators to chunk preview when structured fallback was used.
-- Knowledge document preview is an inline expansion directly under the selected document row, not a separate detail panel after the full document list.
+- Knowledge document preview is an inline expansion directly under the selected document row, not a separate detail panel after the full document list. Clicking the same document row again must collapse it; clicking the Documents panel header must collapse/expand the whole document list without clearing the selected row state; do not force the first document open after list load unless a deep-linked document id is provided.
 - `/chat` hosts the customer widget inside Admin Web but the widget still calls the public API directly through `NEXT_PUBLIC_API_BASE_URL`; Admin Web CSP must allow local widget API connections such as `http://localhost:4000` and `http://127.0.0.1:4000`.
 - Customer widget bootstrap must catch network/session fetch failures and render an in-widget error state instead of throwing a React/Next runtime overlay.
+- Customer widget send should clear the composer immediately after a valid submit starts; if the request fails, restore the submitted draft so the customer can retry without retyping.

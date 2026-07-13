@@ -253,6 +253,7 @@ export function CustomerWidget({
   const [isRequestingHandoff, setIsRequestingHandoff] = useState(false);
   const [isEndingHandoff, setIsEndingHandoff] = useState(false);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const pendingMessageRef = useRef<{ content: string; clientMessageId: string } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -423,7 +424,8 @@ export function CustomerWidget({
     };
   }, [apiBaseUrl, tenantSlug, conversation?.id, widgetSessionToken]);
 
-  const isPendingHuman = conversation?.status === "pending_human";
+  const isPendingHuman =
+    conversation?.status === "pending_human" || conversation?.status === "assigned";
   const messages = conversation?.messages ?? [];
   const statusText = isPendingHuman ? "Human pending" : conversation ? "AI online" : "Ready";
   const visitorLabel = visitorId ? visitorId.slice(0, 8) : "pending";
@@ -480,6 +482,12 @@ export function CustomerWidget({
 
     setError(undefined);
     setIsSending(true);
+    setDraft("");
+    const pendingMessage =
+      pendingMessageRef.current?.content === message
+        ? pendingMessageRef.current
+        : { content: message, clientMessageId: createClientMessageId() };
+    pendingMessageRef.current = pendingMessage;
 
     try {
       const response = await fetch(`${apiBaseUrl}/chat/messages`, {
@@ -491,6 +499,7 @@ export function CustomerWidget({
         },
         body: JSON.stringify({
           message,
+          clientMessageId: pendingMessage.clientMessageId,
           conversationId: conversation?.id
         })
       });
@@ -500,6 +509,7 @@ export function CustomerWidget({
       }
 
       const payload = (await response.json()) as SendChatMessageResponse;
+      pendingMessageRef.current = null;
       setConversation((current) => ({
         id: payload.conversation.id,
         status: payload.conversation.status,
@@ -514,11 +524,13 @@ export function CustomerWidget({
         assignedUser: current?.assignedUser ?? null,
         handoffRequestedAt: current?.handoffRequestedAt ?? null,
         handoffReason: current?.handoffReason ?? null,
-        isHandoffPending: payload.conversation.status === "pending_human",
+        isHandoffPending:
+          payload.conversation.status === "pending_human" ||
+          payload.conversation.status === "assigned",
         messages: payload.messages
       }));
-      setDraft("");
     } catch (submissionError: unknown) {
+      setDraft(message);
       setError(submissionError instanceof Error ? submissionError.message : "Unable to send message.");
     } finally {
       setIsSending(false);
@@ -849,4 +861,17 @@ function removeConversationId(tenantSlug: string): void {
   if (typeof window !== "undefined") {
     window.localStorage.removeItem(getConversationStorageKey(tenantSlug));
   }
+}
+
+function createClientMessageId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = character === "x" ? random : (random & 0x3) | 0x8;
+
+    return value.toString(16);
+  });
 }

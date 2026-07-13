@@ -35,6 +35,8 @@ function runSourceSmokeAssertions() {
   assert.equal(sanitizeAdminNextPath("admin"), "/admin");
 
   const packageJson = JSON.parse(readFileSync(resolve(__dirname, "../package.json"), "utf8"));
+  const devServerSource = readFileSync(resolve(__dirname, "dev-server.cjs"), "utf8");
+  const buildServerSource = readFileSync(resolve(__dirname, "build-server.cjs"), "utf8");
   const adminAccessSource = readFileSync(resolve(__dirname, "../app/lib/admin-access.ts"), "utf8");
   const adminProxySource = readFileSync(
     resolve(__dirname, "../app/api/admin/[...path]/route.ts"),
@@ -88,6 +90,14 @@ function runSourceSmokeAssertions() {
 
   assert.equal(packageJson.dependencies["@platform/config"], "workspace:*");
   assert.equal(packageJson.dependencies["react-easy-crop"], "5.5.3");
+  assert.equal(packageJson.scripts.dev, "node scripts/dev-server.cjs");
+  assert.equal(packageJson.scripts.build, "node scripts/build-server.cjs");
+  assert.match(devServerSource, /\.next/);
+  assert.match(devServerSource, /rmSync/);
+  assert.match(devServerSource, /next.*dev/s);
+  assert.match(buildServerSource, /\.next/);
+  assert.match(buildServerSource, /rmSync/);
+  assert.match(buildServerSource, /next.*build/s);
   assert.match(userAvatarEditorSource, /Cropper/);
   assert.match(userAvatarEditorSource, /account\/me\/avatar/);
   assert.match(userAvatarEditorSource, /image\/png,image\/jpeg,image\/webp/);
@@ -190,6 +200,8 @@ function runSourceSmokeAssertions() {
   assert.match(answerDebugPanelSource, /\/chat\/answer-debug/);
   assert.match(answerDebugPanelSource, /Retrieved chunks/);
   assert.match(answerDebugPanelSource, /Safe provider metadata/);
+  assert.match(answerDebugPanelSource, /Retrieval detection/);
+  assert.match(answerDebugPanelSource, /confidenceBestScore/);
   assert.doesNotMatch(answerDebugPanelSource, /ADMIN_API_TOKEN|OPENAI_API_KEY|NEXT_PUBLIC_ADMIN/);
   assert.match(knowledgeBasePanelSource, /Chunk Preview/);
   assert.match(knowledgeBasePanelSource, /reprocess/);
@@ -198,6 +210,13 @@ function runSourceSmokeAssertions() {
   assert.match(knowledgeBasePanelSource, /selectedFile/);
   assert.match(knowledgeBasePanelSource, /Select file/);
   assert.match(knowledgeBasePanelSource, /onDrop/);
+  assert.match(knowledgeBasePanelSource, /isDocumentsCollapsed/);
+  assert.match(knowledgeBasePanelSource, /knowledge-panel-toggle/);
+  assert.match(knowledgeBasePanelSource, /aria-controls="knowledge-document-list"/);
+  assert.match(knowledgeBasePanelSource, /isDocumentsCollapsed \? null/);
+  assert.match(knowledgeBasePanelSource, /aria-expanded=\{isSelected\}/);
+  assert.match(knowledgeBasePanelSource, /current === document\.id \? undefined : document\.id/);
+  assert.match(knowledgeBasePanelSource, /payload\.some\(\(document\) => document\.id === current\) \? current : undefined/);
 }
 
 function loadTranspiledModule(relativePath, requireMap = {}) {

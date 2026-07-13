@@ -1,6 +1,106 @@
 # Status
 
-Date: 2026-06-22
+Date: 2026-07-13
+
+Latest completed capability: reproducible knowledge versioning and state/log safety closeout.
+- Added and locally applied forward migration `20260713000000_fix_knowledge_chunk_version_index`.
+- The migration drops the legacy `(tenantId, knowledgeDocumentId, chunkIndex)` unique index created by the initial schema; that index incorrectly blocked version 2 chunks even though the Prisma schema and lifecycle service use version-aware uniqueness.
+- Added a database schema regression and an explicit real-PostgreSQL lifecycle test. The integration test writes version 1 chunks, marks them INACTIVE, writes version 2 READY chunks with the same chunk indexes, asserts both generations, and rolls the whole transaction back.
+- Verified the legacy index is absent after migration and that tenant/document/chunk counts remain unchanged after the rollback test.
+- Explicit `productContext: null` now clears `ConversationState.activeProductContext`, confidence, source, catalog relation, state JSON, and legacy conversation metadata, preventing an unrelated later follow-up from reviving stale product context.
+- AI Worker startup now logs `redisConfigured` only and has a source regression preventing the full `REDIS_URL` from entering logs.
+- Database and AI Worker package tests are no longer placeholders. Six support packages still have explicit placeholder tests.
+- Workspace typecheck, lint, test, build, and `git diff --check` pass across all 11 packages after the controlled Admin Web dev shutdown.
+
+Latest completed capability: knowledge lifecycle hardening for active answers.
+- Added lifecycle fields for knowledge documents/chunks: document `DELETED`, document `version`, processing error timestamps, chunk `status`, chunk `version`, `contentHash`, and `embeddingStatus`.
+- Knowledge upload/update now treats repeated FILE/URL `sourceUri` as a replacement target instead of creating unlimited duplicate active documents.
+- Reprocessing keeps the old READY version searchable if the new processing attempt fails; only a first-time failed document becomes FAILED.
+- Archive/delete are now soft lifecycle transitions: documents become ARCHIVED/DELETED and related chunks become ARCHIVED/DELETED instead of being physically removed first.
+- Retrieval now requires `tenantId`, `KnowledgeDocument.status = READY`, and `KnowledgeChunk.status = READY` for both keyword and local semantic pools, so OpenAI and deterministic modes use the same active filtered chunk set.
+- Admin document lists hide DELETED documents; global search excludes DELETED documents and uses READY chunks for previews.
+- Applied local migration `20260703030000_harden_knowledge_lifecycle` after resolving a local failed migration record caused by a missing legacy unique constraint name.
+- API typecheck and API tests passed, including new lifecycle regression coverage. Browser QA remains pending after service restart.
+
+Latest completed capability: explicit ConversationState and ProductCatalog phase 1.
+- Added `ProductCatalog` and `ConversationState` Prisma models plus migration `20260703020000_add_product_catalog_conversation_state`.
+- Added `ConversationStateService` to read persisted active product context before legacy `Conversation.metadata.rag`, persist pending clarification, and upsert resolved product scopes into `ProductCatalog`.
+- `ChatService` now passes the persisted retrieval context into product-aware retrieval and synchronizes state after clarification/answer turns while keeping legacy metadata for compatibility.
+- Added `pnpm --filter @platform/api backfill:product-catalog`; optional `TENANT_SLUG=<slug>` scopes the backfill. The script scans existing knowledge metadata and upserts tenant-scoped product catalog entries without printing content or secrets.
+- Added API regression coverage for persisted state priority and catalog/state upsert behavior. API test and typecheck passed.
+- Full DB migration/backfill was not run in this turn; apply the migration before browser testing this phase against the local database.
+
+Latest completed capability: product-context pronoun follow-up scoping.
+- Follow-up retrieval now injects the stored conversation product context as a hidden retrieval constraint, so pronoun questions such as `Which ecosystems support it?` stay scoped to the product the customer just selected.
+- If a customer explicitly resolves a pending product clarification and the selected evidence has a single product scope, that scope is persisted as `rag.productContext` for later turns.
+- Regression coverage now includes `how do I pair a device?` -> `KMDIM400` -> `Which ecosystems support it?`, and verifies the follow-up retrieves KMDIM400 compatibility evidence rather than KMREM evidence.
+- This is a tenant-neutral state-machine fix. Do not add product-specific hardcoded branches to platform core.
+
+Latest completed capability: repair/pair intent-boundary and clarification-loop repair.
+- Intent detection now matches complete normalized words/phrases, so `repair` can no longer trigger the `pair` intent through substring overlap.
+- `repair`, `fix`, `broken`, and related terms map to troubleshooting.
+- Short model-code clarification replies use controlled adjacent-character transposition variants during candidate lookup and scoring; `KMERM` can resolve to `KMREM` without broad fuzzy matching.
+- Resolved product scope is also checked against intent metadata, so pairing-only KMREM evidence cannot be used as a repair answer.
+- Real sequence passed: CEO knowledge miss -> `how to repair it?` asks which product to troubleshoot -> `KMERM` exits pending and returns a zero-citation knowledge miss because no KMREM repair instructions exist.
+
+Latest completed capability: professional evidence-gap replies.
+- No-knowledge chat responses no longer prepend tenant-configured fallback copy, preventing informal or unsafe text such as `bro` from entering the platform evidence-safety response.
+- Purchase/location questions with no grounded source now state that verified purchasing information is unavailable in the current knowledge base and optionally offer human support.
+- Real Kasta sequence passed: product clarification -> KMREM pairing -> ecosystem follow-up -> purchasing follow-up. The first two grounded answers cite KMREM evidence; the unsupported purchasing answer has zero citations.
+
+Latest completed capability: context-safe Hybrid Search and hardened widget delivery.
+- Retrieval now combines scored Keyword Top-20 and local sparse-semantic Vector Top-20 candidates, then applies `45% keyword + 35% semantic + 15% metadata + 5% exact-match` weighting, product scope, confidence threshold `0.55`, source diversity, and Final Top-3 selection.
+- Product ambiguity discovery runs across the bounded tenant keyword pool rather than only the final candidates. A real Kasta `how to pair?` request now asks for a product and lists `KMREM`, `KMDIM400`, and `KMREL400`; file names are excluded.
+- Pending clarification, follow-up, new-question, greeting, thanks, and human-request turns are classified separately. Pending clarification expires after 20 minutes, and only genuine follow-ups reuse product context.
+- OpenAI receives the last eight turns plus selected tenant evidence and must return structured `answer + usedChunkIds`; citations are emitted only for valid used IDs from the selected evidence. No-evidence requests bypass OpenAI and return a deterministic knowledge miss with zero citations.
+- Widget sessions are signature-first, tenant is loaded from the signed tenant ID, wrong-tenant reuse is rejected, customer sends require a tenant-scoped idempotency key, and tenant/visitor rate limits are enforced.
+- Human support now distinguishes `PENDING_HUMAN` from atomically claimed `ASSIGNED`; both states keep AI paused until human support ends.
+- Real local API/OpenAI smoke passed for `how to pair? -> KMREM`, grounded citation, no-evidence refusal, duplicate-send idempotency, and wrong-tenant 401.
+- The current semantic scorer is an original dependency-free local sparse vector implementation. Neural embeddings, pgvector, distributed rate limiting, and a production-scale index remain future hardening, not claimed capabilities.
+- Full workspace lint, typecheck, test, and build pass. Seven package test scripts remain explicit placeholders. Authenticated click-through browser acceptance remains pending because the in-app browser DOM/evaluate operation timed out.
+
+Latest completed capability: transposed short model-code clarification repair.
+- Pending product clarification now accepts a single adjacent-character transposition in short model codes, so `KMERM` can safely resolve to `KMREM` without broad fuzzy product matching.
+- Once a product scope is reliably resolved, generic words in the original question no longer cause coverage scoring to discard the correctly scoped chunk.
+- Greetings and acknowledgements such as `Hi` are handled as conversational interruptions instead of invalid product replies; the pending clarification remains available for the next product response.
+- Regression coverage includes `how do I pair a device?` followed by `KMERM` for both populated and open/empty clarification option states.
+- API tests, API typecheck, and focused diff checks pass for this repair.
+
+Latest completed capability: pending clarification short model replies.
+- Product-aware retrieval now treats short replies to a pending clarification as continuation context, so `how to pair?` followed by `KMREN` retrieves as the original pairing question plus the short model reply.
+- Short product-action questions with only generic evidence now create an open `rag.pendingClarification` even when there are no clean product options; this prevents the LLM from asking an untracked natural-language clarification.
+- Short model-code replies can resolve to a known product/model with a small typo only when both sides look like model codes.
+- Generic clarification replies such as `matter product` continue to ask for a stronger product/model instead of forcing a weak scope.
+- Once the model/product scope is resolved, the existing conversation `rag.productContext` persistence path continues to scope later follow-up questions.
+- `pnpm --filter @platform/api test`, `pnpm --filter @platform/api typecheck`, and `pnpm --filter @platform/admin-web test` passed for this focused update.
+
+Latest completed capability: customer widget composer cleanup.
+- The customer widget now clears the submitted textarea draft immediately when a valid send starts, instead of leaving stale text visible while the response is in flight.
+- If the send request fails, the submitted draft is restored so the customer can retry without retyping.
+- `apps/customer-widget` now has a source smoke test covering immediate draft clear and failure restore behavior.
+
+Latest completed capability: product-aware RAG first step.
+- AnythingLLM was reviewed as a read-only MIT architectural reference; no source code or branding was copied.
+- `THIRD_PARTY_NOTICES.md` records the AnythingLLM review, copyright holder, MIT license type, and no copied/adapted source.
+- Knowledge documents/chunks now carry structured knowledge metadata inside existing JSON metadata fields.
+- Retrieval can detect product/action ambiguity, ask a clarification question, and then persist product context on the conversation for scoped follow-up answers.
+- Customer chat and Answer Debug now use `resolveRetrievalDecision()`; legacy `retrieveRelevantChunks()` remains available for compatibility.
+- OpenAI prompt context includes selected chunk product-scope metadata and prohibits mixing evidence across unrelated product scopes.
+- No schema migration, vector database, embedding provider, reranker, or new package dependency was introduced in this pass.
+- API typecheck and API test pass, including the new product-aware RAG regression script.
+
+Latest completed capability: product/entity candidate cleanup and confidence threshold.
+- Product clarification candidates now filter FAQ/Q&A/case-study/policy/generic document-title noise, including legacy title-derived metadata.
+- Document titles are only inferred as product labels when they contain clear product/model signals.
+- Pending clarification replies that do not match an offered product option repeat the clarification instead of generating from weak context.
+- Retrieval decisions now include confidence level, reason, best score, and coverage; chat message metadata and Answer Debug expose safe confidence diagnostics.
+- API product-aware regression tests cover noisy title filtering and unresolved clarification repeats.
+
+Latest completed capability: admin-web local CSS dev reliability.
+- `apps/admin-web` dev startup now runs through `scripts/dev-server.cjs`, which clears only the local `.next` compilation output before launching `next dev`.
+- Follow-up: admin-web production build now runs through `scripts/build-server.cjs`, which also clears only `.next` before `next build` to avoid stale local app-router module errors such as missing `/_document`.
+- This targets intermittent Windows/Next stale CSS, HMR, and app-router build artifacts without changing runtime behavior or page styling.
+- Admin-web source smoke tests now assert the dev/build scripts remain wired into `package.json`.
 
 Latest completed capability: user-owned cropped avatars and structured CSV/XLSX knowledge ingestion.
 - Follow-up: the Knowledge upload control now visibly attaches the selected file, supports drag/drop/removal, and no longer relies on an invisible full-card input.

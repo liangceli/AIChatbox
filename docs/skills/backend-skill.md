@@ -1,5 +1,45 @@
 # 后端 Skill
 
+## 2026-07-13 State Clearing and Secret-Safe Worker Logging
+
+- `ConversationStateService.persistRetrievalState()` must distinguish an omitted `productContext` from explicit `productContext: null`.
+- Omitted means no state update. Explicit null must disconnect `activeProductCatalog`, store database null for `activeProductContext`, reset confidence/source, remove state JSON product context, and clear legacy conversation metadata.
+- AI Worker startup and error logs must never include raw Redis/database/provider URLs. Readiness logs may expose only safe booleans or explicitly sanitized host metadata.
+- Knowledge version replacement depends on the version-aware database uniqueness invariant; backend mock tests are insufficient without the explicit rollback-safe database integration command.
+
+## 2026-07-03 Hybrid Retrieval and Widget Boundary Notes
+
+- `ConversationStateService` is the current server-side state boundary for active product context and pending clarification. It reads `ConversationState` before legacy `Conversation.metadata.rag` and writes both during the migration window.
+- `ConversationState` is retrieval context only. It must not be treated as copied product knowledge; final answers must come from active READY chunks.
+- Resolved product scopes must be upserted to tenant-scoped `ProductCatalog`; product catalog entries are support/retrieval data, not authorization data.
+- Existing knowledge metadata can be backfilled into `ProductCatalog` through `pnpm --filter @platform/api backfill:product-catalog` after the migration is applied.
+- `KnowledgeRetrievalService` owns query normalization, product ambiguity, Keyword Top-20, local sparse-semantic Vector Top-20, weighted merge, product scope, confidence, and Final Top-3.
+- Candidate SQL must always include resolved tenant ID, `KnowledgeDocument.status = READY`, and `KnowledgeChunk.status = READY`. Keyword pool scoring must happen before Top-K truncation; database return order is not relevance order.
+- Knowledge update/reprocess must not expose partial chunks. Old READY chunks become INACTIVE only after the new version succeeds; on failed reprocess, the previous READY document remains searchable and the error is recorded.
+- Archive/delete are soft lifecycle transitions first: mark document and chunks ARCHIVED/DELETED, then let retrieval filters exclude them.
+- Product ambiguity discovery uses the bounded keyword pool, not only final answer candidates, so multiple device scopes in one file are not collapsed.
+- `ConversationContextService` separates clarification replies, follow-ups, new questions, greetings, thanks, and human requests. Pending clarification expires after 20 minutes.
+- Intent detection must use normalized word/phrase boundaries; never use raw substring matching (`repair` must not match `pair`). Controlled short-model transposition variants may participate in lookup/scoring, but scoped evidence must still match the requested intent.
+- `OpenAiLlmProviderService` validates structured answer JSON and `usedChunkIds`; unknown IDs or parse failure fall back safely.
+- `WidgetSessionGuard` verifies the signature before any tenant lookup, loads ACTIVE tenant from signed tenant ID, and rejects requested-slug mismatch.
+- `WidgetRateLimitGuard` runs after session verification. Its buckets are local-process only and must move to a shared store before horizontal scaling.
+- Customer message idempotency is tenant-scoped; never trust client visitor/tenant identity outside the verified Widget session.
+
+## 2026-06-24 Product-Aware RAG Backend Notes
+
+- `KnowledgeMetadataService` extracts/stores generic structured knowledge metadata in existing `KnowledgeDocument.metadata` and `KnowledgeChunk.metadata` JSON fields.
+- `KnowledgeRetrievalService.resolveRetrievalDecision()` is the new orchestration boundary for product context, pending clarification, ambiguity detection, scoped retrieval, and warnings.
+- Product/entity clarification candidates must be cleaned before use; FAQ/Q&A titles, case-study titles, policy categories, and long title-like labels without product/model signals are not valid product options.
+- Retrieval decisions include safe confidence diagnostics: level, reason, best score, coverage, and optional score gap.
+- Keep `retrieveRelevantChunks()` as a compatibility API, but new chat/debug paths should use `resolveRetrievalDecision()`.
+- `ChatService.sendMessage()` must create/load the conversation before retrieval so it can use `Conversation.metadata.rag`.
+- When retrieval returns `mode: "clarification"`, ChatService saves an assistant clarification message and stores `rag.pendingClarification`; it must not call the LLM provider.
+- If a pending clarification reply does not match any option, repeat the clarification and do not call the provider.
+- When the customer clarifies a product, scoped retrieval stores `rag.productContext` and clears `rag.pendingClarification`.
+- Conversation RAG metadata is customer support context only. It is never auth or tenant authorization evidence.
+- OpenAI prompt context may include safe product-scope metadata from backend-selected chunks, never raw secrets or authorization data.
+- No Prisma migration, vector database, embedding provider, or new dependency was added in this step.
+
 ## 2026-06-19 Admin Global Search Backend Notes
 
 - `GET /v1/search` is an admin-only tenant-scoped resource search protected by `AdminApiGuard` and tenant resolution middleware.

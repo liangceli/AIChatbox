@@ -7,7 +7,7 @@ const logger = createLogger("ai-worker");
 
 async function start() {
   logger.info("Worker booted", {
-    redisUrl: env.REDIS_URL,
+    redisConfigured: Boolean(env.REDIS_URL?.trim()),
     queuesPlanned: ["knowledge-ingestion", "response-generation", "handoff-routing"]
   });
 }

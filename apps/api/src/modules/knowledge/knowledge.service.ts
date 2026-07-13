@@ -1,4 +1,10 @@
-import { KnowledgeDocumentSourceType, KnowledgeDocumentStatus, Prisma } from "@platform/database";
+import {
+  KnowledgeChunkStatus,
+  KnowledgeDocumentSourceType,
+  KnowledgeDocumentStatus,
+  KnowledgeEmbeddingStatus,
+  Prisma
+} from "@platform/database";
 import type {
   KnowledgeBaseRecord,
   KnowledgeChunkRecord,
@@ -23,6 +29,7 @@ import { CreateKnowledgeBaseDto } from "./dto/create-knowledge-base.dto";
 import { CreateManualKnowledgeDocumentDto } from "./dto/create-manual-knowledge-document.dto";
 import { ImportUrlKnowledgeDocumentDto } from "./dto/import-url-knowledge-document.dto";
 import { KnowledgeChunkingService } from "./knowledge-chunking.service";
+import { KnowledgeMetadataService } from "./knowledge-metadata.service";
 import { KnowledgeUrlImportService } from "./knowledge-url-import.service";
 import { KnowledgeTableImportService, type UploadedKnowledgeFile } from "./knowledge-table-import.service";
 import {
@@ -40,6 +47,8 @@ export class KnowledgeService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(KnowledgeChunkingService)
     private readonly knowledgeChunkingService: KnowledgeChunkingService,
+    @Inject(KnowledgeMetadataService)
+    private readonly knowledgeMetadataService: KnowledgeMetadataService,
     @Inject(KnowledgeUrlImportService)
     private readonly knowledgeUrlImportService: KnowledgeUrlImportService,
     @Inject(KnowledgeTableImportService)
@@ -54,7 +63,13 @@ export class KnowledgeService {
       include: {
         _count: {
           select: {
-            documents: true
+            documents: {
+              where: {
+                status: {
+                  not: KnowledgeDocumentStatus.DELETED
+                }
+              }
+            }
           }
         }
       },
@@ -75,7 +90,13 @@ export class KnowledgeService {
       include: {
         _count: {
           select: {
-            documents: true
+            documents: {
+              where: {
+                status: {
+                  not: KnowledgeDocumentStatus.DELETED
+                }
+              }
+            }
           }
         }
       }
@@ -108,7 +129,13 @@ export class KnowledgeService {
       include: {
         _count: {
           select: {
-            documents: true
+            documents: {
+              where: {
+                status: {
+                  not: KnowledgeDocumentStatus.DELETED
+                }
+              }
+            }
           }
         }
       }
@@ -128,7 +155,13 @@ export class KnowledgeService {
       include: {
         _count: {
           select: {
-            documents: true
+            documents: {
+              where: {
+                status: {
+                  not: KnowledgeDocumentStatus.DELETED
+                }
+              }
+            }
           }
         }
       }
@@ -146,7 +179,10 @@ export class KnowledgeService {
     const documents = await this.prisma.client.knowledgeDocument.findMany({
       where: {
         tenantId: tenant.id,
-        knowledgeBaseId
+        knowledgeBaseId,
+        status: {
+          not: KnowledgeDocumentStatus.DELETED
+        }
       },
       orderBy: {
         createdAt: "desc"
@@ -170,6 +206,48 @@ export class KnowledgeService {
     }
 
     const sourceType = this.resolveSourceType(input.sourceType);
+    const knowledgeMetadata = this.knowledgeMetadataService.buildDocumentMetadata({
+      title: input.title.trim(),
+      content: normalizedContent,
+      sourceUri: input.sourceUri?.trim() || null,
+      currentMetadata: input.metadata
+    });
+    const mergedMetadata = this.knowledgeMetadataService.mergeIntoMetadata(
+      input.metadata,
+      knowledgeMetadata
+    );
+    const checksum = this.createChecksum(normalizedContent);
+    const existingDocument = await this.findActiveDocumentBySource(
+      tenant.id,
+      knowledgeBaseId,
+      sourceType,
+      input.sourceUri?.trim() || null
+    );
+
+    if (existingDocument) {
+      await this.processDocumentContent(
+        tenant.id,
+        existingDocument.id,
+        normalizedContent,
+        mergedMetadata
+      );
+
+      const updatedDocument = await this.prisma.client.knowledgeDocument.findUnique({
+        where: {
+          id_tenantId: {
+            id: existingDocument.id,
+            tenantId: tenant.id
+          }
+        }
+      });
+
+      if (!updatedDocument) {
+        throw new NotFoundException("Knowledge document not found after update.");
+      }
+
+      return toKnowledgeDocumentRecord(updatedDocument);
+    }
+
     const document = await this.prisma.client.knowledgeDocument.create({
       data: {
         tenantId: tenant.id,
@@ -178,15 +256,13 @@ export class KnowledgeService {
         sourceType,
         sourceUri: input.sourceUri?.trim() || null,
         content: normalizedContent,
-        checksum: this.createChecksum(normalizedContent),
+        checksum,
         status: KnowledgeDocumentStatus.INDEXING,
-        metadata: input.metadata
-          ? (input.metadata as Prisma.InputJsonValue)
-          : undefined
+        metadata: mergedMetadata as Prisma.InputJsonValue
       }
     });
 
-    await this.processDocumentContent(tenant.id, document.id, normalizedContent, input.metadata);
+    await this.processDocumentContent(tenant.id, document.id, normalizedContent, mergedMetadata);
 
     const storedDocument = await this.prisma.client.knowledgeDocument.findUnique({
       where: {
@@ -297,10 +373,16 @@ export class KnowledgeService {
       where: {
         id: documentId,
         tenantId: tenant.id,
-        knowledgeBaseId
+        knowledgeBaseId,
+        status: {
+          not: KnowledgeDocumentStatus.DELETED
+        }
       },
       include: {
         chunks: {
+          where: {
+            status: KnowledgeChunkStatus.READY
+          },
           orderBy: {
             chunkIndex: "asc"
           }
@@ -325,7 +407,11 @@ export class KnowledgeService {
     const chunks = await this.prisma.client.knowledgeChunk.findMany({
       where: {
         tenantId: tenant.id,
-        knowledgeDocumentId: documentId
+        knowledgeDocumentId: documentId,
+        status: KnowledgeChunkStatus.READY,
+        knowledgeDocument: {
+          status: KnowledgeDocumentStatus.READY
+        }
       },
       orderBy: {
         chunkIndex: "asc"
@@ -357,6 +443,10 @@ export class KnowledgeService {
       throw new BadRequestException("Archived knowledge documents cannot be reprocessed.");
     }
 
+    if (document.status === KnowledgeDocumentStatus.DELETED) {
+      throw new BadRequestException("Deleted knowledge documents cannot be reprocessed.");
+    }
+
     const normalizedContent = replacementContent?.trim() || document.content?.trim();
 
     if (!normalizedContent) {
@@ -376,10 +466,13 @@ export class KnowledgeService {
     await this.ensureKnowledgeDocument(tenant.id, knowledgeBaseId, documentId);
 
     const document = await this.prisma.client.$transaction(async (tx) => {
-      await tx.knowledgeChunk.deleteMany({
+      await tx.knowledgeChunk.updateMany({
         where: {
           tenantId: tenant.id,
           knowledgeDocumentId: documentId
+        },
+        data: {
+          status: KnowledgeChunkStatus.ARCHIVED
         }
       });
 
@@ -392,7 +485,8 @@ export class KnowledgeService {
         },
         data: {
           status: KnowledgeDocumentStatus.ARCHIVED,
-          chunkCount: 0
+          chunkCount: 0,
+          archivedAt: new Date()
         }
       });
     });
@@ -407,12 +501,61 @@ export class KnowledgeService {
   ): Promise<void> {
     await this.ensureKnowledgeDocument(tenant.id, knowledgeBaseId, documentId);
 
-    await this.prisma.client.knowledgeDocument.delete({
-      where: {
-        id_tenantId: {
-          id: documentId,
-          tenantId: tenant.id
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.knowledgeChunk.updateMany({
+        where: {
+          tenantId: tenant.id,
+          knowledgeDocumentId: documentId
+        },
+        data: {
+          status: KnowledgeChunkStatus.DELETED
         }
+      });
+
+      await tx.knowledgeDocument.update({
+        where: {
+          id_tenantId: {
+            id: documentId,
+            tenantId: tenant.id
+          }
+        },
+        data: {
+          status: KnowledgeDocumentStatus.DELETED,
+          chunkCount: 0,
+          deletedAt: new Date()
+        }
+      });
+    });
+  }
+
+  private async findActiveDocumentBySource(
+    tenantId: string,
+    knowledgeBaseId: string,
+    sourceType: KnowledgeDocumentSourceType,
+    sourceUri: string | null
+  ): Promise<{ id: string } | null> {
+    if (
+      !sourceUri ||
+      (sourceType !== KnowledgeDocumentSourceType.FILE && sourceType !== KnowledgeDocumentSourceType.URL)
+    ) {
+      return null;
+    }
+
+    return this.prisma.client.knowledgeDocument.findFirst({
+      where: {
+        tenantId,
+        knowledgeBaseId,
+        sourceType,
+        sourceUri,
+        status: {
+          notIn: [KnowledgeDocumentStatus.ARCHIVED, KnowledgeDocumentStatus.DELETED]
+        }
+      },
+      select: {
+        id: true
+      },
+      orderBy: {
+        updatedAt: "desc"
       }
     });
   }
@@ -442,7 +585,10 @@ export class KnowledgeService {
       where: {
         id: documentId,
         tenantId,
-        knowledgeBaseId
+        knowledgeBaseId,
+        status: {
+          not: KnowledgeDocumentStatus.DELETED
+        }
       },
       select: {
         id: true
@@ -460,15 +606,81 @@ export class KnowledgeService {
     content: string,
     currentMetadata?: Prisma.JsonValue | Record<string, unknown> | null
   ): Promise<void> {
-    const chunks = this.knowledgeChunkingService.chunkText(content);
+    const checksum = this.createChecksum(content);
+    const storedDocument = await this.prisma.client.knowledgeDocument.findUnique({
+      where: {
+        id_tenantId: {
+          id: documentId,
+          tenantId
+        }
+      },
+      select: {
+        checksum: true,
+        chunkCount: true,
+        metadata: true,
+        status: true,
+        title: true,
+        sourceUri: true,
+        version: true
+      }
+    });
 
-    if (chunks.length === 0) {
-      throw new BadRequestException("Document content did not produce any chunks.");
+    if (!storedDocument) {
+      throw new NotFoundException("Knowledge document not found.");
     }
 
-    const checksum = this.createChecksum(content);
+    const previousReady = storedDocument.status === KnowledgeDocumentStatus.READY;
+    const previousMetadata = this.isPlainObject(storedDocument.metadata) ? storedDocument.metadata : {};
+    const nextVersion =
+      previousReady && storedDocument.checksum !== checksum
+        ? storedDocument.version + 1
+        : storedDocument.version;
+
+    if (previousReady && storedDocument.checksum === checksum) {
+      await this.prisma.client.knowledgeDocument.update({
+        where: {
+          id_tenantId: {
+            id: documentId,
+            tenantId
+          }
+        },
+        data: {
+          processingError: null,
+          metadata: {
+            ...previousMetadata,
+            ingestion: {
+              ...(this.isPlainObject(previousMetadata.ingestion) ? previousMetadata.ingestion : {}),
+              checksum,
+              skippedAt: new Date().toISOString(),
+              skipReason: "content_hash_unchanged"
+            }
+          } as Prisma.InputJsonValue
+        }
+      });
+
+      return;
+    }
+
+    const documentMetadata =
+      this.knowledgeMetadataService.readKnowledgeMetadata(currentMetadata) ??
+      this.knowledgeMetadataService.buildDocumentMetadata({
+        title: storedDocument.title,
+        content,
+        sourceUri: storedDocument.sourceUri ?? null,
+        currentMetadata
+      });
+    const baseMetadata = this.knowledgeMetadataService.mergeIntoMetadata(
+      currentMetadata,
+      documentMetadata
+    );
 
     try {
+      const chunks = this.knowledgeChunkingService.chunkText(content);
+
+      if (chunks.length === 0) {
+        throw new BadRequestException("Document content did not produce any chunks.");
+      }
+
       await this.prisma.client.$transaction(async (tx) => {
         await tx.knowledgeDocument.update({
           where: {
@@ -481,14 +693,18 @@ export class KnowledgeService {
             status: KnowledgeDocumentStatus.INDEXING,
             content,
             checksum,
-            chunkCount: 0
+            chunkCount: 0,
+            processingError: null
           }
         });
 
-        await tx.knowledgeChunk.deleteMany({
+        await tx.knowledgeChunk.updateMany({
           where: {
             tenantId,
             knowledgeDocumentId: documentId
+          },
+          data: {
+            status: KnowledgeChunkStatus.INACTIVE
           }
         });
 
@@ -496,13 +712,22 @@ export class KnowledgeService {
           data: chunks.map((chunk) => ({
             tenantId,
             knowledgeDocumentId: documentId,
+            version: nextVersion,
             chunkIndex: chunk.chunkIndex,
             content: chunk.content,
+            contentHash: this.createChecksum(chunk.content),
             tokenCount: chunk.tokenCount,
+            status: KnowledgeChunkStatus.READY,
+            embeddingStatus: KnowledgeEmbeddingStatus.DISABLED,
             sourceLocator: chunk.sourceLocator,
-            metadata: {
-              checksum
-            }
+            metadata: this.knowledgeMetadataService.mergeIntoMetadata(
+              { checksum },
+              this.knowledgeMetadataService.buildChunkMetadata({
+                documentMetadata,
+                content: chunk.content,
+                sourceLocator: chunk.sourceLocator
+              })
+            ) as Prisma.InputJsonValue
           }))
         });
 
@@ -516,9 +741,11 @@ export class KnowledgeService {
           data: {
             chunkCount: chunks.length,
             status: KnowledgeDocumentStatus.READY,
+            version: nextVersion,
             ingestedAt: new Date(),
+            processingError: null,
             metadata: {
-              ...(this.isPlainObject(currentMetadata) ? currentMetadata : {}),
+              ...baseMetadata,
               ingestion: {
                 chunkCount: chunks.length,
                 checksum,
@@ -533,6 +760,13 @@ export class KnowledgeService {
         `Processed knowledge document ${documentId} for tenant ${tenantId}: ${chunks.length} chunks`
       );
     } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown ingestion error";
+      const failureMetadata = {
+        ...(this.isPlainObject(currentMetadata) ? currentMetadata : previousMetadata),
+        ingestionError: errorMessage,
+        failedAt: new Date().toISOString()
+      } as Prisma.InputJsonValue;
+
       await this.prisma.client.knowledgeDocument.update({
         where: {
           id_tenantId: {
@@ -541,12 +775,10 @@ export class KnowledgeService {
           }
         },
         data: {
-          status: KnowledgeDocumentStatus.FAILED,
-          metadata: {
-            ...(this.isPlainObject(currentMetadata) ? currentMetadata : {}),
-            ingestionError: error instanceof Error ? error.message : "Unknown ingestion error",
-            failedAt: new Date().toISOString()
-          } as Prisma.InputJsonValue
+          status: previousReady ? KnowledgeDocumentStatus.READY : KnowledgeDocumentStatus.FAILED,
+          chunkCount: previousReady ? storedDocument.chunkCount : 0,
+          processingError: errorMessage,
+          metadata: failureMetadata
         }
       });
 

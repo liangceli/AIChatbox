@@ -7,13 +7,14 @@ import { SendChatMessageDto } from "./dto/send-chat-message.dto";
 import { CurrentWidgetSession } from "../widget-session/current-widget-session.decorator";
 import { WidgetSessionGuard } from "../widget-session/widget-session.guard";
 import type { WidgetSessionContext } from "../widget-session/widget-session.types";
+import { WidgetRateLimitGuard } from "../widget-session/widget-rate-limit.guard";
 
 @Controller("chat")
 export class ChatController {
   constructor(@Inject(ChatService) private readonly chatService: ChatService) {}
 
   @Post("messages")
-  @UseGuards(WidgetSessionGuard)
+  @UseGuards(WidgetSessionGuard, WidgetRateLimitGuard)
   async sendMessage(
     @CurrentTenant() tenant: ResolvedTenant,
     @Body() body: SendChatMessageDto,

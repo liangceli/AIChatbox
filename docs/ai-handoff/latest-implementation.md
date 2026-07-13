@@ -1,5 +1,41 @@
 # Latest Implementation Handoff
 
+## 2026-07-13 Knowledge Version Migration and State Safety Closeout
+
+### Stage Conclusion
+
+- The previously documented knowledge lifecycle was not reproducible against the real database because the initial migration created a unique index while the lifecycle migration attempted to drop a table constraint with the same name.
+- A forward-only migration now removes the legacy version-blind index. Version-aware chunk replacement has been proven against local PostgreSQL inside an automatically rolled-back integration transaction.
+- Explicit null product context now clears the persisted `ConversationState` as well as legacy metadata.
+- AI Worker startup no longer logs the Redis connection URL.
+
+### Changed Files
+
+| File | Change |
+| --- | --- |
+| `packages/database/prisma/migrations/20260713000000_fix_knowledge_chunk_version_index/migration.sql` | Drops the legacy unique index that omitted chunk version. |
+| `packages/database/scripts/schema.test.ts` | Locks the version-aware schema and forward migration contract. |
+| `packages/database/scripts/knowledge-lifecycle-db.test.ts` | Adds rollback-safe real PostgreSQL proof for version 1 -> version 2 chunk replacement. |
+| `packages/database/package.json` | Adds real schema test and explicit lifecycle DB integration command. |
+| `apps/api/src/modules/knowledge/conversation-state.service.ts` | Treats explicit null as a state-clearing update instead of ignoring it. |
+| `apps/api/scripts/conversation-state.test.ts` | Covers catalog disconnect, JSON null, confidence/source reset, and legacy metadata removal. |
+| `apps/ai-worker/src/index.ts`, `apps/ai-worker/scripts/worker-source.test.cjs` | Replaces raw Redis URL logging with a safe configured boolean and regression. |
+| `docs/ai-control/*`, `docs/ai-handoff/*`, `docs/skills/*` | Reconciles the actual current stage and verification boundary. |
+
+### Verification
+
+- Applied local migration `20260713000000_fix_knowledge_chunk_version_index`; Prisma reports 10 migrations and an up-to-date schema.
+- Real PostgreSQL lifecycle integration test passed and rolled back its isolated test data.
+- Post-test counts remained 3 tenants, 31 documents, and 335 chunks; the legacy unique index is absent.
+- Workspace `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`, and `git diff --check` passed across all 11 packages after the controlled Admin Web dev shutdown.
+- Customer Widget standard lifecycle build and Admin Web production build both pass.
+
+### Remaining Acceptance
+
+- Restore local services after the successful production build and verify health before browser QA.
+- Complete real Clerk mapped/unmapped/wrong-tenant, knowledge replacement, Answer Debug, Widget citation/miss, handoff/claim/reply, refresh recovery, and sign-out browser checks.
+- Review and commit the large working tree without discarding unrelated existing changes.
+
 ## 2026-06-17 Admin Conversations Page Split
 
 ### Stage Conclusion

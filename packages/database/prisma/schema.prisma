@@ -12,6 +12,7 @@ enum ConversationStatus {
   AWAITING_CUSTOMER
   AWAITING_AGENT
   PENDING_HUMAN
+  ASSIGNED
   RESOLVED
   CLOSED
 }
@@ -60,6 +61,23 @@ enum KnowledgeDocumentStatus {
   READY
   FAILED
   ARCHIVED
+  DELETED
+}
+
+enum KnowledgeChunkStatus {
+  PROCESSING
+  READY
+  FAILED
+  INACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum KnowledgeEmbeddingStatus {
+  DISABLED
+  PENDING
+  READY
+  FAILED
 }
 
 enum KnowledgeDocumentSourceType {
@@ -87,6 +105,8 @@ model Tenant {
   knowledgeBases  KnowledgeBase[]
   knowledgeDocs   KnowledgeDocument[]
   knowledgeChunks KnowledgeChunk[]
+  productCatalog  ProductCatalog[]
+  conversationStates ConversationState[]
   agentConfig     AgentConfig?
   invitations     TenantInvitation[]
   auditLogs       AuditLog[]
@@ -201,10 +221,56 @@ model Conversation {
   customer            Customer            @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: Cascade)
   assignedUser        User?               @relation("AssignedConversations", fields: [assignedUserId], references: [id], onDelete: SetNull)
   messages            Message[]
+  state               ConversationState?
 
   @@unique([id, tenantId])
   @@index([tenantId, status, updatedAt])
   @@index([tenantId, customerId])
+}
+
+model ProductCatalog {
+  id                 String              @id @default(cuid())
+  tenantId           String
+  catalogKey         String
+  productSeries      String?
+  productName        String
+  modelNumber        String?
+  deviceType         String?
+  aliases            Json?
+  status             String              @default("ACTIVE")
+  source             String?
+  metadata           Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationStates ConversationState[]
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, catalogKey])
+  @@index([tenantId, productName])
+  @@index([tenantId, modelNumber])
+  @@index([tenantId, productSeries])
+}
+
+model ConversationState {
+  conversationId         String          @id
+  tenantId               String
+  activeProductCatalogId String?
+  activeProductContext   Json?
+  activeConfidence       Float           @default(0)
+  activeEntitySource     String?
+  revision               Int             @default(1)
+  stateJson              Json?
+  expiresAt              DateTime?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  tenant                 Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation           Conversation    @relation(fields: [conversationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  activeProductCatalog   ProductCatalog? @relation(fields: [activeProductCatalogId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, tenantId])
+  @@index([tenantId, activeProductCatalogId])
+  @@index([tenantId, updatedAt])
 }
 
 model Message {
@@ -214,6 +280,7 @@ model Message {
   authorUserId    String?
   authorType      MessageAuthor
   messageType     MessageType    @default(TEXT)
+  clientMessageId String?
   content         String
   citations       Json?
   payload         Json?
@@ -224,6 +291,7 @@ model Message {
   authorUser      User?          @relation("AuthoredMessages", fields: [authorUserId], references: [id], onDelete: SetNull)
 
   @@unique([id, tenantId])
+  @@unique([tenantId, clientMessageId])
   @@index([tenantId, conversationId, createdAt])
   @@index([tenantId, authorUserId, createdAt])
   @@index([tenantId, messageType, createdAt])
@@ -258,8 +326,12 @@ model KnowledgeDocument {
   storageKey        String?
   status            KnowledgeDocumentStatus    @default(DRAFT)
   chunkCount        Int                        @default(0)
+  version           Int                        @default(1)
+  processingError   String?
   metadata          Json?
   ingestedAt        DateTime?
+  archivedAt        DateTime?
+  deletedAt         DateTime?
   createdAt         DateTime                   @default(now())
   updatedAt         DateTime                   @updatedAt
   tenant            Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -275,18 +347,24 @@ model KnowledgeChunk {
   id                   String              @id @default(cuid())
   tenantId             String
   knowledgeDocumentId  String
+  version              Int                 @default(1)
   chunkIndex           Int
   content              String
+  contentHash          String?
   tokenCount           Int?
+  status               KnowledgeChunkStatus     @default(READY)
+  embeddingStatus      KnowledgeEmbeddingStatus @default(DISABLED)
   sourceLocator        Json?
   metadata             Json?
   createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
   tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   knowledgeDocument    KnowledgeDocument   @relation(fields: [knowledgeDocumentId, tenantId], references: [id, tenantId], onDelete: Cascade)
 
   @@unique([id, tenantId])
-  @@unique([tenantId, knowledgeDocumentId, chunkIndex])
+  @@unique([tenantId, knowledgeDocumentId, version, chunkIndex])
   @@index([tenantId, knowledgeDocumentId])
+  @@index([tenantId, status])
 }
 
 model AgentConfig {

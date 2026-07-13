@@ -85,7 +85,8 @@ export function LocalChatDemo({
   }, [tenantSlug]);
 
   const messages = conversation?.messages ?? [];
-  const isPendingHuman = conversation?.status === "pending_human";
+  const isPendingHuman =
+    conversation?.status === "pending_human" || conversation?.status === "assigned";
 
   const summaryText = useMemo(() => {
     if (!conversation) {
@@ -142,7 +143,9 @@ export function LocalChatDemo({
         assignedUser: current?.assignedUser ?? null,
         handoffRequestedAt: current?.handoffRequestedAt ?? null,
         handoffReason: current?.handoffReason ?? null,
-        isHandoffPending: payload.conversation.status === "pending_human",
+        isHandoffPending:
+          payload.conversation.status === "pending_human" ||
+          payload.conversation.status === "assigned",
         messages: payload.messages
       }));
       setVisitorId(persistAnonymousVisitorId(tenantSlug, payload.visitorId));

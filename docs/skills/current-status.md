@@ -1,5 +1,56 @@
 # Current Status
 
+## 2026-07-13 Reproducible Lifecycle and State Safety
+
+- Forward migration `20260713000000_fix_knowledge_chunk_version_index` is applied locally and removes the initial version-blind chunk unique index.
+- Real PostgreSQL verification proves version 1 INACTIVE and version 2 READY chunks can reuse chunk indexes; the test always rolls back isolated test data.
+- `ConversationStateService` treats explicit null product context as a clear operation across active context, catalog relation, confidence/source, state JSON, and legacy metadata.
+- AI Worker startup logs only Redis configured state, never the connection URL.
+- Workspace typecheck/lint/test/build/diff checks pass. Database and AI Worker have focused tests; six package test scripts remain placeholders.
+- Current conclusion is RETURN FOR FIXES pending authenticated multi-role browser acceptance.
+
+## 2026-07-08 Knowledge Lifecycle Hardening
+
+- Added migration `20260703030000_harden_knowledge_lifecycle` and applied it to the local database.
+- Knowledge documents now support soft DELETED state, versioning, processing errors, archive/delete timestamps.
+- Knowledge chunks now support version, status, embedding status, content hash, and updatedAt.
+- Repeated FILE/URL import uses the active source document as replacement target.
+- Reprocess failure preserves the old READY version and records error details.
+- Retrieval and admin search now exclude non-READY/deleted chunks from answer and citation paths.
+- API typecheck and API tests pass. Browser QA requires service restart before judging live `/chat` context behavior.
+
+## 2026-07-03 ConversationState / ProductCatalog Phase 1
+
+- Added explicit `ConversationState` and tenant-scoped `ProductCatalog` models plus migration `20260703020000_add_product_catalog_conversation_state`.
+- Chat retrieval now reads persisted `ConversationState` first, with legacy `Conversation.metadata.rag` as fallback during migration.
+- Resolved product scopes are upserted into `ProductCatalog`; pending clarification and active product context are persisted in `ConversationState`.
+- Added `pnpm --filter @platform/api backfill:product-catalog` for existing knowledge metadata. Run after applying the migration; use `TENANT_SLUG=<slug>` to scope it.
+- API typecheck and API tests pass. Browser QA for this phase still requires applying the migration to the local database.
+
+## 2026-07-03 Hybrid Retrieval and Context Closeout
+
+- Customer retrieval is now Hybrid: Keyword Top-20 plus local sparse-semantic Vector Top-20, weighted merge, metadata/product filtering, confidence threshold `0.55`, and Final Top-3.
+- The local semantic scorer is not a neural embedding service or persisted vector database; current per-tenant candidate pools are bounded at 400 chunks.
+- Product clarification is persisted with a 20-minute expiry. Short model replies restore the original intent; unrelated new questions do not inherit stale product scope.
+- OpenAI is constrained to selected evidence and returns `usedChunkIds`; backend citations use only validated selected IDs.
+- Widget requests use signature-first tenant resolution, tenant/visitor limits, and tenant-scoped `clientMessageId` idempotency.
+- Human support has explicit unclaimed `PENDING_HUMAN` and claimed `ASSIGNED` states; AI stays paused in both.
+- Real Kasta runtime smoke passed for clarification, KMREM grounded answer/citation, no-evidence refusal, idempotency, and wrong-tenant denial.
+- Full workspace lint/typecheck/test/build pass. Authenticated browser click-through remains pending after the browser DOM/evaluate tool timed out.
+
+## 2026-06-24 Product-Aware RAG Increment
+
+- AnythingLLM was reviewed as a read-only MIT architectural reference. No source code, UI branding, screenshots, logos, or marketing text was copied.
+- Root `THIRD_PARTY_NOTICES.md` documents AnythingLLM, Mintplex Labs Inc., MIT license type, architectural-reference-only use, and no copied/adapted source.
+- Knowledge ingestion now persists structured knowledge metadata in existing JSON fields for documents and chunks.
+- Chat and Answer Debug now use a retrieval decision layer that can ask clarification questions for ambiguous product-action queries.
+- Conversation metadata can carry pending clarification and product context so follow-up answers are scoped to the clarified product.
+- Product/entity clarification candidates now filter FAQ/Q&A, case-study, policy/category, and long title-like document noise; unresolved pending clarification replies repeat clarification instead of generating weak answers.
+- Retrieval decisions expose safe confidence diagnostics for Answer Debug and stored chat metadata.
+- OpenAI prompt context includes safe product-scope metadata for selected chunks and forbids mixing unrelated product evidence.
+- Added `apps/api/scripts/product-aware-rag.test.ts`; API typecheck and API test pass.
+- Historical boundary for this increment: neural embeddings/vector DB/reranking were not implemented. Local sparse-semantic vectors were added on 2026-07-03; persisted neural vector infrastructure remains future work.
+
 ## 2026-06-17 Admin Conversations Page Split
 
 - Active Chats / conversation operations have been moved out of the main `/admin` dashboard.
@@ -96,7 +147,7 @@
 - Admin-web server routes now load the repository-root `.env` before validating admin access/proxy config.
 - Admin-web uses an admin-web-specific env parser for `/admin/access` and `/api/admin/...`, so unrelated API/OpenAI env validation does not block local admin login.
 - `apps/admin-web` explicitly declares `@platform/config` as a workspace dependency.
-- Local placeholder QA remains token-gated: if `ADMIN_WEB_ACCESS_TOKEN=test-web-token`, entering `test-web-token` at `/admin/access` should unlock the admin UI.
+- Local placeholder QA remains token-gated: when `ADMIN_WEB_ACCESS_TOKEN` is set to the local placeholder `test-web-token`, entering that placeholder at `/admin/access` should unlock the admin UI.
 - Production security goals are unchanged: browser code must not receive `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, or `ADMIN_WEB_SESSION_SECRET`; protected backend calls still go through the server-side proxy.
 - `docs/runtime/local-dev-checklist.md` documents the normal root `pnpm dev` path, Corepack setup if `pnpm` is not on PATH, URL map, required env keys, and troubleshooting.
 
@@ -206,10 +257,10 @@ This project is a TypeScript monorepo for a reusable white-label, multi-tenant A
 
 - Clerk alpha admin/agent auth is implemented in the current working tree, but it is not full production RBAC, SSO, invite approval, billing-aware roles, or signed customer identity.
 - Latest committed HEAD is documentation-only relative to the Clerk handoff; implementation changes must be committed/reviewed before treating the repository history as synced.
-- Customer conversation read/detail endpoints require visitorId but do not yet use signed customer sessions.
+- Customer Widget and customer conversation paths use signed tenant/visitor sessions; production should still rotate signing secrets and use a shared rate-limit store.
 - Real OpenAI smoke has passed manual acceptance, but it remains opt-in/manual and must not become a normal blocking CI test while it requires a real key.
-- Embeddings, vector database, and reranker are not implemented.
-- Short keyword-style questions can still produce weak deterministic retrieval matches.
+- Neural embeddings, a persisted vector database, and reranker are not implemented; current semantic similarity is local sparse-vector scoring over a bounded pool.
+- Hybrid retrieval reduces weak short-query matches, but quality still depends on clean structured metadata and the 400-chunk local candidate bound.
 - `apps/ai-worker` has no queue, async ingestion, or background job yet.
 - Most lint/test scripts are still TypeScript sanity checks or placeholders.
 - Frontend uses many inline styles and does not yet have a formal design system.

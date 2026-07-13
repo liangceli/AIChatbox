@@ -39,6 +39,7 @@ export function KnowledgeBasePanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isDocumentsCollapsed, setIsDocumentsCollapsed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeAction, setActiveAction] = useState<string>();
 
@@ -124,9 +125,7 @@ export function KnowledgeBasePanel({
           return nextSelectedId;
         }
 
-        return current && payload.some((document) => document.id === current)
-          ? current
-          : payload[0]?.id;
+        return current && payload.some((document) => document.id === current) ? current : undefined;
       });
     } catch (requestError: unknown) {
       setDocuments([]);
@@ -380,21 +379,32 @@ export function KnowledgeBasePanel({
 
           <section className="knowledge-documents-panel glass-card">
             <div className="knowledge-panel-heading">
-              <div>
-                <h4>Documents</h4>
-                <p>{selectedKnowledgeBase?.name ?? "Select a knowledge base"}</p>
-              </div>
+              <button
+                type="button"
+                className="knowledge-panel-toggle"
+                aria-expanded={!isDocumentsCollapsed}
+                aria-controls="knowledge-document-list"
+                onClick={() => setIsDocumentsCollapsed((current) => !current)}
+              >
+                <span className="knowledge-panel-toggle-copy">
+                  <span className="knowledge-panel-toggle-title">Documents</span>
+                  <span className="knowledge-panel-toggle-subtitle">
+                    {selectedKnowledgeBase?.name ?? "Select a knowledge base"}
+                  </span>
+                </span>
+                <Icon name={isDocumentsCollapsed ? "expand_more" : "expand_less"} />
+              </button>
               <span>{documents.length} total</span>
             </div>
 
-            {isLoadingDocuments ? (
+            {isDocumentsCollapsed ? null : isLoadingDocuments ? (
               <div className="knowledge-empty-state">Loading documents...</div>
             ) : documents.length === 0 ? (
               <div className="knowledge-empty-state">
                 No documents yet. Upload a file or import a URL to start retrieval QA.
               </div>
             ) : (
-              <div className="knowledge-document-list">
+              <div className="knowledge-document-list" id="knowledge-document-list">
                 {documents.map((document) => {
                   const isSelected = selectedDocumentId === document.id;
                   const shouldShowDetail = isSelected && documentDetail?.id === document.id;
@@ -404,7 +414,10 @@ export function KnowledgeBasePanel({
                       <button
                         type="button"
                         className={isSelected ? "selected" : undefined}
-                        onClick={() => setSelectedDocumentId(document.id)}
+                        aria-expanded={isSelected}
+                        onClick={() => {
+                          setSelectedDocumentId((current) => current === document.id ? undefined : document.id);
+                        }}
                       >
                         <div>
                           <strong>{document.title}</strong>

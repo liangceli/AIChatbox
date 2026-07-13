@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { MembershipStatus, TenantRole } from "@platform/database";
+import { ConversationStatus, MembershipStatus, TenantRole } from "@platform/database";
 import type {
   CreatedTenantInvitation,
   TenantInvitationPolicyRecord,
@@ -213,9 +213,12 @@ export class MembersService {
           where: {
             tenantId: tenant.id,
             assignedUserId: userId,
-            status: "PENDING_HUMAN"
+            status: ConversationStatus.ASSIGNED
           },
-          data: { assignedUserId: null }
+          data: {
+            assignedUserId: null,
+            status: ConversationStatus.PENDING_HUMAN
+          }
         });
       }
       await tx.auditLog.create({

@@ -1,5 +1,9 @@
 # 项目汇总 Skill
 
+## 2026-07-13 Current Alpha Boundary
+
+The platform now has a reproducible versioned knowledge schema, explicit product-context clearing, safe Worker readiness logging, signed/idempotent Widget chat, Hybrid Retrieval, evidence-bound OpenAI citations, Clerk tenant roles, and persistent human support. Automated typecheck/lint/test/build/diff and real rollback-safe database lifecycle verification pass. The project is still not READY until the large working tree is reviewed and the real Clerk multi-role browser business loop is accepted.
+
 ## 2026-06-12 Knowledge Answer Debug Note
 
 Admin users can now run a protected, non-persistent tenant answer debug request from the Knowledge Base area. It shows retrieval chunks/scores, backend citations, provider/fallback state, safe metadata, and knowledge hit/miss reason without exposing secrets or raw prompts. Knowledge management also exposes document readiness, checksum, source, chunk previews, and lifecycle actions for alpha QA.

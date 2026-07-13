@@ -307,7 +307,7 @@ function toSearchEntry(result: AdminSearchResult): SearchEntry {
       ...result,
       group: "Conversations",
       href: `/admin/conversations?status=all&conversationId=${encodeURIComponent(result.conversationId ?? result.id)}`,
-      icon: result.status === "pending_human" ? "person_alert" : "chat"
+      icon: result.status === "pending_human" || result.status === "assigned" ? "person_alert" : "chat"
     };
   }
 

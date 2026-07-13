@@ -28,6 +28,10 @@ import { PrismaService } from "../../common/prisma/prisma.service";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { toChatMessageRecord, toConversationSummary } from "../chat/chat.presenter";
+import {
+  humanSupportStatusWhere,
+  isHumanSupportActive
+} from "./conversation-status";
 
 type ConversationWithRelations = Conversation & {
   customer: Customer;
@@ -57,7 +61,9 @@ export class ConversationsService {
         throw new BadRequestException(`Unsupported conversation status filter: ${status}`);
       }
 
-      where.status = normalizedStatus as ConversationStatus;
+      where.status = normalizedStatus === ConversationStatus.PENDING_HUMAN
+        ? humanSupportStatusWhere()
+        : normalizedStatus as ConversationStatus;
     }
 
     const conversations = await this.prisma.client.conversation.findMany({
@@ -221,7 +227,7 @@ export class ConversationsService {
         throw new ForbiddenException("Conversation does not belong to this visitor.");
       }
 
-      if (conversation.status === ConversationStatus.PENDING_HUMAN) {
+      if (isHumanSupportActive(conversation.status)) {
         if (normalizedReason) {
           await tx.conversation.update({
             where: {
@@ -313,7 +319,7 @@ export class ConversationsService {
         throw new ForbiddenException("Conversation does not belong to this visitor.");
       }
 
-      if (conversation.status !== ConversationStatus.PENDING_HUMAN) {
+      if (!isHumanSupportActive(conversation.status)) {
         return;
       }
 
@@ -386,7 +392,7 @@ export class ConversationsService {
         throw new NotFoundException("Conversation not found.");
       }
 
-      if (conversation.status === ConversationStatus.PENDING_HUMAN) {
+      if (isHumanSupportActive(conversation.status)) {
         if (isTenantAgent(auth)) {
           const claimed = await tx.conversation.updateMany({
             where: {
@@ -396,6 +402,7 @@ export class ConversationsService {
             },
             data: {
               assignedUserId: normalizedUserId,
+              status: ConversationStatus.ASSIGNED,
               ...(normalizedReason ? { handoffReason: normalizedReason } : {})
             }
           });
@@ -408,6 +415,7 @@ export class ConversationsService {
 
         const data: Prisma.ConversationUpdateInput = {
           ...(normalizedUserId ? { assignedUser: { connect: { id: normalizedUserId } } } : {}),
+          ...(normalizedUserId ? { status: ConversationStatus.ASSIGNED } : {}),
           ...(normalizedReason ? { handoffReason: normalizedReason } : {})
         };
 
@@ -452,7 +460,7 @@ export class ConversationsService {
         },
         data: {
           ...(normalizedUserId ? { assignedUserId: normalizedUserId } : {}),
-          status: ConversationStatus.PENDING_HUMAN,
+          status: normalizedUserId ? ConversationStatus.ASSIGNED : ConversationStatus.PENDING_HUMAN,
           handoffRequestedAt: eventMessage.createdAt,
           handoffReason: normalizedReason,
           lastMessageAt: eventMessage.createdAt
@@ -497,7 +505,7 @@ export class ConversationsService {
         throw new NotFoundException("Conversation not found.");
       }
 
-      if (conversation.status !== ConversationStatus.PENDING_HUMAN) {
+      if (!isHumanSupportActive(conversation.status)) {
         if (normalizedUserId) {
           await tx.conversation.update({
             where: {
@@ -567,7 +575,8 @@ export class ConversationsService {
         }
       },
       select: {
-        id: true
+        id: true,
+        status: true
       }
     });
 
@@ -583,7 +592,8 @@ export class ConversationsService {
         }
       },
       data: {
-        assignedUserId: userId
+        assignedUserId: userId,
+        status: ConversationStatus.ASSIGNED
       }
     });
 
@@ -645,7 +655,7 @@ export class ConversationsService {
         },
         data: {
           assignedUserId: userId,
-          status: ConversationStatus.PENDING_HUMAN,
+          status: ConversationStatus.ASSIGNED,
           handoffRequestedAt: conversation.handoffRequestedAt ?? agentMessage.createdAt,
           handoffReason: conversation.handoffReason ?? "Agent joined the conversation.",
           lastMessageAt: agentMessage.createdAt
@@ -849,7 +859,7 @@ export class ConversationsService {
         : null,
       handoffRequestedAt: conversation.handoffRequestedAt?.toISOString() ?? null,
       handoffReason: conversation.handoffReason ?? null,
-      isHandoffPending: conversation.status === ConversationStatus.PENDING_HUMAN
+      isHandoffPending: isHumanSupportActive(conversation.status)
     };
   }
 

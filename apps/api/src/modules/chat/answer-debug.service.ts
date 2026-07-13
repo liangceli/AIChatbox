@@ -11,9 +11,13 @@ import type {
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
-import { KnowledgeRetrievalService } from "../knowledge/knowledge-retrieval.service";
+import {
+  KnowledgeRetrievalService,
+  type KnowledgeRetrievalDecision
+} from "../knowledge/knowledge-retrieval.service";
 import { buildTenantAiProfile } from "../tenants/tenant-ai-profile";
 import { LlmProviderResolverService } from "./llm-provider-resolver.service";
+import { AssistantReplyService } from "./assistant-reply.service";
 
 const CONTENT_PREVIEW_LENGTH = 600;
 const CITATION_EXCERPT_LENGTH = 240;
@@ -25,7 +29,9 @@ export class AnswerDebugService {
     @Inject(KnowledgeRetrievalService)
     private readonly knowledgeRetrievalService: KnowledgeRetrievalService,
     @Inject(LlmProviderResolverService)
-    private readonly llmProviderResolver: LlmProviderResolverService
+    private readonly llmProviderResolver: LlmProviderResolverService,
+    @Inject(AssistantReplyService)
+    private readonly safeReplyProvider: AssistantReplyService
   ) {}
 
   async run(tenant: ResolvedTenant, rawQuestion: string): Promise<AnswerDebugResult> {
@@ -35,16 +41,24 @@ export class AnswerDebugService {
       throw new BadRequestException("Debug question cannot be empty.");
     }
 
-    const [retrievedChunks, agentConfig] = await Promise.all([
-      this.knowledgeRetrievalService.retrieveRelevantChunks(tenant, question),
+    const [retrievalDecision, agentConfig] = await Promise.all([
+      this.knowledgeRetrievalService.resolveRetrievalDecision(tenant, question),
       this.prisma.client.agentConfig.findUnique({
         where: {
           tenantId: tenant.id
         }
       })
     ]);
+
+    if (retrievalDecision.mode === "clarification") {
+      return this.buildClarificationResult(tenant, question, retrievalDecision);
+    }
+
     const tenantAiProfile = buildTenantAiProfile(tenant, agentConfig);
-    const provider = this.llmProviderResolver.resolveProvider();
+    const noKnowledgeEvidence = retrievalDecision.retrievedChunks.length === 0;
+    const provider = noKnowledgeEvidence
+      ? this.safeReplyProvider
+      : this.llmProviderResolver.resolveProvider();
     const response = await provider.generateReply({
       tenant: {
         id: tenant.id,
@@ -62,23 +76,26 @@ export class AnswerDebugService {
         handoffEnabled: agentConfig?.handoffEnabled ?? false,
         tenantAiProfile
       },
-      latestCustomerMessage: question,
-      retrievedChunks
+      latestCustomerMessage: retrievalDecision.effectiveQuestion,
+      retrievedChunks: retrievalDecision.retrievedChunks,
+      noKnowledgeEvidence,
+      turnType: retrievalDecision.turnType
     });
 
-    return this.buildResult(tenant, question, provider.name, retrievedChunks, response);
+    return this.buildResult(tenant, question, provider.name, retrievalDecision, response);
   }
 
   private buildResult(
     tenant: ResolvedTenant,
     question: string,
     requestedMode: string,
-    retrievedChunks: LlmRetrievedKnowledgeChunk[],
+    retrievalDecision: KnowledgeRetrievalDecision,
     response: LlmProviderResponse
   ): AnswerDebugResult {
+    const retrievedChunks = retrievalDecision.retrievedChunks;
     const citations = this.sanitizeCitations(response.citations);
     const hasKnowledge = retrievedChunks.length > 0;
-    const retrievalConfidence = this.resolveRetrievalConfidence(retrievedChunks, citations.length);
+    const retrievalConfidence = this.resolveRetrievalConfidence(retrievalDecision, citations.length);
 
     return {
       tenant: {
@@ -95,7 +112,13 @@ export class AnswerDebugService {
         retrievedChunkCount: retrievedChunks.length,
         citationCount: citations.length,
         sourceDiversity: new Set(retrievedChunks.map((chunk) => chunk.knowledgeDocumentId)).size,
-        warnings: this.buildKnowledgeWarnings(retrievedChunks, citations.length, response.metadata)
+        warnings: [
+          ...this.buildKnowledgeWarnings(retrievedChunks, citations.length, response.metadata),
+          ...retrievalDecision.warnings
+        ],
+        detection: this.buildDetectionSummary(retrievalDecision),
+        ambiguity: retrievalDecision.ambiguity,
+        retrieval: retrievalDecision.retrievalMetadata
       },
       provider: {
         requestedMode,
@@ -110,9 +133,54 @@ export class AnswerDebugService {
         chunkIndex: chunk.chunkIndex,
         sourceUri: chunk.sourceUri ?? null,
         relevanceScore: chunk.relevanceScore,
+        knowledgeMetadata: chunk.knowledgeMetadata ?? null,
         contentPreview: chunk.content.slice(0, CONTENT_PREVIEW_LENGTH)
       })),
       citations
+    };
+  }
+
+  private buildClarificationResult(
+    tenant: ResolvedTenant,
+    question: string,
+    retrievalDecision: KnowledgeRetrievalDecision
+  ): AnswerDebugResult {
+    return {
+      tenant: {
+        slug: tenant.slug,
+        displayName: tenant.name
+      },
+      question,
+      answer:
+        retrievalDecision.ambiguity.clarificationQuestion ??
+        "Which product are you asking about?",
+      answerSource: "clarification",
+      knowledge: {
+        outcome: "clarification",
+        retrievalConfidence: "none",
+        reason:
+          "The question matched multiple product scopes, so the system asks for product clarification before retrieval.",
+        retrievedChunkCount: 0,
+        citationCount: 0,
+        sourceDiversity: 0,
+        warnings: retrievalDecision.warnings,
+        detection: this.buildDetectionSummary(retrievalDecision),
+        ambiguity: retrievalDecision.ambiguity,
+        retrieval: retrievalDecision.retrievalMetadata
+      },
+      provider: {
+        requestedMode: "retrieval",
+        usedMode: "deterministic",
+        usedFallback: false,
+        metadata: {
+          providerName: "retrieval-clarification",
+          mode: "deterministic",
+          deterministic: true,
+          usedFallback: false
+        }
+      },
+      retrievedChunks: [],
+      citations: []
     };
   }
 
@@ -180,20 +248,33 @@ export class AnswerDebugService {
   }
 
   private resolveRetrievalConfidence(
-    retrievedChunks: LlmRetrievedKnowledgeChunk[],
+    retrievalDecision: KnowledgeRetrievalDecision,
     citationCount: number
   ): AnswerDebugResult["knowledge"]["retrievalConfidence"] {
+    const retrievedChunks = retrievalDecision.retrievedChunks;
+
     if (retrievedChunks.length === 0) {
       return "none";
     }
 
-    const bestScore = Math.max(...retrievedChunks.map((chunk) => chunk.relevanceScore ?? 0));
-
-    if (bestScore >= 12 && citationCount > 0) {
+    if (retrievalDecision.confidence.level === "strong" && citationCount > 0) {
       return "strong";
     }
 
     return "weak";
+  }
+
+  private buildDetectionSummary(
+    retrievalDecision: KnowledgeRetrievalDecision
+  ): NonNullable<AnswerDebugResult["knowledge"]["detection"]> {
+    return {
+      intent: retrievalDecision.intent,
+      productContext: retrievalDecision.productContext ?? null,
+      confidenceReason: retrievalDecision.confidence.reason,
+      confidenceBestScore: retrievalDecision.confidence.bestScore,
+      confidenceBestCoverage: retrievalDecision.confidence.bestCoverage,
+      clarificationOptions: retrievalDecision.ambiguity.options
+    };
   }
 
   private buildKnowledgeWarnings(

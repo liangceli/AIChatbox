@@ -14,6 +14,22 @@ export class AssistantReplyService implements LlmProvider {
   generateReply(input: LlmProviderRequest): LlmProviderResponse {
     const normalizedMessage = input.latestCustomerMessage.trim();
 
+    if (input.turnType === "greeting") {
+      return {
+        content: input.agent.welcomeMessage ?? `Hello! I am ${input.agent.displayName}. How can I help?`,
+        citations: null,
+        metadata: this.createMetadata(false)
+      };
+    }
+
+    if (input.turnType === "thanks") {
+      return {
+        content: "You are welcome. Let me know if you need anything else.",
+        citations: null,
+        metadata: this.createMetadata(false)
+      };
+    }
+
     if (!normalizedMessage) {
       return {
         content: input.agent.fallbackMessage ?? "I can help once you send a message.",
@@ -46,6 +62,18 @@ export class AssistantReplyService implements LlmProvider {
   }
 
   private createFallback(input: LlmProviderRequest, normalizedMessage: string): LlmProviderResponse {
+    if (input.noKnowledgeEvidence) {
+      const handoffHint = input.agent.handoffEnabled
+        ? ` ${input.agent.handoffMessage ?? "A support team member can help confirm the current information."}`
+        : "";
+
+      return {
+        content: `${buildKnowledgeGapMessage(normalizedMessage)}${handoffHint}`,
+        citations: null,
+        metadata: this.createMetadata(true)
+      };
+    }
+
     const fallbackLead =
       input.agent.fallbackMessage ?? input.agent.welcomeMessage ?? `I am ${input.agent.displayName}.`;
     const handoffHint = input.agent.handoffEnabled
@@ -118,4 +146,12 @@ export class AssistantReplyService implements LlmProvider {
       usedFallback
     };
   }
+}
+
+function buildKnowledgeGapMessage(message: string): string {
+  if (/\b(buy|purchase|purchasing|retailer|stockist|distributor|where\s+(?:can|do)\s+i\s+(?:get|buy))\b/i.test(message)) {
+    return "I do not have verified purchasing information for that product in the current knowledge base.";
+  }
+
+  return "I do not have enough verified information in the current knowledge base to answer that accurately.";
 }

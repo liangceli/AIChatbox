@@ -8,7 +8,7 @@
     "start": "tsx src/index.ts",
     "lint": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('No tests configured for ai-worker yet')\"",
+    "test": "node scripts/worker-source.test.cjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

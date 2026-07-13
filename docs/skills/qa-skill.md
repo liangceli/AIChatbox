@@ -1,5 +1,57 @@
 # QA Skill
 
+## 2026-07-13 Database and State Regression Gate
+
+- Default workspace tests must include the database migration source invariant and AI Worker Redis-log safety regression.
+- Before accepting versioned knowledge replacement, apply migrations and run `pnpm --filter @platform/database test:knowledge-lifecycle:db` against local PostgreSQL.
+- The integration must prove version 1 -> version 2 reuse of chunk indexes and must roll back all isolated test rows.
+- Conversation state QA must assert explicit null clears catalog relation, active context, confidence/source, state JSON, and legacy metadata without upserting a catalog entry.
+- Current automated baseline: workspace typecheck/lint/test/build/diff pass. Authenticated browser acceptance remains a separate gate.
+
+## 2026-07-08 Knowledge Lifecycle QA
+
+- Verify upload/update/reprocess/delete against active knowledge rules: answers and citations must come only from `KnowledgeDocument.status = READY` and `KnowledgeChunk.status = READY`.
+- Re-uploading the same FILE/URL source should update the active source document instead of creating duplicate active documents.
+- Reprocess failure must keep the previous READY version searchable and record `processingError`.
+- Archive/delete must exclude documents/chunks from retrieval and global search; deleted chunks must never appear as citations.
+- General questions should still retrieve active general READY chunks and should not be blocked by stale product context.
+- After migration, restart API/Admin Web before browser QA so Prisma Client and server code match the database schema.
+
+## 2026-07-03 Hybrid Retrieval and Context QA
+
+- Verify `ConversationState.activeProductContext` is preferred over legacy `Conversation.metadata.rag.productContext`.
+- Verify resolved product answers upsert tenant-scoped `ProductCatalog` records without hardcoded product names.
+- Verify pending clarification is persisted in `ConversationState.stateJson` and mirrored to legacy metadata during migration.
+- Before browser QA for this phase, run the Prisma migration and optional `pnpm --filter @platform/api backfill:product-catalog` against the target local database.
+- Verify `how to pair?` returns persisted clarification when multiple real product/model scopes exist; file names and generic document titles must not be options.
+- Verify `KMREM` after clarification answers the original pairing question and cites only KMREM evidence.
+- Verify greetings preserve pending clarification, unrelated new questions clear it, and expired pending state is ignored.
+- Verify `repair` is troubleshooting rather than pairing; `KMERM` can resolve KMREM and exit clarification, but pairing-only chunks cannot answer a repair question.
+- Verify an unrelated knowledge miss returns zero citations and does not call OpenAI.
+- Verify unsupported purchase questions retain product context but return professional platform copy, zero citations, and no invented retailer/availability details; tenant fallback slang must not appear.
+- Verify Keyword Top-20 is selected after relevance scoring, not raw database ordering.
+- Verify Hybrid diagnostics show keyword/vector/metadata/exact/final scores, candidate IDs, selected IDs, confidence, and Final Top-K without secrets.
+- Verify duplicate `clientMessageId` does not create a second message or conversation, including first-message retry.
+- Verify a signed Widget token cannot be reused with another tenant slug and inactive tenants fail closed.
+- Verify `PENDING_HUMAN` and `ASSIGNED` both pause AI; only an authorized tenant agent can claim/reply/end.
+- Current real smoke baseline: `how to pair? -> KMREM`, one or more grounded citations, payroll-tax miss with zero citations, duplicate message reuse, wrong tenant 401.
+- Placeholder package test scripts are not behavioral evidence and must be reported separately.
+
+## 2026-06-24 Product-Aware RAG QA
+
+- Ambiguous short product-action questions, such as "how to pair?", should return a clarification outcome when multiple product scopes match.
+- Clarification is not a knowledge miss. Answer Debug should show outcome `clarification`, the clarification question, and candidate product options.
+- Clarification options must not include FAQ/Q&A file names, case-study titles, policy categories, example-domain titles, or long project/location-like document titles.
+- Short product-action questions with only generic evidence should still persist an open pending clarification with no options, so later short replies can continue the original intent.
+- If a short reply does not match any pending clarification option, the system should repeat clarification rather than answer from weak context.
+- If a short model-code reply follows a pending clarification, the system should preserve the original intent and retrieve as `original question + short reply`; `how to pair?` -> `KMREN` should scope to the closest matching model/product instead of asking what KMREN is about.
+- Generic short replies such as `matter product` must not force a weak scope; they should continue clarification unless a strong product/model match exists.
+- After the customer clarifies the product, the next answer must retrieve only chunks matching that product context.
+- Existing conversation product context should scope later short follow-up questions.
+- Citations must come from the scoped retrieved chunks and must not mix unrelated product series, models, or device types.
+- Regression coverage lives in `apps/api/scripts/product-aware-rag.test.ts`, including short model-code clarification replies and small model-code typo matching.
+- Do not mark vector/hybrid embedding retrieval as accepted until an embedding provider/vector store/reranker path exists and is tested.
+
 ## 2026-06-19 Admin Global Search QA
 
 - `/v1/search` must reject missing/invalid admin auth and missing tenant scope, and every Prisma resource query must use the resolved tenant ID.
@@ -108,6 +160,7 @@ Use from repository root.
 - Apply migrations: `pnpm --filter @platform/database exec dotenv -e ../../.env -- prisma migrate deploy`
 - Seed database: `pnpm db:seed`
 - Start local dev servers manually when browser QA is needed: `pnpm dev` from the repository root. Admin-web runs on `http://localhost:3000`; API runs on `http://localhost:4000/v1`.
+- Admin-web local dev and build intentionally clear `.next` through `apps/admin-web/scripts/dev-server.cjs` and `apps/admin-web/scripts/build-server.cjs`; do not bypass them with raw `next dev` or raw `next build` when investigating missing CSS or stale app-router module errors.
 - Typecheck workspace: `pnpm typecheck`
 - Lint workspace: `pnpm lint`
 - Build workspace: `pnpm build`
@@ -148,7 +201,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Admin realtime SSE rejects missing/invalid admin token and accepts valid admin token.
 - Customer realtime SSE remains reachable without admin token but only returns one visitor/conversation snapshot.
 - Admin-web local alpha testing must not expose `ADMIN_API_TOKEN` in browser code. Use `/admin/access` and same-origin `/api/admin/...` proxy with httpOnly cookie.
-- Admin-web local access must load the repository-root `.env`; `/admin/access` should not return 500 when `API_INTERNAL_BASE_URL`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, and `ADMIN_WEB_SESSION_SECRET` are present. With local placeholder config, `ADMIN_WEB_ACCESS_TOKEN=test-web-token` must accept `test-web-token`.
+- Admin-web local access must load the repository-root `.env`; `/admin/access` should not return 500 when `API_INTERNAL_BASE_URL`, `ADMIN_API_TOKEN`, `ADMIN_WEB_ACCESS_TOKEN`, and `ADMIN_WEB_SESSION_SECRET` are present. With local placeholder config, `ADMIN_WEB_ACCESS_TOKEN` set to `test-web-token` must accept `test-web-token`.
 - Tenant-scoped endpoints reject missing `x-tenant-slug`.
 - Tenant-scoped reads/writes never expose another tenant's records.
 - `POST /chat/messages` refuses empty messages and max-length violations.
@@ -226,7 +279,7 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - QA for `355e5f6 Add OpenAI provider with deterministic fallback` passed shell-verifiable checks and accepted the citation preservation fix.
 - Retrieval candidate lookup now uses raw + normalized terms, while final scoring uses exact normalized tokens.
 - `policies` / `warranties` and `case` / `showcase` regression checks passed in API tests and QA smoke.
-- Short keyword-style retrieval now uses normalized exact-token scoring and targeted regression tests, but it is still deterministic keyword retrieval rather than semantic search.
+- Historical lexical regression coverage remains active; current retrieval also adds local sparse-semantic scoring, while neural embedding/vector-store QA is still future work.
 - `pnpm-lock.yaml` should be tracked for dependency reproducibility in this pnpm monorepo.
 
 ## OpenAI Provider QA Notes
@@ -263,6 +316,14 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 - Manual alpha QA must distinguish local pass, staging/online pass, external embed pass, and real alpha-ready pass.
 - Fake/local test tokens, mocked Clerk, mocked OpenAI, or localhost-only flows do not count as online alpha evidence.
 - Real Clerk/OpenAI/deployment smoke requires user-owned dashboard/secret-manager setup and must not involve pasting secrets into chat.
+## Product Clarification Regression Set
+
+- Test the exact sequence `how do I pair a device?` -> `KMERM` against a `KMREM` knowledge product.
+- Cover both pending clarification with explicit product options and pending clarification with an empty options list.
+- Assert the answer remains tenant-scoped, retrieves only the corrected product evidence, and clears pending clarification after resolution.
+- Confirm unrelated two-edit model codes remain unresolved rather than being guessed.
+- Send `Hi` while clarification is pending, assert the clarification is not repeated, then send `KMERM` and assert the original pairing intent resumes.
+
 ## Required Isolation Regression Set
 
 - Cover unmapped, suspended, wrong-tenant, forged JWT, issuer, authorized-party, Owner/Agent policy, Agent row scope, invitation replay/role escalation, and Widget token tampering.
@@ -282,9 +343,12 @@ Do not use long-running dev/watch commands as blocking verification commands. Ex
 
 - File-control QA must confirm click selection and drag/drop both populate visible filename/size state, removal clears it, successful ingestion clears it, and Start Ingestion uses that controlled file.
 - Knowledge document UI QA must confirm selecting any document expands its preview directly below that row, not below the entire list.
+- Knowledge document UI QA must confirm clicking the Documents panel header collapses the full document list and clicking it again restores the list.
 - CSP QA must assert explicit same-origin/blob worker permission and no Clerk worker violation after a hard refresh.
 - Auth redirect QA must distinguish session-route/account success from protected-page success and fail if valid Clerk login loops back to `/sign-in`.
 - Widget host QA must open `/chat`, confirm the response CSP allows the configured `NEXT_PUBLIC_API_BASE_URL`, and verify widget session connection failures show an in-widget error rather than a Next runtime overlay.
+- Widget composer QA must verify a submitted message clears from the textarea immediately while the request is in flight, and failed sends restore the submitted draft.
+- Knowledge Base QA must click a document row once to expand inline preview, click the same row again to collapse it, and confirm deep-linked `documentId` still opens the requested row.
 
 - Avatar: allow PNG/JPEG/WebP, reject signature mismatch/oversize, assert authenticated-user-only writes, and verify Admin/Agent rendering plus reload persistence.
 - Table: cover multi-sheet XLSX Q&A, descriptive headers, generic schemas, quoted CSV, sheet/row locators, corrupt XLSX, binary CSV, limits, and text-ingestion regression.

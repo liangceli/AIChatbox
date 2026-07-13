@@ -134,6 +134,20 @@ export interface Citation {
   excerpt?: string;
 }
 
+export interface KnowledgeStructuredMetadata {
+  productSeries?: string;
+  productName?: string;
+  modelNumber?: string;
+  deviceType?: string;
+  documentType?: string;
+  language?: string;
+  version?: string;
+  sectionTitle?: string;
+  pageNumber?: number;
+  aliases?: string[];
+  intentHints?: string[];
+}
+
 export interface KnowledgeBaseRecord {
   id: string;
   slug: string;
@@ -156,6 +170,7 @@ export interface KnowledgeDocumentRecord {
   createdAt: string;
   updatedAt: string;
   ingestedAt?: string | null;
+  knowledgeMetadata?: KnowledgeStructuredMetadata | null;
 }
 
 export interface KnowledgeChunkRecord {
@@ -165,6 +180,7 @@ export interface KnowledgeChunkRecord {
   content: string;
   tokenCount?: number | null;
   sourceLocator?: unknown;
+  knowledgeMetadata?: KnowledgeStructuredMetadata | null;
   createdAt: string;
 }
 
@@ -253,6 +269,7 @@ export interface AdminSearchResponse {
 
 export interface SendChatMessageRequest {
   message: string;
+  clientMessageId: string;
   conversationId?: string;
   visitorId?: string;
 }
@@ -336,6 +353,7 @@ export interface AnswerDebugRetrievedChunk {
   chunkIndex: number;
   sourceUri?: string | null;
   relevanceScore?: number;
+  knowledgeMetadata?: KnowledgeStructuredMetadata | null;
   contentPreview: string;
 }
 
@@ -349,6 +367,39 @@ export interface AnswerDebugCitation {
   excerpt?: string;
 }
 
+export interface HybridRetrievalDebugScore {
+  chunkId: string;
+  keywordScore: number;
+  vectorScore: number;
+  metadataScore: number;
+  exactMatchBoost: number;
+  finalScore: number;
+  reasons: string[];
+}
+
+export interface HybridRetrievalDebug {
+  retrievalMode: "HYBRID";
+  originalQuestion: string;
+  effectiveQuestion: string;
+  intent?: string;
+  usedPendingClarification: boolean;
+  usedProductContext: boolean;
+  keywordTopK: number;
+  vectorTopK: number;
+  finalTopK: number;
+  keywordCandidateChunkIds: string[];
+  vectorCandidateChunkIds: string[];
+  mergedCandidateChunkIds: string[];
+  selectedChunkIds: string[];
+  scores: HybridRetrievalDebugScore[];
+  confidence: number;
+  noKnowledgeEvidence: boolean;
+  ambiguity: {
+    detected: boolean;
+    candidateProductNames: string[];
+  };
+}
+
 export interface AnswerDebugResult {
   tenant: {
     slug: string;
@@ -359,16 +410,33 @@ export interface AnswerDebugResult {
   answerSource:
     | "knowledge_hit"
     | "knowledge_miss"
+    | "clarification"
     | "provider_fallback"
     | "retrieval_hit_without_citations";
   knowledge: {
-    outcome: "hit" | "miss";
+    outcome: "hit" | "miss" | "clarification";
     retrievalConfidence: "strong" | "weak" | "none";
     reason: string;
     retrievedChunkCount: number;
     citationCount: number;
     sourceDiversity: number;
     warnings: string[];
+    detection?: {
+      intent?: string;
+      productContext?: KnowledgeStructuredMetadata | null;
+      confidenceReason?: string;
+      confidenceBestScore?: number;
+      confidenceBestCoverage?: number;
+      clarificationOptions?: string[];
+    };
+    ambiguity?: {
+      isAmbiguous: boolean;
+      intent?: string;
+      productContext?: KnowledgeStructuredMetadata | null;
+      clarificationQuestion?: string;
+      options?: string[];
+    };
+    retrieval?: HybridRetrievalDebug;
   };
   provider: {
     requestedMode: string;

@@ -1,4 +1,9 @@
-import type { Citation, MessageAuthorType, TenantAiProfile } from "@platform/types";
+import type {
+  Citation,
+  KnowledgeStructuredMetadata,
+  MessageAuthorType,
+  TenantAiProfile
+} from "@platform/types";
 import type { TenantRuntimeConfig } from "@platform/tenant-core";
 
 export type LlmProviderMode = "deterministic" | "disabled" | "openai";
@@ -20,6 +25,7 @@ export interface LlmAgentContext {
 
 export interface LlmConversationContext {
   id: string;
+  recentTurns?: ChatTurn[];
 }
 
 export interface LlmRetrievedKnowledgeChunk {
@@ -30,6 +36,7 @@ export interface LlmRetrievedKnowledgeChunk {
   sourceUri?: string | null;
   sourceLocator?: unknown;
   relevanceScore?: number;
+  knowledgeMetadata?: KnowledgeStructuredMetadata | null;
   content: string;
 }
 
@@ -39,6 +46,8 @@ export interface LlmProviderRequest {
   agent: LlmAgentContext;
   latestCustomerMessage: string;
   retrievedChunks: LlmRetrievedKnowledgeChunk[];
+  noKnowledgeEvidence?: boolean;
+  turnType?: string;
 }
 
 export interface LlmProviderMetadata {
@@ -50,6 +59,8 @@ export interface LlmProviderMetadata {
   fallbackReason?: string;
   latencyMs?: number;
   responseId?: string;
+  parseFailed?: boolean;
+  usedChunkIds?: string[];
 }
 
 export interface LlmProviderResponse {

@@ -61,7 +61,7 @@ export function AnswerDebugPanel({
         </div>
         {result ? (
           <span className={`debug-outcome ${result.knowledge.outcome}`}>
-            {result.knowledge.outcome === "hit" ? "Knowledge hit" : "Knowledge miss"}
+            {formatKnowledgeOutcome(result.knowledge.outcome)}
           </span>
         ) : null}
       </div>
@@ -119,6 +119,93 @@ export function AnswerDebugPanel({
             ) : null}
           </article>
 
+          {result.knowledge.detection ? (
+            <article className="debug-answer-card">
+              <div>
+                <span>Retrieval detection</span>
+                <small>{result.knowledge.detection.intent ?? "no intent"}</small>
+              </div>
+              <p>{result.knowledge.detection.confidenceReason ?? "No confidence reason returned."}</p>
+              <small>
+                Product scope: {result.knowledge.detection.productContext
+                  ? formatKnowledgeMetadata(result.knowledge.detection.productContext)
+                  : "none"}
+              </small>
+              {result.knowledge.detection.confidenceBestScore !== undefined ? (
+                <small>
+                  Best score: {result.knowledge.detection.confidenceBestScore}
+                  {result.knowledge.detection.confidenceBestCoverage !== undefined
+                    ? ` / coverage ${Math.round(result.knowledge.detection.confidenceBestCoverage * 100)}%`
+                    : ""}
+                </small>
+              ) : null}
+              {result.knowledge.detection.clarificationOptions?.length ? (
+                <small>Candidate options: {result.knowledge.detection.clarificationOptions.join(", ")}</small>
+              ) : null}
+            </article>
+          ) : null}
+
+          {result.knowledge.retrieval ? (
+            <article className="debug-answer-card hybrid-retrieval-debug">
+              <div>
+                <span>Hybrid retrieval</span>
+                <small>{result.knowledge.retrieval.retrievalMode}</small>
+              </div>
+              <div className="debug-summary-grid">
+                <DebugFact
+                  label="Keyword candidates"
+                  value={String(result.knowledge.retrieval.keywordCandidateChunkIds.length)}
+                />
+                <DebugFact
+                  label="Vector candidates"
+                  value={String(result.knowledge.retrieval.vectorCandidateChunkIds.length)}
+                />
+                <DebugFact
+                  label="Merged candidates"
+                  value={String(result.knowledge.retrieval.mergedCandidateChunkIds.length)}
+                />
+                <DebugFact
+                  label="Selected chunks"
+                  value={String(result.knowledge.retrieval.selectedChunkIds.length)}
+                />
+                <DebugFact
+                  label="Top-K"
+                  value={`${result.knowledge.retrieval.keywordTopK} / ${result.knowledge.retrieval.vectorTopK} / ${result.knowledge.retrieval.finalTopK}`}
+                />
+                <DebugFact
+                  label="Hybrid confidence"
+                  value={result.knowledge.retrieval.confidence.toFixed(4)}
+                />
+              </div>
+              <small>Effective question: {result.knowledge.retrieval.effectiveQuestion}</small>
+              <div className="hybrid-score-list">
+                {result.knowledge.retrieval.scores.slice(0, 8).map((score) => (
+                  <div key={score.chunkId}>
+                    <strong>{score.chunkId}</strong>
+                    <span>Final {score.finalScore.toFixed(4)}</span>
+                    <span>Keyword {score.keywordScore.toFixed(4)}</span>
+                    <span>Vector {score.vectorScore.toFixed(4)}</span>
+                    <span>Metadata {score.metadataScore.toFixed(4)}</span>
+                    <span>Exact {score.exactMatchBoost.toFixed(4)}</span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ) : null}
+
+          {result.knowledge.ambiguity?.isAmbiguous ? (
+            <article className="debug-answer-card">
+              <div>
+                <span>Ambiguity check</span>
+                <small>{result.knowledge.ambiguity.intent ?? "unknown intent"}</small>
+              </div>
+              <p>{result.knowledge.ambiguity.clarificationQuestion}</p>
+              {result.knowledge.ambiguity.options?.length ? (
+                <small>Options: {result.knowledge.ambiguity.options.join(", ")}</small>
+              ) : null}
+            </article>
+          ) : null}
+
           <div className="debug-detail-grid">
             <section className="debug-detail-section">
               <div className="debug-detail-heading">
@@ -138,6 +225,9 @@ export function AnswerDebugPanel({
                       <p>{chunk.contentPreview}</p>
                       <footer>
                         <span>Score: {chunk.relevanceScore ?? "n/a"}</span>
+                        {chunk.knowledgeMetadata ? (
+                          <span>{formatKnowledgeMetadata(chunk.knowledgeMetadata)}</span>
+                        ) : null}
                         {chunk.sourceUri && isHttpUrl(chunk.sourceUri) ? (
                           <a href={chunk.sourceUri} target="_blank" rel="noreferrer">
                             Source
@@ -228,6 +318,28 @@ function DebugMetadata({ label, value }: { label: string; value?: string }) {
       <dd>{value}</dd>
     </div>
   );
+}
+
+function formatKnowledgeOutcome(outcome: AnswerDebugResult["knowledge"]["outcome"]): string {
+  switch (outcome) {
+    case "hit":
+      return "Knowledge hit";
+    case "clarification":
+      return "Clarification";
+    default:
+      return "Knowledge miss";
+  }
+}
+
+function formatKnowledgeMetadata(
+  metadata: NonNullable<AnswerDebugResult["retrievedChunks"][number]["knowledgeMetadata"]>
+): string {
+  return [
+    metadata.productSeries,
+    metadata.productName,
+    metadata.modelNumber,
+    metadata.deviceType
+  ].filter(Boolean).join(" / ");
 }
 
 function formatAnswerSource(value: AnswerDebugResult["answerSource"]): string {

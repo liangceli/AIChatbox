@@ -1,4 +1,10 @@
-import { ConversationStatus, MembershipStatus, TenantRole } from "@platform/database";
+import {
+  ConversationStatus,
+  MembershipStatus,
+  MessageAuthor,
+  MessageType,
+  TenantRole
+} from "@platform/database";
 import { loadAdminWebEnv, loadServerEnv, type ServerEnv } from "@platform/config";
 import assert from "node:assert/strict";
 import { createSign, generateKeyPairSync } from "node:crypto";
@@ -21,12 +27,15 @@ import { AnswerDebugService } from "../src/modules/chat/answer-debug.service";
 import { AssistantReplyService } from "../src/modules/chat/assistant-reply.service";
 import { buildBackendCitations } from "../src/modules/chat/citation-builder";
 import { ChatService } from "../src/modules/chat/chat.service";
+import { SendChatMessageDto } from "../src/modules/chat/dto/send-chat-message.dto";
 import { LlmProviderResolverService } from "../src/modules/chat/llm-provider-resolver.service";
 import { OpenAiLlmProviderService } from "../src/modules/chat/openai-llm-provider.service";
 import { buildOpenAiPrompt } from "../src/modules/chat/openai-prompt";
 import { ConversationsController } from "../src/modules/conversations/conversations.controller";
 import { ConversationsService } from "../src/modules/conversations/conversations.service";
 import { KnowledgeChunkingService } from "../src/modules/knowledge/knowledge-chunking.service";
+import { KnowledgeMetadataService } from "../src/modules/knowledge/knowledge-metadata.service";
+import { ConversationContextService } from "../src/modules/knowledge/conversation-context.service";
 import { KnowledgeController } from "../src/modules/knowledge/knowledge.controller";
 import { KnowledgeRetrievalService } from "../src/modules/knowledge/knowledge-retrieval.service";
 import {
@@ -47,6 +56,7 @@ import { TenantsController } from "../src/modules/tenants/tenants.controller";
 import { UpdateTenantAiProfileDto } from "../src/modules/tenants/dto/update-tenant-ai-profile.dto";
 import { UpdateAgentInvitationQuotaDto } from "../src/modules/tenants/dto/update-agent-invitation-quota.dto";
 import { WidgetSessionService } from "../src/modules/widget-session/widget-session.service";
+import { WidgetSessionGuard } from "../src/modules/widget-session/widget-session.guard";
 import { MembersService } from "../src/modules/members/members.service";
 import { AccountService, hashInvitationToken } from "../src/modules/account/account.service";
 import {
@@ -89,10 +99,12 @@ type RetrievalCandidate = {
   content: string;
   chunkIndex: number;
   sourceLocator?: unknown;
+  metadata?: Record<string, unknown> | null;
   knowledgeDocument: {
     id: string;
     title: string;
     sourceUri?: string | null;
+    metadata?: Record<string, unknown> | null;
   };
 };
 
@@ -152,7 +164,30 @@ function createRetrievalService(candidates: RetrievalCandidate[]): KnowledgeRetr
         }
       }
     }
-  } as never);
+  } as never, new KnowledgeMetadataService(), new ConversationContextService());
+}
+
+function createRetrievalDecisionMock(chunks = baseInput.retrievedChunks) {
+  return {
+    retrieveRelevantChunks: async () => chunks,
+    resolveRetrievalDecision: async (tenant?: { id: string }) => ({
+      mode: "answer",
+      effectiveQuestion: "What is the warranty?",
+      retrievedChunks: chunks,
+      ambiguity: {
+        isAmbiguous: false,
+        options: []
+      },
+      confidence: {
+        level: "strong",
+        reason: "Test retrieval confidence.",
+        bestScore: 12,
+        bestCoverage: 1
+      },
+      warnings: [],
+      tenant
+    })
+  };
 }
 
 function createClerkTestKeys() {
@@ -953,6 +988,26 @@ async function testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe() {
         retrievalTenantId = tenant.id;
 
         return baseInput.retrievedChunks;
+      },
+      resolveRetrievalDecision: async (tenant: { id: string }) => {
+        retrievalTenantId = tenant.id;
+
+        return {
+          mode: "answer" as const,
+          effectiveQuestion: "What is the warranty?",
+          retrievedChunks: baseInput.retrievedChunks,
+          ambiguity: {
+            isAmbiguous: false,
+            options: []
+          },
+          confidence: {
+            level: "strong",
+            reason: "Test retrieval confidence.",
+            bestScore: 12,
+            bestCoverage: 1
+          },
+          warnings: []
+        };
       }
     } as never,
     {
@@ -988,7 +1043,8 @@ async function testAnswerDebugKnowledgeHitIsTenantScopedAndSecretSafe() {
           }
         })
       })
-    } as never
+    } as never,
+    new AssistantReplyService()
   );
 
   const result = await answerDebugService.run(
@@ -1054,7 +1110,21 @@ async function testAnswerDebugKnowledgeMissIsSafeAndNonPersistent() {
       }
     } as never,
     {
-      retrieveRelevantChunks: async () => []
+      retrieveRelevantChunks: async () => [],
+      resolveRetrievalDecision: async () => ({
+        mode: "answer" as const,
+        effectiveQuestion: "What is the warranty?",
+        retrievedChunks: [],
+        ambiguity: {
+          isAmbiguous: false,
+          options: []
+        },
+        confidence: {
+          level: "none",
+          reason: "Test retrieval confidence."
+        },
+        warnings: []
+      })
     } as never,
     {
       resolveProvider: () => ({
@@ -1062,7 +1132,8 @@ async function testAnswerDebugKnowledgeMissIsSafeAndNonPersistent() {
         generateReply: (input: Parameters<AssistantReplyService["generateReply"]>[0]) =>
           new AssistantReplyService().generateReply(input)
       })
-    } as never
+    } as never,
+    new AssistantReplyService()
   );
 
   const result = await answerDebugService.run(
@@ -1969,9 +2040,9 @@ async function testAgentReplyKeepsHumanModeActive() {
     "I can help with that."
   );
 
-  assert.equal(detail.status, "pending_human");
+  assert.equal(detail.status, "assigned");
   assert.equal(
-    getUpdateData().some((data) => JSON.stringify(data).includes("PENDING_HUMAN")),
+    getUpdateData().some((data) => JSON.stringify(data).includes("ASSIGNED")),
     true
   );
 }
@@ -1986,7 +2057,7 @@ async function testAdminCanStartAndEndHumanSupportMode() {
     "Agent is taking over."
   );
 
-  assert.equal(started.status, "pending_human");
+  assert.equal(started.status, "assigned");
 
   const ended = await service.endHumanSupport(
     baseInput.tenant,
@@ -2066,7 +2137,10 @@ async function testOpenAiSuccessMapsResponse() {
     () =>
       ({
         responses: {
-          create: async () => ({ id: "response-1", output_text: "AI reply from OpenAI." })
+          create: async () => ({
+            id: "response-1",
+            output_text: JSON.stringify({ answer: "AI reply from OpenAI.", usedChunkIds: ["chunk-1"] })
+          })
         }
       }) as never
   );
@@ -2091,7 +2165,10 @@ async function testOpenAiSuccessPreservesCitationsWhenDeterministicWouldNotGroun
     () =>
       ({
         responses: {
-          create: async () => ({ id: "response-2", output_text: "AI reply with context." })
+          create: async () => ({
+            id: "response-2",
+            output_text: JSON.stringify({ answer: "AI reply with context.", usedChunkIds: ["chunk-2"] })
+          })
         }
       }) as never
   );
@@ -2279,6 +2356,27 @@ async function testDeterministicFallbackUsesTenantHandoffMessage() {
   assert.match(response.content, /Tenant handoff message/);
 }
 
+async function testNoEvidenceFallbackUsesProfessionalPlatformCopy() {
+  const response = new AssistantReplyService().generateReply({
+    ...baseInput,
+    agent: {
+      ...baseInput.agent,
+      fallbackMessage: "I received your message bro.",
+      handoffMessage: "A support team member can confirm current availability.",
+      handoffEnabled: true
+    },
+    latestCustomerMessage: "where can I buy it?",
+    retrievedChunks: [],
+    noKnowledgeEvidence: true,
+    turnType: "follow_up"
+  });
+
+  assert.doesNotMatch(response.content, /bro/i);
+  assert.match(response.content, /verified purchasing information/i);
+  assert.match(response.content, /support team member/i);
+  assert.equal(response.citations, null);
+}
+
 async function testLatestHumanModeStatusBlocksAiAfterAgentReply() {
   let providerCalled = false;
   let savedCustomerMessage = false;
@@ -2368,7 +2466,21 @@ async function testLatestHumanModeStatusBlocksAiAfterAgentReply() {
     }
   };
   const knowledgeRetrieval = {
-    retrieveRelevantChunks: async () => []
+    retrieveRelevantChunks: async () => [],
+    resolveRetrievalDecision: async () => ({
+      mode: "answer" as const,
+      effectiveQuestion: "hello",
+      retrievedChunks: [],
+      ambiguity: {
+        isAmbiguous: false,
+        options: []
+      },
+      confidence: {
+        level: "none",
+        reason: "Test retrieval confidence."
+      },
+      warnings: []
+    })
   };
   const providerResolver = {
     resolveProvider: () => {
@@ -2376,7 +2488,12 @@ async function testLatestHumanModeStatusBlocksAiAfterAgentReply() {
       return new AssistantReplyService();
     }
   };
-  const chatService = new ChatService(prisma as never, knowledgeRetrieval as never, providerResolver as never);
+  const chatService = new ChatService(
+    prisma as never,
+    knowledgeRetrieval as never,
+    providerResolver as never,
+    new AssistantReplyService()
+  );
 
   const response = await chatService.sendMessage(
     {
@@ -2396,6 +2513,96 @@ async function testLatestHumanModeStatusBlocksAiAfterAgentReply() {
   assert.equal(response.conversation.status, "pending_human");
   assert.equal(response.customerMessage.content, "hello");
   assert.equal(response.assistantMessage, null);
+}
+
+async function testClientMessageIdIsRequiredAndDuplicateSkipsProvider() {
+  const valid = plainToInstance(SendChatMessageDto, {
+    message: "hello",
+    clientMessageId: "7e6a8ad6-6dd4-4bfc-a5b3-d9d6d95307ab"
+  });
+  const missing = plainToInstance(SendChatMessageDto, { message: "hello" });
+  assert.equal(validateSync(valid).length, 0);
+  assert.ok(validateSync(missing).length > 0);
+
+  let providerCalled = false;
+  let messageCreated = false;
+  const conversation = {
+    id: "conversation-1",
+    tenantId: "tenant-1",
+    customerId: "customer-1",
+    assignedUserId: null,
+    channel: "WIDGET",
+    status: ConversationStatus.AWAITING_CUSTOMER,
+    handoffRequestedAt: null,
+    handoffReason: null,
+    lastMessageAt: new Date("2026-01-01T00:03:00.000Z"),
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:03:00.000Z")
+  };
+  const customerMessage = {
+    id: "message-customer",
+    tenantId: "tenant-1",
+    conversationId: "conversation-1",
+    authorUserId: null,
+    authorType: MessageAuthor.CUSTOMER,
+    messageType: MessageType.TEXT,
+    clientMessageId: valid.clientMessageId,
+    content: "hello",
+    citations: null,
+    payload: null,
+    metadata: null,
+    createdAt: new Date("2026-01-01T00:01:00.000Z")
+  };
+  const assistantMessage = {
+    ...customerMessage,
+    id: "message-assistant",
+    authorType: MessageAuthor.ASSISTANT,
+    clientMessageId: null,
+    content: "existing reply",
+    createdAt: new Date("2026-01-01T00:02:00.000Z")
+  };
+  const service = new ChatService(
+    {
+      client: {
+        $transaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+          customer: {
+            upsert: async () => ({ id: "customer-1" })
+          },
+          conversation: {
+            findFirst: async () => conversation
+          },
+          message: {
+            findFirst: async () => customerMessage,
+            findMany: async () => [customerMessage, assistantMessage],
+            create: async () => {
+              messageCreated = true;
+              return customerMessage;
+            }
+          }
+        })
+      }
+    } as never,
+    {} as never,
+    {
+      resolveProvider: () => {
+        providerCalled = true;
+        return new AssistantReplyService();
+      }
+    } as never,
+    new AssistantReplyService()
+  );
+
+  const response = await service.sendMessage(baseInput.tenant, {
+    message: valid.message,
+    clientMessageId: valid.clientMessageId,
+    conversationId: conversation.id,
+    visitorId: "visitor-1"
+  });
+
+  assert.equal(providerCalled, false);
+  assert.equal(messageCreated, false);
+  assert.equal(response.customerMessage.id, customerMessage.id);
+  assert.equal(response.assistantMessage?.id, assistantMessage.id);
 }
 
 async function testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence() {
@@ -2482,8 +2689,25 @@ async function testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence()
   };
   const chatService = new ChatService(
     prisma as never,
-    { retrieveRelevantChunks: async () => [] } as never,
-    providerResolver as never
+    {
+      retrieveRelevantChunks: async () => [],
+      resolveRetrievalDecision: async () => ({
+        mode: "answer" as const,
+        effectiveQuestion: "hello",
+        retrievedChunks: baseInput.retrievedChunks,
+        ambiguity: {
+          isAmbiguous: false,
+          options: []
+        },
+        confidence: {
+          level: "none",
+          reason: "Test retrieval confidence."
+        },
+        warnings: []
+      })
+    } as never,
+    providerResolver as never,
+    new AssistantReplyService()
   );
 
   const response = await chatService.sendMessage(
@@ -2511,6 +2735,7 @@ async function testProviderRunsOutsideDatabaseTransaction() {
   let providerCalled = false;
   let providerSawOpenTransaction = false;
   let transactionCalls = 0;
+  let persistedConversationMetadata: unknown;
   const conversation = {
     id: "conversation-1",
     tenantId: "tenant-1",
@@ -2564,11 +2789,17 @@ async function testProviderRunsOutsideDatabaseTransaction() {
             conversation: {
               findFirst: async () => conversation,
               findUnique: async () => conversation,
-              update: async () => ({
-                ...conversation,
-                status: ConversationStatus.AWAITING_CUSTOMER,
-                lastMessageAt: assistantMessage.createdAt
-              })
+              update: async ({ data }: { data: { metadata?: unknown } }) => {
+                if (data.metadata) {
+                  persistedConversationMetadata = data.metadata;
+                }
+
+                return {
+                  ...conversation,
+                  status: ConversationStatus.AWAITING_CUSTOMER,
+                  lastMessageAt: assistantMessage.createdAt
+                };
+              }
             },
             message: {
               create: async ({ data }: { data: { authorType: string } }) =>
@@ -2606,8 +2837,30 @@ async function testProviderRunsOutsideDatabaseTransaction() {
   };
   const chatService = new ChatService(
     prisma as never,
-    { retrieveRelevantChunks: async () => [] } as never,
-    providerResolver as never
+    {
+      retrieveRelevantChunks: async () => [],
+      resolveRetrievalDecision: async () => ({
+        mode: "answer" as const,
+        effectiveQuestion: "hello",
+        retrievedChunks: baseInput.retrievedChunks,
+        pendingClarification: {
+          originalQuestion: "how do I pair a device?",
+          intent: "pairing",
+          options: []
+        },
+        ambiguity: {
+          isAmbiguous: false,
+          options: []
+        },
+        confidence: {
+          level: "none",
+          reason: "Test retrieval confidence."
+        },
+        warnings: []
+      })
+    } as never,
+    providerResolver as never,
+    new AssistantReplyService()
   );
 
   const response = await chatService.sendMessage(
@@ -2627,6 +2880,15 @@ async function testProviderRunsOutsideDatabaseTransaction() {
   assert.equal(providerSawOpenTransaction, false);
   assert.equal(transactionCalls, 2);
   assert.equal(response.assistantMessage?.content, "assistant reply");
+  assert.deepEqual(persistedConversationMetadata, {
+    rag: {
+      pendingClarification: {
+        originalQuestion: "how do I pair a device?",
+        intent: "pairing",
+        options: []
+      }
+    }
+  });
 }
 
 async function testAdminSearchIsGuardedTenantScopedAndSafe() {
@@ -2837,6 +3099,64 @@ async function testWidgetSessionRejectsTamperingAndWrongTenant() {
       () => service.verify(issued.sessionToken, { ...baseInput.tenant, id: "tenant-other" }),
       UnauthorizedException
     );
+  } finally {
+    if (previousSecret === undefined) delete process.env.WIDGET_SESSION_SECRET;
+    else process.env.WIDGET_SESSION_SECRET = previousSecret;
+  }
+}
+
+async function testWidgetGuardVerifiesSignatureBeforeResolvingTenant() {
+  const previousSecret = process.env.WIDGET_SESSION_SECRET;
+  process.env.WIDGET_SESSION_SECRET = "test-widget-secret-with-at-least-32-characters";
+  let tenantLookups = 0;
+
+  try {
+    const sessions = new WidgetSessionService();
+    const issued = sessions.issue(baseInput.tenant);
+    const guard = new WidgetSessionGuard(sessions, {
+      client: {
+        tenant: {
+          findFirst: async ({ where }: { where: { id: string } }) => {
+            tenantLookups += 1;
+            assert.equal(where.id, baseInput.tenant.id);
+            return { ...baseInput.tenant, status: "ACTIVE" };
+          }
+        }
+      }
+    } as never);
+    const invalidRequest = {
+      headers: {
+        "x-widget-session": `${issued.sessionToken.slice(0, -1)}x`,
+        "x-tenant-slug": "other"
+      },
+      query: {}
+    };
+
+    await assert.rejects(
+      () => guard.canActivate(createGuardContext(invalidRequest.headers, invalidRequest)),
+      UnauthorizedException
+    );
+    assert.equal(tenantLookups, 0);
+
+    const validRequest: Record<string, unknown> = {
+      headers: {
+        "x-widget-session": issued.sessionToken,
+        "x-tenant-slug": baseInput.tenant.slug
+      },
+      query: {}
+    };
+    const validContext = {
+      switchToHttp: () => ({
+        getRequest: () => validRequest
+      })
+    } as ExecutionContext;
+    assert.equal(
+      await guard.canActivate(validContext),
+      true
+    );
+    assert.equal(tenantLookups, 1);
+    assert.equal((validRequest.widgetSession as { tenantId: string }).tenantId, baseInput.tenant.id);
+    assert.equal((validRequest.tenant as { slug: string }).slug, baseInput.tenant.slug);
   } finally {
     if (previousSecret === undefined) delete process.env.WIDGET_SESSION_SECRET;
     else process.env.WIDGET_SESSION_SECRET = previousSecret;
@@ -3058,7 +3378,9 @@ async function run() {
   await testExactPhraseStrongMatchStillWorks();
   await testRetrievalChangesPreserveDeterministicCitations();
   await testDeterministicFallbackUsesTenantHandoffMessage();
+  await testNoEvidenceFallbackUsesProfessionalPlatformCopy();
   await testLatestHumanModeStatusBlocksAiAfterAgentReply();
+  await testClientMessageIdIsRequiredAndDuplicateSkipsProvider();
   await testHumanModeStartingDuringProviderCallBlocksAiReplyPersistence();
   await testProviderRunsOutsideDatabaseTransaction();
   await testAdminSearchIsGuardedTenantScopedAndSafe();
@@ -3066,6 +3388,7 @@ async function run() {
   await testAgentConversationListIsRowScoped();
   await testAgentClaimsUnassignedConversationBeforeEndingOrReplying();
   await testWidgetSessionRejectsTamperingAndWrongTenant();
+  await testWidgetGuardVerifiesSignatureBeforeResolvingTenant();
   await testTenantOwnerCannotInviteAnotherOwner();
   await testAgentInvitationsExpireAfterTwelveHoursAndRespectTenantQuota();
   await testAgentInvitationQuotaValidationAndPlatformPolicy();

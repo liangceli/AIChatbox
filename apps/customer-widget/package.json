@@ -13,11 +13,11 @@
     }
   },
   "scripts": {
-    "dev": "tsup src/index.ts --watch --format esm,cjs --dts",
-    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsup ././src/index.ts --watch --format esm,cjs --dts",
+    "build": "tsup ././src/index.ts --format esm,cjs --dts",
     "lint": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('No tests configured for customer-widget yet')\"",
+    "test": "node scripts/widget-source.test.cjs",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

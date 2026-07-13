@@ -8,9 +8,10 @@
     "start": "tsx src/main.ts",
     "lint": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx scripts/provider-behavior.test.ts && tsx scripts/table-and-avatar.test.ts",
+    "test": "tsx scripts/provider-behavior.test.ts && tsx scripts/table-and-avatar.test.ts && tsx scripts/product-aware-rag.test.ts && tsx scripts/conversation-state.test.ts && tsx scripts/knowledge-lifecycle.test.ts",
     "smoke:openai": "tsx scripts/openai-smoke.ts",
     "bootstrap:clerk-admin": "tsx scripts/bootstrap-clerk-admin.ts",
+    "backfill:product-catalog": "tsx scripts/backfill-product-catalog.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\""
   },
   "dependencies": {

@@ -31,7 +31,7 @@ export class WidgetSessionService {
     };
   }
 
-  verify(token: string, tenant: ResolvedTenant): WidgetSessionContext {
+  verify(token: string, tenant?: ResolvedTenant): WidgetSessionContext {
     const [version, payload, signature] = token.trim().split(".");
 
     if (version !== TOKEN_VERSION || !payload || !signature) {
@@ -49,7 +49,9 @@ export class WidgetSessionService {
       const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<WidgetSessionContext>;
 
       if (
-        claims.tenantId !== tenant.id ||
+        (tenant && claims.tenantId !== tenant.id) ||
+        typeof claims.tenantId !== "string" ||
+        !claims.tenantId ||
         typeof claims.visitorId !== "string" ||
         !claims.visitorId ||
         typeof claims.expiresAt !== "number" ||

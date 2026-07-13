@@ -1446,6 +1446,56 @@ button:active:not(:disabled) {
   padding: 4px 8px;
 }
 
+.knowledge-panel-toggle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.knowledge-panel-toggle-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.knowledge-panel-toggle-title {
+  color: var(--on-surface);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.knowledge-panel-toggle-subtitle {
+  overflow: hidden;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-panel-toggle .material-symbols-outlined {
+  color: var(--primary);
+  font-size: 22px;
+  transition: transform 160ms ease;
+}
+
+.knowledge-panel-toggle:hover .knowledge-panel-toggle-title,
+.knowledge-panel-toggle:focus-visible .knowledge-panel-toggle-title {
+  color: var(--primary);
+}
+
+.knowledge-panel-toggle:focus-visible {
+  border-radius: 8px;
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+}
+
 .knowledge-empty-state,
 .debug-empty-state {
   border: 1px dashed var(--outline-variant);
@@ -1723,6 +1773,11 @@ button:active:not(:disabled) {
   color: var(--error);
 }
 
+.debug-outcome.clarification {
+  border-color: var(--primary-outline);
+  color: var(--primary);
+}
+
 .answer-debug-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1843,6 +1898,44 @@ button:active:not(:disabled) {
   color: var(--on-surface-variant);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.hybrid-retrieval-debug {
+  display: grid;
+  gap: 12px;
+}
+
+.hybrid-retrieval-debug .debug-summary-grid > div {
+  border: 0;
+  border-bottom: 1px solid var(--border-light);
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
+}
+
+.hybrid-score-list {
+  display: grid;
+  overflow-x: auto;
+  border-top: 1px solid var(--border-light);
+}
+
+.hybrid-score-list > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.5fr) repeat(5, minmax(80px, 1fr));
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--border-light);
+  padding: 8px 0;
+  min-width: 720px;
+}
+
+.hybrid-score-list strong {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.hybrid-score-list span {
+  text-transform: none;
 }
 
 .debug-detail-grid {

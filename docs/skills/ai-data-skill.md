@@ -1,5 +1,34 @@
 # AI 与数据流 Skill
 
+## 2026-07-13 Versioned Knowledge and Context Clearing
+
+- Active retrieval data may contain multiple chunk generations for one document, but only READY chunks belonging to a READY document are eligible for answers and citations.
+- Version-aware uniqueness is `(tenantId, knowledgeDocumentId, version, chunkIndex)`. Do not reintroduce the legacy version-blind index.
+- A new unrelated retrieval decision that emits explicit null product context must clear persisted active context; otherwise a later pronoun follow-up can revive a stale product scope.
+- Use `pnpm --filter @platform/database test:knowledge-lifecycle:db` for real local PostgreSQL proof. The test creates isolated rows and rolls the transaction back.
+
+## 2026-07-03 Hybrid Retrieval Data Flow
+
+- Query normalization emits effective question, intent, keywords, phrases, model codes, product names, and synonyms.
+- Keyword candidate lookup and semantic candidate lookup both enforce tenant ID plus READY status and are bounded at 400 chunks.
+- Keyword candidates are scored before Keyword Top-20; local sparse-semantic cosine produces Vector Top-20.
+- Final score is `0.45 keyword + 0.35 semantic + 0.15 metadata + 0.05 exact`, followed by resolved product scope, source diversity, confidence threshold `0.55`, and Final Top-3.
+- The semantic component is an original local sparse vector scorer, not OpenAI embeddings, pgvector, or an external vector service.
+- Answer Debug exposes component scores and candidate/selected IDs. These diagnostics are tenant-scoped and must not expose raw prompts or secrets.
+- OpenAI receives selected evidence only and identifies used chunk IDs; backend validates IDs before emitting citations.
+
+## 2026-06-24 Product Metadata and Ambiguity Notes
+
+- Knowledge ingestion now stores structured knowledge metadata under existing JSON metadata, without a Prisma migration.
+- Structured metadata fields include product series, product name, model number, device type, document type, language, version, section title, page number, aliases, and intent hints.
+- Metadata extraction is generic: explicit labels in uploaded content/metadata win; document title is only a weak fallback product label when it has a clear product/model signal.
+- FAQ/Q&A, case-study, policy/warranty, example-domain, and long title-like labels without product/model signals must not become product clarification candidates.
+- Chunk metadata inherits document metadata and can add row/section-specific labels.
+- Retrieval combines lexical scoring with metadata scoring and can filter by conversation product context before selecting chunks.
+- Ambiguous short product-action questions return a clarification decision instead of retrieved chunks.
+- Answer Debug reports ambiguity, clarification options, product scope, retrieval confidence reason, retrieved chunks, citations, and warnings without exposing secrets.
+- Historical boundary for this increment: retrieval was lexical plus metadata. The 2026-07-03 increment later added local sparse-semantic vectors; neural embeddings, persisted vector DB, reranker, and async indexing remain future phases.
+
 ## 2026-06-12 Knowledge Intelligence Notes
 
 - Current ingestion supports manual/file text and SSRF-safe URL import, then stores tenant-scoped documents, checksum, chunk count, source type, source URI, and ingestion metadata.

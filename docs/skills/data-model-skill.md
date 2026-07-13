@@ -1,11 +1,53 @@
 # Data Model Skill
 
+## 2026-07-13 Knowledge Chunk Index Repair
+
+- Migration `20260713000000_fix_knowledge_chunk_version_index` removes the original unique index on `(tenantId, knowledgeDocumentId, chunkIndex)`.
+- The authoritative unique key is `(tenantId, knowledgeDocumentId, version, chunkIndex)` so old INACTIVE and current READY generations can coexist.
+- Do not edit already-applied migration history to repair this invariant; add forward migrations and verify them against a real PostgreSQL database.
+- `ConversationState.activeProductContext` is nullable JSON. Explicit context clearing uses database null and disconnects `activeProductCatalogId`.
+
+## 2026-07-08 Knowledge Lifecycle
+
+- Migration `20260703030000_harden_knowledge_lifecycle` adds lifecycle hardening for knowledge updates.
+- `KnowledgeDocumentStatus` now includes `DELETED`; document rows also track `version`, `processingError`, `archivedAt`, and `deletedAt`.
+- `KnowledgeChunk` now tracks `version`, `contentHash`, `status`, `embeddingStatus`, and `updatedAt`.
+- `KnowledgeChunkStatus`: `PROCESSING`, `READY`, `FAILED`, `INACTIVE`, `ARCHIVED`, `DELETED`.
+- `KnowledgeEmbeddingStatus`: `DISABLED`, `PENDING`, `READY`, `FAILED`.
+- Chunk uniqueness is now `(tenantId, knowledgeDocumentId, version, chunkIndex)` so old inactive chunks can remain while a new READY version is created.
+- Active answer retrieval must filter both document and chunk lifecycle state; tenant scoping alone is not sufficient.
+
+## 2026-07-03 ConversationState and ProductCatalog
+
+- Migration `20260703020000_add_product_catalog_conversation_state` adds `ProductCatalog` and `ConversationState`.
+- `ProductCatalog` is tenant-scoped by `tenantId` and `catalogKey`; it stores productSeries, productName, modelNumber, deviceType, aliases, source, and metadata.
+- `ConversationState` stores the active product context, active product catalog ID, confidence, source, revision, state JSON, and pending clarification data. It is linked to `(Conversation.id, tenantId)`.
+- `ConversationState` is the primary retrieval state source; `Conversation.metadata.rag` remains a compatibility mirror during migration.
+- Product catalog and conversation state are not authorization records. Tenant/user/role checks still come from auth guards and tenant-scoped Prisma queries.
+
+## 2026-07-03 Widget Idempotency and Human Assignment
+
+- `Message.clientMessageId` is optional for non-Widget/legacy records but required by the current Widget DTO.
+- `@@unique([tenantId, clientMessageId])` prevents the same Widget send from creating multiple conversations or messages inside one tenant.
+- Migration `20260703000000_add_widget_message_idempotency` adds the column and `ASSIGNED`; migration `20260703010000_scope_widget_idempotency_before_conversation` corrects uniqueness to tenant scope before conversation creation.
+- `ConversationStatus.ASSIGNED` means an agent has claimed a human-support conversation. Both `PENDING_HUMAN` and `ASSIGNED` are active human-support states and pause AI.
+- Retrieval context remains JSON under `Conversation.metadata.rag`; it is never authorization data.
+
 ## 数据库
 
 - ORM: Prisma
 - Provider: PostgreSQL
 - Schema: `packages/database/prisma/schema.prisma`
 - Client package: `packages/database`
+
+## 2026-06-24 Structured Knowledge Metadata
+
+- No Prisma schema migration was added for product-aware retrieval.
+- `KnowledgeDocument.metadata` and `KnowledgeChunk.metadata` may contain `knowledge` plus `structuredKnowledgeVersion: 1`.
+- `knowledge` can include productSeries, productName, modelNumber, deviceType, documentType, language, version, sectionTitle, pageNumber, aliases, and intentHints.
+- `Conversation.metadata` may contain `rag.productContext` and `rag.pendingClarification` for customer support retrieval context.
+- Conversation RAG metadata is not authorization data and must never override tenant/user/role checks.
+- Future vector search may add schema changes, but this increment intentionally keeps metadata JSON-backed.
 
 ## Tenant Boundary
 
@@ -17,18 +59,20 @@
 - `Message.id_tenantId`
 - `KnowledgeBase.tenantId_slug`
 - `KnowledgeDocument.id_tenantId`
-- `KnowledgeChunk.tenantId_knowledgeDocumentId_chunkIndex`
+- `KnowledgeChunk.tenantId_knowledgeDocumentId_version_chunkIndex`
 - `AgentConfig.tenantId`
 - `Role.tenantId_userId`
 
 ## Enums
 
 - `TenantStatus`: `ACTIVE`, `SUSPENDED`, `ARCHIVED`
-- `ConversationStatus`: `OPEN`, `AWAITING_CUSTOMER`, `AWAITING_AGENT`, `PENDING_HUMAN`, `RESOLVED`, `CLOSED`
+- `ConversationStatus`: `OPEN`, `AWAITING_CUSTOMER`, `AWAITING_AGENT`, `PENDING_HUMAN`, `ASSIGNED`, `RESOLVED`, `CLOSED`
 - `ConversationChannel`: `WIDGET`, `EMAIL`, `PHONE`, `API`
 - `MessageAuthor`: `CUSTOMER`, `ASSISTANT`, `AGENT`, `SYSTEM`
 - `MessageType`: `TEXT`, `SYSTEM_EVENT`, `HANDOFF_EVENT`, `INTERNAL_NOTE`
-- `KnowledgeDocumentStatus`: `DRAFT`, `INDEXING`, `READY`, `FAILED`, `ARCHIVED`
+- `KnowledgeDocumentStatus`: `DRAFT`, `INDEXING`, `READY`, `FAILED`, `ARCHIVED`, `DELETED`
+- `KnowledgeChunkStatus`: `PROCESSING`, `READY`, `FAILED`, `INACTIVE`, `ARCHIVED`, `DELETED`
+- `KnowledgeEmbeddingStatus`: `DISABLED`, `PENDING`, `READY`, `FAILED`
 - `KnowledgeDocumentSourceType`: `FILE`, `URL`, `MANUAL`, `INTEGRATION`
 
 ## Core Models
@@ -63,13 +107,13 @@ Tenant-scoped container for knowledge documents. Unique by `(tenantId, slug)`.
 
 ### KnowledgeDocument
 
-Tenant-scoped source document. Stores title, source type, optional source URI, raw text content, checksum, status, chunk count, metadata, ingestedAt.
+Tenant-scoped source document. Stores title, source type, optional source URI, raw text content, checksum, status, version, processingError, chunk count, metadata, ingestedAt, archivedAt, and deletedAt.
 
 Current ingestion keeps the text content in the database; no external object storage is implemented yet.
 
 ### KnowledgeChunk
 
-Tenant-scoped chunk linked to a KnowledgeDocument. Stores chunkIndex, content, optional tokenCount, sourceLocator, metadata.
+Tenant-scoped chunk linked to a KnowledgeDocument. Stores version, chunkIndex, content, contentHash, status, embeddingStatus, optional tokenCount, sourceLocator, metadata, and timestamps.
 
 No embedding vector field exists.
 

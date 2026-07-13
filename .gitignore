@@ -12,3 +12,4 @@ coverage
 .env.production.local
 infra/local-postgres/
 *.tsbuildinfo
+reference/ref/

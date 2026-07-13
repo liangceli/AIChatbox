@@ -21,6 +21,12 @@ export function createTenantResolutionMiddleware(prisma: PrismaClient) {
         return;
       }
 
+      // Signed widget sessions resolve their tenant in WidgetSessionGuard.
+      if (hasWidgetSessionCredential(request)) {
+        next();
+        return;
+      }
+
       const headerValue = request.headers[TENANT_HEADER_NAME];
       const tenantQueryValue = request.query.tenantSlug;
       const rawTenantSlug = Array.isArray(headerValue)
@@ -58,4 +64,15 @@ export function createTenantResolutionMiddleware(prisma: PrismaClient) {
       next(error);
     }
   };
+}
+
+function hasWidgetSessionCredential(request: TenantRequest): boolean {
+  const header = request.headers["x-widget-session"];
+  const query = request.query.widgetSession;
+
+  return Boolean(
+    (typeof header === "string" && header.trim()) ||
+      (Array.isArray(header) && header.some((value) => value.trim())) ||
+      (typeof query === "string" && query.trim())
+  );
 }

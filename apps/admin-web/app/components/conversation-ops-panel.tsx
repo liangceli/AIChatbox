@@ -148,7 +148,8 @@ export function ConversationOpsPanel({
   }, [conversationDetail?.messages]);
   const latestMessage = chronologicalMessages.at(-1)?.content ?? "";
   const latestMessageId = chronologicalMessages.at(-1)?.id;
-  const isHumanModeActive = conversationDetail?.status === "pending_human";
+  const isHumanModeActive =
+    conversationDetail?.status === "pending_human" || conversationDetail?.status === "assigned";
   const isAgentWorkspace = !allowAssignment && Boolean(currentUserId);
   const isAssignedToCurrentAgent = Boolean(
     currentUserId && conversationDetail?.assignedUser?.id === currentUserId
@@ -417,9 +418,13 @@ export function ConversationOpsPanel({
             </div>
             <div>
               <span>Status</span>
-              <strong className={conversationDetail?.status === "pending_human" ? "error" : ""}>
+              <strong className={isHumanModeActive ? "error" : ""}>
                 <i />
-                {conversationDetail?.status === "pending_human" ? "Wait" : conversationDetail?.status ?? "Wait"}
+                {conversationDetail?.status === "pending_human"
+                  ? "Wait"
+                  : conversationDetail?.status === "assigned"
+                    ? "Assigned"
+                    : conversationDetail?.status ?? "Wait"}
               </strong>
             </div>
             {allowAssignment && selectedUser ? (

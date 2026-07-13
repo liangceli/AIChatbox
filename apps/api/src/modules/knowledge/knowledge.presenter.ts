@@ -9,7 +9,8 @@ import type {
   KnowledgeBaseRecord,
   KnowledgeChunkRecord,
   KnowledgeDocumentDetail,
-  KnowledgeDocumentRecord
+  KnowledgeDocumentRecord,
+  KnowledgeStructuredMetadata
 } from "@platform/types";
 
 function mapDocumentStatus(status: KnowledgeDocumentStatus): KnowledgeDocumentRecord["status"] {
@@ -46,7 +47,8 @@ export function toKnowledgeDocumentRecord(document: KnowledgeDocument): Knowledg
     chunkCount: document.chunkCount,
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
-    ingestedAt: document.ingestedAt?.toISOString() ?? null
+    ingestedAt: document.ingestedAt?.toISOString() ?? null,
+    knowledgeMetadata: readKnowledgeMetadata(document.metadata)
   };
 }
 
@@ -58,6 +60,7 @@ export function toKnowledgeChunkRecord(chunk: KnowledgeChunk): KnowledgeChunkRec
     content: chunk.content,
     tokenCount: chunk.tokenCount,
     sourceLocator: chunk.sourceLocator ?? undefined,
+    knowledgeMetadata: readKnowledgeMetadata(chunk.metadata),
     createdAt: chunk.createdAt.toISOString()
   };
 }
@@ -70,4 +73,54 @@ export function toKnowledgeDocumentDetail(
     metadata: document.metadata ?? undefined,
     chunks: document.chunks.map(toKnowledgeChunkRecord)
   };
+}
+
+function readKnowledgeMetadata(value: unknown): KnowledgeStructuredMetadata | null {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  const candidate = isPlainObject(value.knowledge)
+    ? value.knowledge
+    : isPlainObject(value.knowledgeMetadata)
+      ? value.knowledgeMetadata
+      : value;
+  const metadata: KnowledgeStructuredMetadata = {};
+
+  for (const key of [
+    "productSeries",
+    "productName",
+    "modelNumber",
+    "deviceType",
+    "documentType",
+    "language",
+    "version",
+    "sectionTitle"
+  ] as const) {
+    if (typeof candidate[key] === "string" && candidate[key].trim()) {
+      metadata[key] = candidate[key].trim();
+    }
+  }
+
+  if (typeof candidate.pageNumber === "number" && Number.isFinite(candidate.pageNumber)) {
+    metadata.pageNumber = candidate.pageNumber;
+  }
+
+  if (Array.isArray(candidate.aliases)) {
+    metadata.aliases = candidate.aliases.filter(
+      (item): item is string => typeof item === "string" && Boolean(item.trim())
+    );
+  }
+
+  if (Array.isArray(candidate.intentHints)) {
+    metadata.intentHints = candidate.intentHints.filter(
+      (item): item is string => typeof item === "string" && Boolean(item.trim())
+    );
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

@@ -1,5 +1,47 @@
 # AI Chatbox Skill
 
+## 2026-07-13 Product Context Reset Invariant
+
+- Persisted product context is continuity state, not permanent conversation identity.
+- When retrieval emits explicit `productContext: null` for a new unrelated question, both `ConversationState` and legacy RAG metadata must be cleared.
+- Omitted product context means no update; explicit null means clear. Tests must keep this distinction.
+
+## 2026-07-03 Current Answer Pipeline
+
+- Widget sends a required UUID `clientMessageId`; API uniqueness is `(tenantId, clientMessageId)` so retries return the original persisted result.
+- Retrieval reads persisted `ConversationState` first, falls back to legacy `Conversation.metadata.rag`, then uses at most eight prior turns for provider context.
+- `ConversationState` decides product/search context only. Final answers must be grounded in active `KnowledgeChunk` records from the current knowledge base, never in copied state memory.
+- Every retrieval pool must require `tenantId`, `KnowledgeDocument.status = READY`, and `KnowledgeChunk.status = READY`; citations may only reference those selected active chunks.
+- Archive/delete lifecycle states must exclude documents/chunks from retrieval. Reprocessing failure must preserve the previous READY version rather than exposing partial chunks or making the old answer unavailable.
+- Resolved product context is upserted into tenant-scoped `ProductCatalog` and persisted on `ConversationState`; legacy `Conversation.metadata.rag` remains synchronized only for compatibility.
+- Generic product actions such as `how to pair?` ask for a product when the bounded tenant candidate pool contains multiple valid scopes.
+- Clarification replies combine the original question and selected model; follow-ups can use stored product context, while unrelated new questions cannot.
+- Follow-up retrieval must carry stored `rag.productContext` into the hidden retrieval query so pronoun turns like `Which ecosystems support it?` cannot drift to a different high-scoring product.
+- If a pending product clarification is resolved and selected evidence has one explicit product scope, persist that scope for later turns. This must remain tenant-neutral and must not introduce product-specific hardcoded branches.
+- Intent matching is word/phrase-boundary based: `repair` is troubleshooting and must never match the substring `pair`. Short model typos allow only controlled adjacent-character transposition lookup.
+- Hybrid retrieval uses Keyword Top-20, local sparse-semantic Vector Top-20, weighted merge, confidence threshold, and Final Top-3.
+- OpenAI must return structured `answer + usedChunkIds`; only validated used IDs become citations.
+- Missing evidence produces a deterministic knowledge-base miss with zero citations. Do not call OpenAI merely to phrase an unsupported answer.
+- The no-evidence safety response uses professional platform copy rather than tenant-configured fallback text. Purchase questions without verified evidence must not invent retailers or availability.
+- `PENDING_HUMAN` and `ASSIGNED` both suppress AI until support ends.
+
+## 2026-06-24 Product-Aware Retrieval Notes
+
+- ChatService now creates/loads the conversation before retrieval so retrieval can use conversation-level RAG metadata.
+- `KnowledgeRetrievalService.resolveRetrievalDecision()` is the product-aware path for chat and Answer Debug. The older `retrieveRelevantChunks()` remains as a compatibility wrapper.
+- Conversation metadata may store `rag.pendingClarification` and `rag.productContext`; use these only as retrieval context, not as authorization evidence.
+- Short product-action questions such as "how to pair?" should ask a clarification question when multiple product scopes match.
+- Clarification options must come from cleaned product/entity labels, not raw FAQ/Q&A titles, case-study titles, policy categories, or generic document names.
+- Short product-action questions can also create an open pending clarification with no options when retrieval only has generic evidence and no clean product/entity labels. Do not let the LLM generate a natural-language clarification without persisting `rag.pendingClarification`.
+- Short replies to a pending clarification are treated as a continuation of the original question. For example, `how to pair?` followed by `KMREN` should retrieve as `how to pair? KMREN`, not as a fresh standalone KMREN question.
+- Short model-code replies may match a known model label with a small typo only when both sides look like model codes; generic replies such as `matter product` should keep clarifying rather than force a weak product scope.
+- If a customer reply does not match a pending clarification option, repeat the clarification instead of generating an answer from weak context.
+- After the customer clarifies the product, the next retrieval is scoped to that product and the product context is persisted for follow-up questions.
+- Retrieval decisions include confidence level/reason/best score/coverage. Low-confidence evidence can be suppressed before provider generation.
+- OpenAI prompts receive safe product-scope metadata for selected chunks and must not mix unrelated product series, models, or device types.
+- Citations still come only from backend-selected chunks; the model must not invent citation IDs.
+- Historical boundary for this increment: neural embeddings, a persisted vector database, and reranking were not implemented. The 2026-07-03 increment later added local sparse-semantic vectors only.
+
 ## 2026-06-12 RAG/Answer Debug Notes
 
 - Answer Debug is the current safe inspection path for knowledge hits/misses, retrieval confidence, source diversity, citations, provider mode, fallback, and sanitized provider metadata.
@@ -20,6 +62,7 @@
 - Restore remains tenant + visitor + conversation scoped. A 403 or 404 clears the stored conversation ID; transient failures keep it for a later retry.
 - `/chat` provides an initial server-fetched public tenant profile so branding/messaging can render before the client profile refresh completes.
 - Message history automatically scrolls to the latest message after restore, new messages, realtime updates, or status changes.
+- The widget composer clears the submitted draft immediately when a send starts and restores that exact draft only if the send request fails.
 
 ## 2026-06-05 Persistent Human Support Notes
 
@@ -134,6 +177,17 @@
 - API 会返回当前 conversation 的完整 messages。
 - 当前 deterministic assistant reply 不使用历史上下文生成回答。
 - Conversation history 主要用于 UI 展示和 agent handoff，不是模型上下文。
+
+## 2026-07-03 Short Model Clarification Matching
+
+- Current end-to-end chat implementation diagram: `docs/architecture/current-chat-system-flow.md`; exact Mermaid source: `docs/architecture/current-chat-system-flow.mmd`.
+- Treat the `.mmd` file as the persistent architecture baseline. Future diagram requests must update it incrementally from current working-tree changes and keep the `.md` Mermaid block identical.
+- Preserve unchanged diagram nodes and edges; do not regenerate the architecture from scratch or include planned components as implemented.
+- Pending product clarification supports one adjacent-character transposition for likely short model codes, for example `KMERM` resolving to `KMREM`.
+- This tolerance is model-code-only and must not become general fuzzy matching for arbitrary product names.
+- Once product scope is strongly resolved, low coverage caused by generic words in the original question must not discard otherwise valid scoped evidence.
+- Greetings and acknowledgements during pending clarification are conversational interruptions: answer the current message normally and preserve pending clarification for the next product reply.
+- Keep regressions for both populated clarification options and open clarification state with no options.
 
 ## Safety / Privacy Notes
 

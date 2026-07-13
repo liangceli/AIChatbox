@@ -3,6 +3,7 @@ import type { PublicTenantAiProfile, TenantAiProfile, TenantOverviewRecord } fro
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { ResolvedTenant } from "../../common/tenant/tenant.types";
+import { humanSupportStatusWhere } from "../conversations/conversation-status";
 import type { CreateTenantDto } from "./dto/create-tenant.dto";
 import type { UpdateTenantAiProfileDto } from "./dto/update-tenant-ai-profile.dto";
 import {
@@ -37,7 +38,7 @@ export class TenantsService {
     const pendingCounts = await this.prisma.client.conversation.groupBy({
       by: ["tenantId"],
       where: {
-        status: ConversationStatus.PENDING_HUMAN
+        status: humanSupportStatusWhere()
       },
       _count: {
         _all: true
@@ -113,7 +114,7 @@ export class TenantsService {
 
     const [pendingHumanCount, activeAgentInvitationCount] = await Promise.all([
       this.prisma.client.conversation.count({
-        where: { tenantId: tenant.id, status: ConversationStatus.PENDING_HUMAN }
+        where: { tenantId: tenant.id, status: humanSupportStatusWhere() }
       }),
       this.prisma.client.tenantInvitation.count({
         where: {

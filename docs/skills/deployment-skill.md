@@ -1,5 +1,12 @@
 # Deployment Skill
 
+## 2026-07-13 Migration and Log Safety Gate
+
+- Deploy migration `20260713000000_fix_knowledge_chunk_version_index` after `20260703030000_harden_knowledge_lifecycle` in every environment.
+- Verify the legacy `KnowledgeChunk_tenantId_knowledgeDocumentId_chunkIndex_key` index is absent before accepting knowledge replacement.
+- Run the explicit lifecycle DB integration command in a controlled non-production environment; it is rollback-safe but still requires a valid PostgreSQL connection.
+- Runtime readiness logs must not print full Redis, database, Clerk, or provider connection values.
+
 ## 2026-06-12 RAG Alpha Deployment Notes
 
 - Real alpha readiness requires real OpenAI env, production/staging admin secrets, database/Redis wiring, allowed domains/CORS, and deployment egress denial for internal/metadata networks.

@@ -1,5 +1,124 @@
 # 中文 Diff Review & QA Report
 
+## 2026-07-13 Migration Reproducibility and State Safety QA
+
+- PASS: local migration `20260713000000_fix_knowledge_chunk_version_index` applied successfully; Prisma reports 10 applied migrations.
+- PASS: the legacy `(tenantId, knowledgeDocumentId, chunkIndex)` unique index is absent after migration.
+- PASS: rollback-safe real PostgreSQL test writes two version 1 chunks, inactivates them, and writes two version 2 READY chunks using the same chunk indexes.
+- PASS: integration rollback preserved the existing local counts of 3 tenants, 31 knowledge documents, and 335 chunks.
+- PASS: explicit null product context clears persisted JSON context, active catalog relation, active confidence/source, and legacy metadata; no product catalog upsert occurs during clearing.
+- PASS: AI Worker source regression prevents raw `REDIS_URL` logging and requires a safe configured boolean.
+- PASS: workspace typecheck, lint, test, build, and diff checks pass across all 11 packages. Database and AI Worker now have real tests; six packages retain explicit placeholders.
+- PASS: Admin Web production build and Customer Widget standard lifecycle build pass after controlled dev shutdown.
+- PENDING: authenticated multi-role browser acceptance remains required before READY.
+
+## 2026-07-08 Knowledge Lifecycle QA
+
+- PASS: API typecheck passed after adding document/chunk lifecycle fields and filters.
+- PASS: API tests passed, including `knowledge-lifecycle.test.ts`.
+- PASS: retrieval queries now require `KnowledgeChunk.status = READY` and `KnowledgeDocument.status = READY`.
+- PASS: reprocess failure preserves a previous READY document and records the processing error instead of making the old answer unavailable.
+- PASS: delete uses soft lifecycle state and marks chunks DELETED rather than hard-deleting first.
+- PASS: local migration `20260703030000_harden_knowledge_lifecycle` was applied successfully after marking the initial failed attempt rolled back.
+- PENDING: browser QA should restart services and verify upload same file -> replacement, failed reprocess -> old answer remains, delete/archive -> no stale citation, and context follow-up after product clarification.
+- WATCH: the current runtime may still show old behavior until API/Admin Web are restarted after migration and Prisma generate.
+
+## 2026-07-03 ConversationState / ProductCatalog Phase 1 QA
+
+- PASS: API typecheck passed after adding `ConversationState`, `ProductCatalog`, and state-service chat integration.
+- PASS: API tests passed, including new `conversation-state.test.ts`.
+- PASS: persisted `ConversationState.activeProductContext` takes priority over legacy `Conversation.metadata.rag.productContext`.
+- PASS: resolved product context upserts a tenant-scoped `ProductCatalog` entry and writes `ConversationState` with active product, confidence, and source.
+- PASS: legacy metadata remains synchronized for compatibility while retrieval uses the new persisted state first.
+- PENDING: run Prisma migration and optional product catalog backfill against the local database before browser QA.
+
+## 2026-07-03 Product Context Follow-Up QA
+
+- PASS: `how do I pair a device?` creates product clarification instead of guessing.
+- PASS: `KMDIM400` resolves the pending clarification and persists KMDIM400 as the product context.
+- PASS: `Which ecosystems support it?` reuses the stored product context as a hidden retrieval constraint.
+- PASS: the follow-up retrieves `KMDIM400 compatibility` and does not return the stronger global `KMREM` ecosystem chunk.
+- PASS: `pnpm --filter @platform/api test` passed with the new regression.
+
+## 2026-07-03 Repair Intent and Clarification Exit QA
+
+- PASS: `how to repair it?` is troubleshooting, never pairing; intent matching uses complete word/phrase boundaries.
+- PASS: a stale pairing clarification is treated as a new troubleshooting question rather than repeated.
+- PASS: `KMERM` uses one controlled adjacent-character transposition to resolve KMREM and exits pending clarification.
+- PASS: KMREM pairing-only chunks are excluded from a repair answer by intent-aware scope filtering.
+- PASS: absent KMREM repair evidence returns professional fallback with zero citations, not a guessed repair method.
+- PASS: API typecheck/tests and real local three-turn runtime smoke passed.
+
+## 2026-07-03 Knowledge-Gap Copy QA
+
+- PASS: `where can I buy it?` is classified as a KMREM follow-up after the ecosystem question.
+- PASS: no verified KMREM purchase document exists; navigation-only `Where To Buy` text is not treated as purchasing evidence.
+- PASS: no-evidence response does not include tenant fallback text such as `bro`.
+- PASS: unsupported purchasing response has zero citations and does not invent retailers, stockists, prices, or availability.
+- PASS: API typecheck, API tests, and live Kasta four-turn runtime smoke passed.
+
+## 2026-07-03 Hybrid Retrieval, Context, and Widget Security QA
+
+- PASS: Keyword candidates are scored before Keyword Top-20 truncation, preventing arbitrary database order from dropping an exact model chunk.
+- PASS: Local sparse-semantic Vector Top-20 and Keyword Top-20 are deduplicated and weighted with metadata/exact boosts before Final Top-3.
+- PASS: `how to pair?` against the real Kasta corpus asks for a product and does not list spreadsheet/file names.
+- PASS: Follow-up `KMREM` answers with QR-code or 11-digit setup-code evidence and a citation from `matter_thread_devices.xlsx`.
+- PASS: unrelated payroll-tax question returns the tenant fallback/knowledge-miss answer with zero citations.
+- PASS: duplicate `clientMessageId` returns the same persisted customer message; first-message retries cannot create a second conversation because uniqueness is tenant-scoped.
+- PASS: signed Widget token reused with a different tenant slug returns 401.
+- PASS: OpenAI citations are restricted to validated `usedChunkIds` from the selected evidence; malformed, unknown, or empty evidence IDs fall back safely.
+- PASS: `PENDING_HUMAN` and `ASSIGNED` both pause AI; assignment and agent replies remain tenant/user scoped.
+- PASS: full workspace `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build` completed within the five-minute limit.
+- PASS: API, Admin Web, and Customer Widget have real source/behavior test tasks. Config, database, logging, types, ai-worker, tenant-core, and ai-core still report placeholder test scripts and are not counted as behavioral coverage.
+- PASS: runtime health returned 200 in Clerk/OpenAI mode and the two Prisma migrations were applied.
+- PENDING: authenticated browser click-through for Admin Answer Debug, Widget refresh, handoff, Agent reply, and sign-out. The in-app browser could list the localhost tab but DOM/evaluate timed out, so no visual acceptance is claimed.
+- SCALE RISK: semantic vectors and rate-limit buckets are process-local. Production scale requires a persisted neural embedding/vector index and shared rate-limit store.
+
+## 2026-07-03 Transposed Model Clarification QA
+
+- PASS: `how do I pair a device?` followed by `KMERM` resolves to the tenant-scoped `KMREM` product evidence instead of repeating the clarification.
+- PASS: The same transposition resolves when `pendingClarification.options` is empty and product scope must be recovered from retrieved metadata.
+- PASS: Product-scoped evidence is not suppressed by generic original-question words after the scope has been strongly resolved.
+- PASS: `Hi` during a pending product clarification is handled as an interruption, does not repeat the clarification, and does not consume the pending state.
+- PASS: After the greeting, a later `KMERM` reply resumes the original pairing intent and retrieves KMREM evidence.
+- PASS: API test, API typecheck, and focused `git diff --check` completed successfully.
+- PENDING: Browser QA should repeat the exact live Widget sequence and verify the resulting answer cites only the KMREM source.
+
+## 2026-06-25 Customer Widget Composer QA
+
+- PASS: Customer widget source smoke now asserts the textarea draft is cleared immediately after a valid send starts.
+- PASS: Customer widget source smoke asserts failed sends restore the submitted draft for retry.
+- PENDING: Browser QA should verify `/chat` no longer leaves the sent text in the composer while the assistant response is loading.
+
+## 2026-06-25 Product Clarification Context QA
+
+- PASS: API tests pass with a new regression for `how to pair?` followed by short model reply `KMREN`, preserving the original pairing intent and scoping retrieval to the closest matching model/product.
+- PASS: API tests now cover open pending clarification when `how to pair?` only has generic evidence and no clean product options.
+- PASS: Generic short clarification replies such as `matter product` continue to repeat clarification instead of forcing weak product scope.
+- PASS: API typecheck passes after adding model-code typo matching and short clarification continuation handling.
+- PASS: Admin-web source smoke still passes; this backend retrieval change did not alter the admin UI contract.
+- PASS: Full workspace build passes after routing admin-web build through the `.next` cleanup wrapper; the prior stale `/_document` Next cache failure is resolved.
+- PENDING: Browser QA should verify the live `/chat` sequence `how to pair?` -> `KMREN` returns a scoped pairing answer with citations, and `matter product` still asks for a more specific product/model.
+
+## 2026-06-24 Product Entity Cleanup and Confidence QA
+
+- PASS: API typecheck passed after adding retrieval confidence diagnostics.
+- PASS: API tests passed after product/entity candidate cleanup and confidence threshold changes.
+- PASS: Product-aware regressions now cover noisy title filtering so `FAQ KASTA`, `matter qa`, and long case-study style titles are not clarification options.
+- PASS: Pending clarification with an unmatched short reply repeats the clarification and returns no retrieved chunks.
+- PASS: Admin-web Answer Debug source smoke and typecheck pass with the new retrieval detection display.
+- PENDING: Browser QA should confirm `/chat` no longer suggests FAQ/case-study titles in clarification options and Answer Debug shows confidence reason.
+
+## 2026-06-24 Product-Aware RAG QA
+
+- PASS: AnythingLLM reference license checked as MIT; root third-party notice documents read-only architectural review and no copied source.
+- PASS: No new dependency, schema migration, GPL/AGPL/SSPL/non-commercial package, copied UI, or copied AnythingLLM module was introduced.
+- PASS: API typecheck passed after adding structured knowledge metadata, product-aware retrieval decisions, chat clarification handling, Answer Debug clarification reporting, and prompt scope hints.
+- PASS: API test passed, including new product-aware regressions for ambiguous "how to pair?", clarification follow-up scoping, persisted product context scoping, and explicit metadata extraction.
+- PASS: Existing provider, table/avatar, tenant-scope, handoff race, and safe debug tests remain green.
+- PENDING: Full workspace typecheck/lint/test/build and browser QA are not completed yet in this round.
+- PENDING: Embedding/vector hybrid retrieval and reranking are future phases, not accepted capabilities from this pass.
+
 ## 2026-06-22 Avatar and Table Knowledge QA
 
 - Follow-up PASS: controlled file selection, visible filename/size, drag/drop, remove action, client extension/size validation, and multipart path source assertions.

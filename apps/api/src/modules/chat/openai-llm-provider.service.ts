@@ -20,12 +20,13 @@ interface OpenAiResponsesClient {
   };
 }
 
-type OpenAiClientFactory = (config: { apiKey: string; timeout: number }) => OpenAiResponsesClient;
+type OpenAiClientFactory = (config: { apiKey: string; timeout: number; maxRetries: number }) => OpenAiResponsesClient;
 
 const DEFAULT_CLIENT_FACTORY: OpenAiClientFactory = (config) =>
   new OpenAI({
     apiKey: config.apiKey,
-    timeout: config.timeout
+    timeout: config.timeout,
+    maxRetries: config.maxRetries
   }) as OpenAiResponsesClient;
 
 @Injectable()
@@ -76,16 +77,31 @@ export class OpenAiLlmProviderService implements LlmProvider {
         max_output_tokens: this.env.OPENAI_MAX_OUTPUT_TOKENS
       });
 
-      const content = response.output_text?.trim();
+      const rawContent = response.output_text?.trim();
 
-      if (!content) {
+      if (!rawContent) {
         return this.createFallback(input, startedAt, "empty_response");
       }
 
+      const parsed = parseGroundedResponse(rawContent);
+
+      if (!parsed) {
+        return this.createFallback(input, startedAt, "invalid_grounded_response", true);
+      }
+
+      const validChunkIds = new Set(input.retrievedChunks.map((chunk) => chunk.chunkId));
+      const usedChunkIds = Array.from(
+        new Set(parsed.usedChunkIds.filter((chunkId) => validChunkIds.has(chunkId)))
+      );
+      const usedChunks = input.retrievedChunks.filter((chunk) => usedChunkIds.includes(chunk.chunkId));
+
+      if (input.retrievedChunks.length > 0 && usedChunks.length === 0) {
+        return this.createFallback(input, startedAt, "no_grounded_sources");
+      }
+
       return {
-        content,
-        citations:
-          input.retrievedChunks.length > 0 ? buildBackendCitations(input.retrievedChunks) : null,
+        content: parsed.answer,
+        citations: usedChunks.length > 0 ? buildBackendCitations(usedChunks) : null,
         metadata: {
           providerName: this.name,
           mode: "openai",
@@ -93,7 +109,8 @@ export class OpenAiLlmProviderService implements LlmProvider {
           usedFallback: false,
           model: this.requireOpenAiModel(),
           latencyMs: Date.now() - startedAt,
-          responseId: response.id ?? undefined
+          responseId: response.id ?? undefined,
+          usedChunkIds
         }
       };
     } catch (error) {
@@ -117,7 +134,8 @@ export class OpenAiLlmProviderService implements LlmProvider {
 
       this.client = this.clientFactory({
         apiKey,
-        timeout: this.env.OPENAI_TIMEOUT_MS
+        timeout: this.env.OPENAI_TIMEOUT_MS,
+        maxRetries: 1
       });
     }
 
@@ -137,7 +155,8 @@ export class OpenAiLlmProviderService implements LlmProvider {
   private createFallback(
     input: LlmProviderRequest,
     startedAt: number,
-    fallbackReason: string
+    fallbackReason: string,
+    parseFailed = false
   ): LlmProviderResponse {
     const deterministicReply = this.deterministicProvider.generateReply(input);
 
@@ -151,6 +170,7 @@ export class OpenAiLlmProviderService implements LlmProvider {
         usedFallback: true,
         model: this.env.OPENAI_MODEL?.trim() || undefined,
         fallbackReason,
+        parseFailed,
         latencyMs: Date.now() - startedAt
       }
     };
@@ -174,5 +194,32 @@ export class OpenAiLlmProviderService implements LlmProvider {
     }
 
     return "provider_error";
+  }
+}
+
+function parseGroundedResponse(value: string): { answer: string; usedChunkIds: string[] } | null {
+  const normalized = value
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(normalized) as unknown;
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+
+    const candidate = parsed as Record<string, unknown>;
+    const answer = typeof candidate.answer === "string" ? candidate.answer.trim() : "";
+    const usedChunkIds = Array.isArray(candidate.usedChunkIds)
+      ? candidate.usedChunkIds.filter(
+          (chunkId): chunkId is string => typeof chunkId === "string" && Boolean(chunkId.trim())
+        )
+      : [];
+
+    return answer ? { answer, usedChunkIds } : null;
+  } catch {
+    return null;
   }
 }

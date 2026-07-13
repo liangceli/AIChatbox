@@ -18,10 +18,12 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc --noEmit -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node -e \"console.log('No tests configured for database yet')\"",
+    "test": "tsx scripts/schema.test.ts",
+    "test:knowledge-lifecycle:db": "dotenv -e ../../.env -- tsx scripts/knowledge-lifecycle-db.test.ts",
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "prisma:generate": "dotenv -e ../../.env -- prisma generate",
     "prisma:migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
+    "prisma:migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "prisma:studio": "dotenv -e ../../.env -- prisma studio",
     "prisma:seed": "dotenv -e ../../.env -- prisma db seed"
   },

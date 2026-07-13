@@ -6,6 +6,7 @@ import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import type { AdminAuthContext } from "../../common/admin-protection/admin-auth-context";
 import { MembershipStatus, TenantRole } from "@platform/database";
 import { ConversationsService } from "../conversations/conversations.service";
+import { humanSupportStatusWhere } from "../conversations/conversation-status";
 
 @Injectable()
 export class RealtimeService {
@@ -23,7 +24,7 @@ export class RealtimeService {
     const pendingHumanCount = await this.prisma.client.conversation.count({
       where: {
         tenantId: tenant.id,
-        status: ConversationStatus.PENDING_HUMAN,
+        status: humanSupportStatusWhere(),
         ...(auth && !auth.isPlatformAdmin && auth.roleName === TenantRole.AGENT
           ? auth.userId && auth.membershipStatus === MembershipStatus.ACTIVE
             ? { OR: [{ assignedUserId: auth.userId }, { assignedUserId: null }] }
