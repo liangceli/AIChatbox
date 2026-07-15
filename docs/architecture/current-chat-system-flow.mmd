@@ -30,7 +30,7 @@ flowchart TD
     end
 
     subgraph UNDERSTAND["③ 对话理解与 Query Normalisation"]
-        CTX --> CLASS["ConversationContextService<br/>加载 tenant-configurable conversationRouting<br/>分类：问候 / 社交 / 感谢 / 确认 / 新问题 / 追问 / 澄清回复 / 人工请求"]
+        CTX --> CLASS["ConversationContextService<br/>加载 tenant-configurable conversationRouting；归一化英文缩写、问候前缀与连写短语组成<br/>分类：问候 / 社交 / 感谢 / 确认 / 新问题 / 追问 / 澄清回复 / 人工请求"]
         CLASS --> ROUTE{"会话型 turn？<br/>问候 / 社交 / 感谢 / 确认"}
         ROUTE -- "是" --> CONV["AssistantReplyService 直接会话回复<br/>跳过 RAG；0 citations；保留 pendingClarification"]
         ROUTE -- "否" --> PEND["读取未过期 pendingClarification"]
@@ -56,19 +56,21 @@ flowchart TD
         VRANK --> MERGE
         MERGE --> WEIGHT["最终分数<br/>Keyword 45% + Semantic 35% + Metadata 15% + Exact 5%"]
         WEIGHT --> SCOPE["应用已解析产品 scope + intent 过滤"]
-        SCOPE --> TOP["来源多样化 Final Top-3"]
+        SCOPE --> ANSWERABLE{"答案可回答性校验<br/>购买类问题必须包含 retailer / distributor / stockist / purchase 证据"}
+        ANSWERABLE -- "无对应证据" --> SAFE
+        ANSWERABLE -- "有对应证据" --> TOP["来源多样化 Final Top-3"]
         TOP --> CONF{"弱证据需要抑制?<br/>score &lt; 0.55，或 coverage/intent 不足且无 scope"]
     end
 
     subgraph ANSWER["⑤ 答案生成、Grounding 与 Citation 校验"]
-        CONF -- "是 / 无 chunk" --> SAFE["Deterministic 安全缺口回复<br/>不调用 OpenAI；0 citations"]
+        CONF -- "是 / 无 chunk" --> SAFE["专业证据缺口回复<br/>购买类：未找到已验证的购买信息<br/>不调用 OpenAI；0 citations"]
         CONF -- "否" --> PROVIDER{"LlmProviderResolver<br/>AI_PROVIDER"}
-        PROVIDER -- "deterministic" --> DET["AssistantReplyService<br/>仅从 Top-3 选取 grounded sentences"]
-        PROVIDER -- "openai" --> PROMPT["buildOpenAiPrompt<br/>平台安全规则 + Tenant AI Profile<br/>Top-3 chunks + 最近 8 轮 + effectiveQuestion"]
+        PROVIDER -- "deterministic" --> DET["AssistantReplyService<br/>提取客户可读答案；不暴露 chunk / Sheet / Row / 文件名"]
+        PROVIDER -- "openai" --> PROMPT["buildOpenAiPrompt<br/>平台安全规则 + Tenant AI Profile<br/>自然组织客户答案；不暴露内部检索元数据<br/>Top-3 chunks + 最近 8 轮 + effectiveQuestion"]
         PROMPT --> MODEL["OpenAI Responses API<br/>要求 JSON：answer + usedChunkIds"]
         MODEL --> VALID{"JSON 有效且 usedChunkIds<br/>全部属于后端选定 Top-3?"}
         VALID -- "否 / timeout / 429 / auth / provider error" --> FALLBACK["回退 Deterministic Provider"]
-        VALID -- "是" --> CIT["后端仅用 used chunks 构建 citations<br/>title / URI / locator / excerpt / score"]
+        VALID -- "是" --> CIT["后端仅用 used chunks 构建 citations<br/>客户侧只展示公开 HTTP(S) URL；不显示 chunk / 内部文件名"]
         DET --> RECHECK
         CONV --> RECHECK
         SAFE --> RECHECK
@@ -78,7 +80,7 @@ flowchart TD
 
     subgraph WRITE2["⑥ 保存答案并返回 Widget"]
         RECHECK -- "是" --> DISCARD["丢弃生成结果；不写 Assistant 消息<br/>保持人工模式"]
-        RECHECK -- "否" --> TX2["PostgreSQL 事务：写 Assistant Message<br/>content + citations + retrieval/provider diagnostics"]
+        RECHECK -- "否" --> TX2["PostgreSQL 事务：写客户可读 Assistant Message<br/>内部 citations + retrieval/provider diagnostics"]
         TX2 --> STATE["更新 ConversationState / ProductCatalog<br/>同步或清空 legacy metadata.rag"]
         STATE --> STATUS["Conversation = AWAITING_CUSTOMER<br/>更新 lastMessageAt"]
         STATUS --> RESP["返回完整 SendChatMessageResponse<br/>Conversation + customerMessage + assistantMessage + messages"]
@@ -86,7 +88,7 @@ flowchart TD
         EXISTING --> RESP
         HUMANWAIT --> RESP
         DISCARD --> RESP
-        RESP --> RENDER["Widget 更新 React state、保存 conversationId<br/>渲染答案与 citations"]
+        RESP --> RENDER["Widget 更新 React state、保存 conversationId<br/>渲染客户可读答案；仅展示公开 Sources URL"]
         RENDER --> SSE["EventSource：customer_conversation_snapshot<br/>API 每 2 秒查询 tenant + visitor scoped snapshot"]
         SSE --> RESTORE["刷新后用本地 session/conversationId 恢复历史"]
     end

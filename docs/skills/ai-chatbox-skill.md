@@ -1,11 +1,21 @@
 # AI Chatbox Skill
 
+## 2026-07-15 Customer-ready Grounded Answers
+
+- Retrieval now performs a tenant-neutral answerability check for purchasing intent. A purchase/retailer/distributor/stockist question can proceed only when the selected evidence contains matching purchasing evidence; unrelated technical material is rejected and returns the professional zero-citation knowledge-gap response.
+- `AssistantReplyService` converts deterministic evidence into customer-ready statements and removes extraction artifacts such as `chunk`, `Sheet`, `Row`, question labels, and internal file names. It never sends raw knowledge-row dumps to the customer.
+- The OpenAI prompt now requires a direct, naturally written customer answer and forbids internal retrieval metadata. OpenAI remains opt-in; deterministic mode is still the platform default and follows the same customer-safe output boundary.
+- Customer-widget renders citations only when a citation contains a public HTTP(S) URL. It displays a readable external label, never a chunk number, spreadsheet/file name, locator, score, or internal URI.
+- Architecture sources `docs/architecture/current-chat-system-flow.mmd`, `.md`, and the editable `.drawio` are synchronized. This increment is red in the Draw.io file: purchase-evidence gate, customer-ready answer boundary, and public-source-only rendering.
+
 ## 2026-07-15 Conversation Intent Routing
 
 - `ConversationContextService` now routes conversational turns before Hybrid RAG: `greeting`, `social`, `thanks`, and `acknowledgement` receive a deterministic conversational reply with no knowledge retrieval and zero citations.
 - Routing keeps `pendingClarification` intact, so a courtesy interruption cannot discard a product/model clarification that is waiting for a later reply.
 - The platform baseline remains tenant-neutral. Operators may extend phrase sets and reply copy through `AgentConfig.metadata.conversationRouting` (`greetingPhrases`, `socialPhrases`, `thanksPhrases`, `acknowledgementPhrases`, `followUpPhrases`, `humanRequestPhrases`, and `responses`); do not add customer/product branches to core code.
 - Answer Debug distinguishes a conversation reply from a knowledge miss with `turnType`, `retrievalSkipped`, and `skipReason: conversational_turn`.
+- Normalisation expands ordinary English possessive/contracted forms before routing and recognises an optional greeting prefix before a social phrase. This is a generic language normalisation rule, not a per-question branch.
+- The router also uses bounded phrase composition: a message can be a conversational turn when its complete compact form is composed only of configured greeting/social/thanks/acknowledgement phrases. This safely handles missing separators without classifying messages that contain an actual support request as small talk.
 - Architecture sources `docs/architecture/current-chat-system-flow.mmd`, `.md`, and `.drawio` are synchronized. In the Draw.io file, this increment is red so the current routing changes remain traceable.
 
 ## 2026-07-15 Editable Current Architecture Diagram

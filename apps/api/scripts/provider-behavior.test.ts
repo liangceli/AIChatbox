@@ -2220,7 +2220,8 @@ async function testOpenAiFailureFallsBack() {
   assert.equal(response.metadata.deterministic, true);
   assert.equal(response.metadata.fallbackReason, "timeout");
   assert.equal(JSON.stringify(response.metadata).includes("test-key"), false);
-  assert.match(response.content, /support knowledge base/i);
+  assert.match(response.content, /warranty coverage lasts 12 months/i);
+  assert.doesNotMatch(response.content, /support knowledge base|chunk|source/i);
 }
 
 async function testShortKeywordMatchesRelevantChunk() {
@@ -2337,6 +2338,28 @@ async function testRetrievalChangesPreserveDeterministicCitations() {
 
   assert.equal(response.citations?.length, 1);
   assert.equal(response.citations?.[0]?.chunkId, "chunk-warranty");
+}
+
+async function testDeterministicReplyDoesNotExposeKnowledgeExtractionMetadata() {
+  const response = new AssistantReplyService().generateReply({
+    ...baseInput,
+    latestCustomerMessage: "Where can I buy this product?",
+    retrievedChunks: [
+      {
+        knowledgeDocumentId: "doc-purchase",
+        chunkId: "chunk-purchase",
+        title: "purchase_locations.xlsx",
+        chunkIndex: 2,
+        relevanceScore: 0.91,
+        content:
+          "Context: Device/Scope: General [Sheet: Purchase Locations | Row: 4] Question: Where can I buy this product? Answer: Purchase through an authorised distributor listed on the company website."
+      }
+    ]
+  });
+
+  assert.equal(response.content, "Purchase through an authorised distributor listed on the company website.");
+  assert.doesNotMatch(response.content, /context|sheet|row|question|xlsx|chunk/i);
+  assert.equal(response.citations?.length, 1);
 }
 
 async function testDeterministicFallbackUsesTenantHandoffMessage() {
@@ -3377,6 +3400,7 @@ async function run() {
   await testRetrievalLimitsSingleDocumentDominanceWhenOtherSourcesMatch();
   await testExactPhraseStrongMatchStillWorks();
   await testRetrievalChangesPreserveDeterministicCitations();
+  await testDeterministicReplyDoesNotExposeKnowledgeExtractionMetadata();
   await testDeterministicFallbackUsesTenantHandoffMessage();
   await testNoEvidenceFallbackUsesProfessionalPlatformCopy();
   await testLatestHumanModeStatusBlocksAiAfterAgentReply();

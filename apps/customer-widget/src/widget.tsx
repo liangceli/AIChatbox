@@ -1,6 +1,7 @@
 import type { CSSProperties, FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  Citation,
   ConversationDetail,
   MessageAuthorType,
   PublicTenantAiProfile,
@@ -691,7 +692,7 @@ export function CustomerWidget({
                     : authorLabels[message.authorType]}
                 </strong>
                 <div>{message.content}</div>
-                {message.citations?.length ? (
+                {publicCitationSources(message.citations).length ? (
                   <div
                     style={{
                       marginTop: 9,
@@ -702,10 +703,11 @@ export function CustomerWidget({
                     }}
                   >
                     <strong style={{ display: "block", marginBottom: 4 }}>Sources</strong>
-                    {message.citations.map((citation) => (
+                    {publicCitationSources(message.citations).map((citation) => (
                       <div key={`${citation.chunkId}-${citation.chunkIndex}`}>
-                        {citation.title} - chunk {citation.chunkIndex}
-                        {citation.sourceUri ? ` - ${citation.sourceUri}` : ""}
+                        <a href={citation.sourceUri ?? undefined} target="_blank" rel="noreferrer">
+                          {formatPublicCitationLabel(citation)}
+                        </a>
                       </div>
                     ))}
                   </div>
@@ -788,6 +790,41 @@ export function CustomerWidget({
       </div>
     </section>
   );
+}
+
+function publicCitationSources(citations: Citation[] | null | undefined): Citation[] {
+  const seenUrls = new Set<string>();
+
+  return (citations ?? []).filter((citation) => {
+    if (!isPublicHttpUrl(citation.sourceUri) || seenUrls.has(citation.sourceUri)) {
+      return false;
+    }
+
+    seenUrls.add(citation.sourceUri);
+    return true;
+  });
+}
+
+function isPublicHttpUrl(value: string | null | undefined): value is string {
+  try {
+    const url = new URL(value ?? "");
+
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function formatPublicCitationLabel(citation: Citation): string {
+  try {
+    const host = new URL(citation.sourceUri ?? "").hostname.replace(/^www\./i, "");
+
+    return citation.title && !/\.(?:csv|xlsx?|json|txt|md|markdown)$/i.test(citation.title)
+      ? citation.title
+      : host;
+  } catch {
+    return "Source";
+  }
 }
 
 function getInitials(value: string): string {

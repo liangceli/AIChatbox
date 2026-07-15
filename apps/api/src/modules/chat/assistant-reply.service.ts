@@ -61,19 +61,14 @@ export class AssistantReplyService implements LlmProvider {
 
     if (input.retrievedChunks.length > 0) {
       const citations = buildBackendCitations(input.retrievedChunks);
-      const groundedPoints = this.selectGroundedSentences(normalizedMessage, input.retrievedChunks);
+      const groundedPoints = this.selectCustomerReadyStatements(normalizedMessage, input.retrievedChunks);
 
       if (groundedPoints.length === 0) {
         return this.createFallback(input, normalizedMessage);
       }
 
       return {
-        content: [
-          `Based on the support knowledge base, ${groundedPoints[0]}`,
-          groundedPoints.length > 1 ? `Also relevant: ${groundedPoints.slice(1, 3).join(" ")}` : null
-        ]
-          .filter(Boolean)
-          .join(" "),
+        content: this.composeCustomerAnswer(groundedPoints),
         citations,
         metadata: this.createMetadata(false)
       };
@@ -108,7 +103,7 @@ export class AssistantReplyService implements LlmProvider {
     };
   }
 
-  private selectGroundedSentences(
+  private selectCustomerReadyStatements(
     question: string,
     chunks: LlmRetrievedKnowledgeChunk[],
     limit = 3
@@ -117,7 +112,7 @@ export class AssistantReplyService implements LlmProvider {
 
     return chunks
       .flatMap((chunk) =>
-        this.splitSentences(chunk.content).map((sentence) => ({
+        this.extractCustomerReadyStatements(chunk.content).map((sentence) => ({
           sentence,
           score: this.scoreSentence(sentence, terms, chunk.relevanceScore ?? 0)
         }))
@@ -132,13 +127,45 @@ export class AssistantReplyService implements LlmProvider {
       .map((candidate) => candidate.sentence);
   }
 
-  private splitSentences(content: string): string[] {
+  private extractCustomerReadyStatements(content: string): string[] {
+    const answerLines = Array.from(content.matchAll(/\b(?:answer|a)\s*:\s*([^\n]+)/gi))
+      .map((match) => this.cleanCustomerStatement(match[1] ?? ""))
+      .filter((statement): statement is string => Boolean(statement));
+
+    if (answerLines.length > 0) {
+      return answerLines;
+    }
+
     return content
       .replace(/\s+/g, " ")
       .split(/(?<=[.!?])\s+/)
-      .map((sentence) => sentence.trim())
-      .filter((sentence) => sentence.length >= 20)
+      .map((sentence) => this.cleanCustomerStatement(sentence))
+      .filter((sentence): sentence is string => Boolean(sentence))
       .slice(0, 12);
+  }
+
+  private cleanCustomerStatement(value: string): string | null {
+    const statement = value.replace(/\s+/g, " ").trim();
+
+    if (
+      statement.length < 12 ||
+      /\b(?:chunk|context|device\s*\/\s*scope|question|sheet|row|source)\s*:/i.test(statement) ||
+      /\.(?:csv|xlsx?|json|txt|md|markdown)\b/i.test(statement)
+    ) {
+      return null;
+    }
+
+    return statement;
+  }
+
+  private composeCustomerAnswer(points: string[]): string {
+    const [primary, ...supporting] = points;
+
+    if (!primary) {
+      return "";
+    }
+
+    return [primary, ...supporting.slice(0, 2)].join(" ");
   }
 
   private extractTerms(question: string): string[] {

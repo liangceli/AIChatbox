@@ -68,7 +68,7 @@ const DEFAULT_ROUTING_OVERRIDES: Required<
     "what if",
     "will it"
   ],
-  greetingPhrases: ["good afternoon", "good evening", "good morning", "hello", "hey", "hi", "hiya"],
+  greetingPhrases: ["gday", "good afternoon", "good evening", "good morning", "hello", "hey", "hi", "hiya"],
   humanRequestPhrases: [
     "agent",
     "customer service",
@@ -84,6 +84,7 @@ const DEFAULT_ROUTING_OVERRIDES: Required<
     "how are things",
     "how are you",
     "how is everything",
+    "how is going",
     "how is it going",
     "what is up",
     "whats up"
@@ -104,8 +105,14 @@ export class ConversationContextService {
       return "greeting";
     }
 
-    if (hasExactPhrase(policy.socialPhrases, normalized)) {
+    if (hasSocialPhrase(policy.socialPhrases, policy.greetingPhrases, normalized)) {
       return "social";
+    }
+
+    const composedTurn = detectConversationalComposition(policy, normalized);
+
+    if (composedTurn) {
+      return composedTurn;
     }
 
     if (hasExactPhrase(policy.thanksPhrases, normalized)) {
@@ -222,15 +229,103 @@ function hasExactPhrase(phrases: Set<string>, normalizedMessage: string): boolea
   return phrases.has(normalizedMessage);
 }
 
+function hasSocialPhrase(
+  socialPhrases: Set<string>,
+  greetingPhrases: Set<string>,
+  normalizedMessage: string
+): boolean {
+  if (socialPhrases.has(normalizedMessage)) {
+    return true;
+  }
+
+  return Array.from(greetingPhrases).some((greeting) => {
+    const prefix = `${greeting} `;
+
+    return normalizedMessage.startsWith(prefix) && socialPhrases.has(normalizedMessage.slice(prefix.length));
+  });
+}
+
 function hasContainedPhrase(phrases: Set<string>, normalizedMessage: string): boolean {
   const paddedMessage = ` ${normalizedMessage} `;
 
   return Array.from(phrases).some((phrase) => paddedMessage.includes(` ${phrase} `));
 }
 
+function detectConversationalComposition(
+  policy: ConversationRoutingPolicy,
+  normalizedMessage: string
+): ConversationResponseTurn | null {
+  const compactMessage = normalizedMessage.replace(/\s+/g, "");
+
+  if (!compactMessage) {
+    return null;
+  }
+
+  const phrases = [
+    ...Array.from(policy.greetingPhrases, (phrase) => ({ turnType: "greeting" as const, phrase })),
+    ...Array.from(policy.socialPhrases, (phrase) => ({ turnType: "social" as const, phrase })),
+    ...Array.from(policy.thanksPhrases, (phrase) => ({ turnType: "thanks" as const, phrase })),
+    ...Array.from(policy.acknowledgementPhrases, (phrase) => ({ turnType: "acknowledgement" as const, phrase }))
+  ].map(({ turnType, phrase }) => ({
+    turnType,
+    compactPhrase: phrase.replace(/\s+/g, "")
+  }));
+  const reachable = Array.from({ length: compactMessage.length + 1 }, () => new Set<ConversationResponseTurn>());
+  const initialTurns = reachable[0];
+
+  if (!initialTurns) {
+    return null;
+  }
+
+  initialTurns.add("greeting");
+
+  for (let offset = 0; offset < compactMessage.length; offset += 1) {
+    const currentTurns = reachable[offset];
+
+    if (!currentTurns || currentTurns.size === 0) {
+      continue;
+    }
+
+    for (const candidate of phrases) {
+      if (!compactMessage.startsWith(candidate.compactPhrase, offset)) {
+        continue;
+      }
+
+      const nextTurns = reachable[offset + candidate.compactPhrase.length];
+
+      if (!nextTurns) {
+        continue;
+      }
+
+      for (const turnType of currentTurns) {
+        nextTurns.add(turnType);
+        nextTurns.add(candidate.turnType);
+      }
+    }
+  }
+
+  const completedTurns = reachable[compactMessage.length] ?? new Set<ConversationResponseTurn>();
+
+  if (completedTurns.has("social")) {
+    return "social";
+  }
+
+  if (completedTurns.has("thanks")) {
+    return "thanks";
+  }
+
+  if (completedTurns.has("acknowledgement")) {
+    return "acknowledgement";
+  }
+
+  return completedTurns.has("greeting") ? "greeting" : null;
+}
+
 function normalize(value: string): string {
   return value
     .toLowerCase()
+    .replace(/\b([a-z]+)(?:'|’|&#39;)s\b/g, "$1 is")
+    .replace(/([a-z])['’]([a-z])/g, "$1$2")
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();

@@ -305,6 +305,31 @@ async function testSocialTurnSkipsRetrievalAndPreservesPendingClarification() {
   assert.deepEqual(social.pendingClarification, first.pendingClarification);
 }
 
+async function testSocialTurnNormalizesContractionsAndGreetingPrefixes() {
+  const service = createRetrievalService([]);
+
+  for (const message of ["How's going?", "What's up?", "Hi, what's up?"]) {
+    const decision = await service.resolveRetrievalDecision(tenant, message);
+
+    assert.equal(decision.turnType, "social", message);
+    assert.equal(decision.retrievalMetadata.retrievalSkipped, true, message);
+  }
+}
+
+async function testSocialTurnRecognizesRegionalGreetingAndJoinedConversationalPhrases() {
+  const service = createRetrievalService([]);
+
+  for (const [message, expectedTurnType] of [
+    ["G'day", "greeting"],
+    ["hi, what's uphow is it going", "social"]
+  ] as const) {
+    const decision = await service.resolveRetrievalDecision(tenant, message);
+
+    assert.equal(decision.turnType, expectedTurnType, message);
+    assert.equal(decision.retrievalMetadata.retrievalSkipped, true, message);
+  }
+}
+
 async function testTenantRoutingPolicyExtendsConversationClassificationWithoutProductBranches() {
   const service = createRetrievalService([]);
   const decision = await service.resolveRetrievalDecision(
@@ -564,6 +589,23 @@ async function testHybridRetrievalRejectsUnrelatedEvidence() {
   assert.equal(decision.retrievalMetadata.selectedChunkIds.length, 0);
 }
 
+async function testPurchasingQuestionRejectsProtocolEvidence() {
+  const service = createRetrievalService([
+    genericCandidate(
+      "matter-protocol",
+      "Matter technical overview",
+      "Matter uses the Thread smart-home communication protocol for supported devices."
+    )
+  ]);
+  const decision = await service.resolveRetrievalDecision(tenant, "Where can I buy Matter devices?");
+
+  assert.equal(decision.intent, "purchasing");
+  assert.equal(decision.retrievedChunks.length, 0);
+  assert.ok(
+    decision.warnings.some((warning) => /purchasing, retailer, distributor, or stockist/i.test(warning))
+  );
+}
+
 async function testRepairIsTroubleshootingAndNeverPairing() {
   const troubleshootingCandidate = (id: string, productName: string): Candidate => {
     const knowledge = {
@@ -710,6 +752,8 @@ async function run() {
   await testMultipleModelCodeEditsDoNotResolvePendingClarification();
   await testGreetingDoesNotConsumePendingClarification();
   await testSocialTurnSkipsRetrievalAndPreservesPendingClarification();
+  await testSocialTurnNormalizesContractionsAndGreetingPrefixes();
+  await testSocialTurnRecognizesRegionalGreetingAndJoinedConversationalPhrases();
   await testTenantRoutingPolicyExtendsConversationClassificationWithoutProductBranches();
   await testAcknowledgementPreservesPendingClarification();
   await testShortModelReplyResolvesOpenPendingClarification();
@@ -720,6 +764,7 @@ async function run() {
   await testUnmatchedPendingClarificationRepeatsInsteadOfAnswering();
   await testHybridRetrievalCombinesKeywordVectorAndTopKDiagnostics();
   await testHybridRetrievalRejectsUnrelatedEvidence();
+  await testPurchasingQuestionRejectsProtocolEvidence();
   await testRepairIsTroubleshootingAndNeverPairing();
   await testRepairClarificationTypoExitsPendingStateSafely();
   await testChunkDeviceScopesOverrideSharedDocumentLabel();

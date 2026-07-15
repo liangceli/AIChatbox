@@ -94,6 +94,17 @@ const INTENT_TERMS: Record<string, string[]> = {
   installation: ["install", "installation", "mount", "wire", "setup"],
   warranty: ["warranty", "guarantee", "coverage"],
   pricing: ["price", "pricing", "cost", "fee", "subscription"],
+  purchasing: [
+    "buy",
+    "purchase",
+    "purchasing",
+    "retailer",
+    "retailers",
+    "stockist",
+    "stockists",
+    "distributor",
+    "distributors"
+  ],
   compatibility: ["compatible", "compatibility", "support", "supports", "works"],
   troubleshooting: [
     "troubleshoot",
@@ -513,7 +524,15 @@ export class KnowledgeRetrievalService {
       warnings.push("A product scope was available, but no READY chunks matched that scope.");
     }
 
-    const selected = this.selectDiverseCandidates(scopedCandidates, limit);
+    const answerableCandidates = this.filterCandidatesForAnswerIntent(scopedCandidates, intent);
+
+    if (answerableCandidates.length === 0 && scopedCandidates.length > 0 && intent === "purchasing") {
+      warnings.push(
+        "Retrieved material did not contain verified purchasing, retailer, distributor, or stockist information."
+      );
+    }
+
+    const selected = this.selectDiverseCandidates(answerableCandidates, limit);
     const answerProductContext =
       requestedScope ??
       this.resolveExplicitEvidenceProductContext(effectiveQuestion, selected, pendingClarificationReply);
@@ -1369,6 +1388,8 @@ export class KnowledgeRetrievalService {
         return "check warranty coverage for";
       case "pricing":
         return "check pricing for";
+      case "purchasing":
+        return "find purchasing information for";
       case "compatibility":
         return "check compatibility for";
       case "troubleshooting":
@@ -1414,6 +1435,29 @@ export class KnowledgeRetrievalService {
     return candidateMetadata.intentHints.some(
       (hint) => this.knowledgeMetadataService.normalizeLabel(hint) === intent
     );
+  }
+
+  private filterCandidatesForAnswerIntent(
+    candidates: ScoredCandidate[],
+    intent: string | undefined
+  ): ScoredCandidate[] {
+    if (intent !== "purchasing") {
+      return candidates;
+    }
+
+    const evidenceTerms = new Set(INTENT_TERMS.purchasing ?? []);
+
+    return candidates.filter((candidate) => {
+      const metadataHints = candidate.knowledgeMetadata?.intentHints ?? [];
+      const hasMetadataEvidence = metadataHints.some((hint) =>
+        evidenceTerms.has(this.knowledgeMetadataService.normalizeLabel(hint))
+      );
+      const contentTerms = this.extractRawWords(
+        `${candidate.chunk.title} ${candidate.chunk.content}`
+      ).map((term) => this.normalizeTerm(term));
+
+      return hasMetadataEvidence || contentTerms.some((term) => evidenceTerms.has(term));
+    });
   }
 
   private applyResolvedScopeScore(candidate: ScoredCandidate): ScoredCandidate {

@@ -1,5 +1,11 @@
 # Current Status
 
+## 2026-07-15 Customer-ready answer increment
+
+- Complete: purchase/retailer/distributor/stockist requests now require directly matching evidence before a provider is invoked, preventing unrelated product-protocol content from being presented as purchasing guidance.
+- Complete: deterministic and OpenAI answer paths now have a customer-facing boundary that removes ingestion/retrieval metadata; the widget renders only public source URLs and hides internal citation details.
+- Complete: the three synchronized architecture sources mark this change in red. API/customer-widget typechecks and both package test suites pass.
+
 ## 2026-07-15 Conversation intent routing increment
 
 - Complete: conversational messages are classified before RAG, preserve pending product clarification state, and are reported in Answer Debug as retrieval-skipped rather than knowledge misses.
