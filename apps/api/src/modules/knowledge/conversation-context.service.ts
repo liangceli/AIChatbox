@@ -1,11 +1,13 @@
 import { Injectable } from "@nestjs/common";
 
 export type ConversationTurnType =
+  | "acknowledgement"
   | "clarification_reply"
   | "follow_up"
   | "greeting"
   | "human_request"
   | "new_question"
+  | "social"
   | "thanks";
 
 interface TurnContext {
@@ -15,40 +17,106 @@ interface TurnContext {
   hasProductContext: boolean;
 }
 
-const GREETINGS = new Set([
-  "good afternoon",
-  "good evening",
-  "good morning",
-  "hello",
-  "hello there",
-  "hey",
-  "hi",
-  "hi there",
-  "hiya"
-]);
+type ConversationResponseTurn = Extract<
+  ConversationTurnType,
+  "acknowledgement" | "greeting" | "social" | "thanks"
+>;
 
-const THANKS = new Set(["appreciate it", "cheers", "ok thanks", "thank you", "thanks", "thanks a lot"]);
-const HUMAN_REQUEST_PATTERN =
-  /\b(agent|human|person|representative|someone|support team|customer service|talk to|speak to)\b/i;
-const FOLLOW_UP_PATTERN =
-  /\b(it|its|that|this|they|them|those|these|the product|the device|same product|same device)\b|^(and|also|what about|how about|does it|is it|can it|will it|what if)\b/i;
+interface ConversationRoutingOverrides {
+  acknowledgementPhrases?: string[];
+  followUpPhrases?: string[];
+  greetingPhrases?: string[];
+  humanRequestPhrases?: string[];
+  socialPhrases?: string[];
+  thanksPhrases?: string[];
+  responses?: Partial<Record<ConversationResponseTurn, string>>;
+}
+
+export interface ConversationRoutingPolicy {
+  acknowledgementPhrases: Set<string>;
+  followUpPhrases: Set<string>;
+  greetingPhrases: Set<string>;
+  humanRequestPhrases: Set<string>;
+  socialPhrases: Set<string>;
+  thanksPhrases: Set<string>;
+  responses: Partial<Record<ConversationResponseTurn, string>>;
+}
+
+// These are platform-level dialogue categories, not product or tenant content.
+// Tenant operators can extend them through AgentConfig.metadata.conversationRouting.
+const DEFAULT_ROUTING_OVERRIDES: Required<
+  Omit<ConversationRoutingOverrides, "responses">
+> = {
+  acknowledgementPhrases: ["alright", "got it", "okay", "ok", "understood"],
+  followUpPhrases: [
+    "and",
+    "also",
+    "can it",
+    "does it",
+    "how about",
+    "is it",
+    "same device",
+    "same product",
+    "that",
+    "the device",
+    "the product",
+    "these",
+    "they",
+    "this",
+    "those",
+    "what about",
+    "what if",
+    "will it"
+  ],
+  greetingPhrases: ["good afternoon", "good evening", "good morning", "hello", "hey", "hi", "hiya"],
+  humanRequestPhrases: [
+    "agent",
+    "customer service",
+    "human",
+    "person",
+    "representative",
+    "someone",
+    "speak to",
+    "support team",
+    "talk to"
+  ],
+  socialPhrases: [
+    "how are things",
+    "how are you",
+    "how is everything",
+    "how is it going",
+    "what is up",
+    "whats up"
+  ],
+  thanksPhrases: ["appreciate it", "cheers", "ok thanks", "thank you", "thanks", "thanks a lot"]
+};
+
 const QUESTION_OPENING_PATTERN =
   /^(can|could|do|does|how|is|should|tell|what|when|where|which|who|why|will|would)\b/i;
 
 @Injectable()
 export class ConversationContextService {
-  classifyTurn(message: string, context: TurnContext): ConversationTurnType {
+  classifyTurn(message: string, context: TurnContext, rawPolicy?: unknown): ConversationTurnType {
     const normalized = normalize(message);
+    const policy = this.resolveRoutingPolicy(rawPolicy);
 
-    if (GREETINGS.has(normalized)) {
+    if (hasExactPhrase(policy.greetingPhrases, normalized)) {
       return "greeting";
     }
 
-    if (THANKS.has(normalized)) {
+    if (hasExactPhrase(policy.socialPhrases, normalized)) {
+      return "social";
+    }
+
+    if (hasExactPhrase(policy.thanksPhrases, normalized)) {
       return "thanks";
     }
 
-    if (HUMAN_REQUEST_PATTERN.test(message)) {
+    if (hasExactPhrase(policy.acknowledgementPhrases, normalized)) {
+      return "acknowledgement";
+    }
+
+    if (hasContainedPhrase(policy.humanRequestPhrases, normalized)) {
       return "human_request";
     }
 
@@ -68,7 +136,7 @@ export class ConversationContextService {
     }
 
     if (context.hasProductContext) {
-      if (FOLLOW_UP_PATTERN.test(normalized)) {
+      if (hasContainedPhrase(policy.followUpPhrases, normalized)) {
         return "follow_up";
       }
 
@@ -82,6 +150,47 @@ export class ConversationContextService {
     return "new_question";
   }
 
+  resolveRoutingPolicy(rawPolicy?: unknown): ConversationRoutingPolicy {
+    const rawRecord = toRecord(rawPolicy);
+    const configured = toRecord(rawRecord.conversationRouting);
+    const configuredResponses = toRecord(configured.responses);
+
+    return {
+      acknowledgementPhrases: mergePhraseSets(
+        DEFAULT_ROUTING_OVERRIDES.acknowledgementPhrases,
+        configured.acknowledgementPhrases
+      ),
+      followUpPhrases: mergePhraseSets(
+        DEFAULT_ROUTING_OVERRIDES.followUpPhrases,
+        configured.followUpPhrases
+      ),
+      greetingPhrases: mergePhraseSets(DEFAULT_ROUTING_OVERRIDES.greetingPhrases, configured.greetingPhrases),
+      humanRequestPhrases: mergePhraseSets(
+        DEFAULT_ROUTING_OVERRIDES.humanRequestPhrases,
+        configured.humanRequestPhrases
+      ),
+      socialPhrases: mergePhraseSets(DEFAULT_ROUTING_OVERRIDES.socialPhrases, configured.socialPhrases),
+      thanksPhrases: mergePhraseSets(DEFAULT_ROUTING_OVERRIDES.thanksPhrases, configured.thanksPhrases),
+      responses: {
+        acknowledgement: readNonEmptyString(configuredResponses.acknowledgement),
+        greeting: readNonEmptyString(configuredResponses.greeting),
+        social: readNonEmptyString(configuredResponses.social),
+        thanks: readNonEmptyString(configuredResponses.thanks)
+      }
+    };
+  }
+
+  getConversationResponse(
+    turnType: ConversationTurnType,
+    rawPolicy?: unknown
+  ): string | undefined {
+    if (!isConversationalTurn(turnType)) {
+      return undefined;
+    }
+
+    return this.resolveRoutingPolicy(rawPolicy).responses[turnType];
+  }
+
   isPendingClarificationExpired(expiresAt?: string): boolean {
     if (!expiresAt) {
       return false;
@@ -93,10 +202,52 @@ export class ConversationContextService {
   }
 }
 
+export function isConversationalTurn(turnType?: ConversationTurnType): turnType is ConversationResponseTurn {
+  return (
+    turnType === "acknowledgement" ||
+    turnType === "greeting" ||
+    turnType === "social" ||
+    turnType === "thanks"
+  );
+}
+
+function mergePhraseSets(defaultPhrases: string[], configuredValue: unknown): Set<string> {
+  return new Set([
+    ...defaultPhrases.map(normalize),
+    ...readStringArray(configuredValue).map(normalize)
+  ].filter(Boolean));
+}
+
+function hasExactPhrase(phrases: Set<string>, normalizedMessage: string): boolean {
+  return phrases.has(normalizedMessage);
+}
+
+function hasContainedPhrase(phrases: Set<string>, normalizedMessage: string): boolean {
+  const paddedMessage = ` ${normalizedMessage} `;
+
+  return Array.from(phrases).some((phrase) => paddedMessage.includes(` ${phrase} `));
+}
+
 function normalize(value: string): string {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : [];
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }

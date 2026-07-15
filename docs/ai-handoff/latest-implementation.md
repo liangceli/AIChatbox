@@ -1,5 +1,12 @@
 # Latest Implementation Handoff
 
+## 2026-07-15 Editable Current Chat Architecture
+
+- Re-audited the current Widget-to-answer runtime against `CustomerWidget`, Widget session guards, `ChatService`, conversation state/context, hybrid retrieval, provider resolution, OpenAI grounding validation, persistence, and customer SSE code.
+- Updated the canonical Mermaid flow in `docs/architecture/current-chat-system-flow.mmd` and kept the Markdown preview synchronized.
+- Added and then clarity-refined `docs/architecture/current-chat-system-flow.drawio`: page 1 is the clean online spine, page 2 expands RAG/provider grounding, and page 3 maps component/data boundaries. Exception branches now terminate locally to avoid overlapping long return lines.
+- The diagrams explicitly distinguish implemented behavior from planned behavior: online answers and knowledge ingestion currently run synchronously in `apps/api`; `apps/ai-worker` is not yet in either execution path.
+
 ## 2026-07-13 Knowledge Version Migration and State Safety Closeout
 
 ### Stage Conclusion

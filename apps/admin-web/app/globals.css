@@ -1778,6 +1778,11 @@ button:active:not(:disabled) {
   color: var(--primary);
 }
 
+.debug-outcome.skipped {
+  border-color: rgba(0, 96, 100, 0.2);
+  color: var(--primary);
+}
+
 .answer-debug-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

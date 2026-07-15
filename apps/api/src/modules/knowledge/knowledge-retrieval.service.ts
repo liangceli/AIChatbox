@@ -7,6 +7,7 @@ import type { ResolvedTenant } from "../../common/tenant/tenant.types";
 import { KnowledgeMetadataService } from "./knowledge-metadata.service";
 import {
   ConversationContextService,
+  isConversationalTurn,
   type ConversationTurnType
 } from "./conversation-context.service";
 import { KnowledgeSemanticSearchService } from "./knowledge-semantic-search.service";
@@ -182,6 +183,8 @@ export interface HybridRetrievalMetadata {
   scores: HybridRetrievalScore[];
   confidence: number;
   noKnowledgeEvidence: boolean;
+  retrievalSkipped: boolean;
+  skipReason?: "conversational_turn";
   ambiguity: {
     detected: boolean;
     candidateProductNames: string[];
@@ -272,6 +275,7 @@ export interface KnowledgeRetrievalDecision {
   confidence: KnowledgeRetrievalConfidence;
   warnings: string[];
   turnType?: ConversationTurnType;
+  conversationReply?: string;
   retrievalMetadata: HybridRetrievalMetadata;
 }
 
@@ -305,7 +309,8 @@ export class KnowledgeRetrievalService {
     tenant: ResolvedTenant,
     question: string,
     context?: unknown,
-    limit = 3
+    limit = 3,
+    routingPolicy?: unknown
   ): Promise<KnowledgeRetrievalDecision> {
     const normalizedQuestion = question.trim();
     const retrievalContext = this.readRetrievalContext(context);
@@ -315,47 +320,17 @@ export class KnowledgeRetrievalService {
       pendingIntent: retrievalContext.pendingClarification?.intent,
       hasPendingClarification: Boolean(retrievalContext.pendingClarification),
       hasProductContext: Boolean(retrievalContext.productContext)
-    });
+    }, routingPolicy);
 
-    if (
-      retrievalContext.pendingClarification &&
-      (turnType === "greeting" || turnType === "thanks")
-    ) {
-      return {
-        mode: "answer",
-        effectiveQuestion: normalizedQuestion,
-        retrievedChunks: [],
-        productContext: retrievalContext.productContext ?? null,
-        pendingClarification: retrievalContext.pendingClarification,
-        ambiguity: {
-          isAmbiguous: false,
-          productContext: retrievalContext.productContext ?? null,
-          options: []
-        },
-        confidence: {
-          level: "none",
-          reason: "The customer message is a conversational interruption, not a product clarification response."
-        },
-        warnings: ["Pending product clarification was preserved while handling a conversational interruption."],
+    if (isConversationalTurn(turnType)) {
+      return this.conversationReplyDecision(
+        normalizedQuestion,
+        directIntent,
         turnType,
-        retrievalMetadata: this.buildHybridMetadata(
-          this.buildNormalisedQuery(normalizedQuestion, normalizedQuestion, directIntent),
-          {
-            ranked: [],
-            productGroups: [],
-            keywordCandidateChunkIds: [],
-            vectorCandidateChunkIds: [],
-            mergedCandidateChunkIds: []
-          },
-          [],
-          0,
-          limit,
-          false,
-          [],
-          false,
-          false
-        )
-      };
+        retrievalContext,
+        limit,
+        routingPolicy
+      );
     }
 
     const activePendingClarification = turnType === "new_question" ? null : retrievalContext.pendingClarification;
@@ -921,6 +896,59 @@ export class KnowledgeRetrievalService {
         [],
         false,
         false
+      )
+    };
+  }
+
+  private conversationReplyDecision(
+    question: string,
+    directIntent: string | undefined,
+    turnType: ConversationTurnType,
+    retrievalContext: KnowledgeRetrievalContext,
+    finalTopK: number,
+    routingPolicy: unknown
+  ): KnowledgeRetrievalDecision {
+    const pendingClarification = retrievalContext.pendingClarification ?? null;
+    const preservedPendingClarification = pendingClarification ?? null;
+    const pendingWarning = preservedPendingClarification
+      ? ["Pending product clarification was preserved while handling a conversational turn."]
+      : [];
+
+    return {
+      mode: "answer",
+      effectiveQuestion: question,
+      retrievedChunks: [],
+      productContext: retrievalContext.productContext ?? null,
+      pendingClarification: preservedPendingClarification,
+      ambiguity: {
+        isAmbiguous: false,
+        productContext: retrievalContext.productContext ?? null,
+        options: []
+      },
+      confidence: {
+        level: "none",
+        reason: "The message was classified as a conversational turn, so knowledge retrieval was skipped."
+      },
+      warnings: pendingWarning,
+      turnType,
+      conversationReply: this.conversationContextService.getConversationResponse(turnType, routingPolicy),
+      retrievalMetadata: this.buildHybridMetadata(
+        this.buildNormalisedQuery(question, question, directIntent),
+        {
+          ranked: [],
+          productGroups: [],
+          keywordCandidateChunkIds: [],
+          vectorCandidateChunkIds: [],
+          mergedCandidateChunkIds: []
+        },
+        [],
+        0,
+        finalTopK,
+        false,
+        [],
+        false,
+        false,
+        true
       )
     };
   }
@@ -1549,7 +1577,8 @@ export class KnowledgeRetrievalService {
     ambiguityDetected: boolean,
     candidateProductNames: string[],
     usedPendingClarification: boolean,
-    usedProductContext: boolean
+    usedProductContext: boolean,
+    retrievalSkipped = false
   ): HybridRetrievalMetadata {
     const selectedById = new Map(
       selected.map((candidate) => [candidate.chunk.chunkId, candidate])
@@ -1584,6 +1613,8 @@ export class KnowledgeRetrievalService {
       }),
       confidence: roundScore(confidence),
       noKnowledgeEvidence: selected.length === 0,
+      retrievalSkipped,
+      skipReason: retrievalSkipped ? "conversational_turn" : undefined,
       ambiguity: {
         detected: ambiguityDetected,
         candidateProductNames

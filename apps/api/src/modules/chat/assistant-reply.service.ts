@@ -16,7 +16,20 @@ export class AssistantReplyService implements LlmProvider {
 
     if (input.turnType === "greeting") {
       return {
-        content: input.agent.welcomeMessage ?? `Hello! I am ${input.agent.displayName}. How can I help?`,
+        content:
+          input.conversationReply ??
+          input.agent.welcomeMessage ??
+          `Hello! I am ${input.agent.displayName}. How can I help?`,
+        citations: null,
+        metadata: this.createMetadata(false)
+      };
+    }
+
+    if (input.turnType === "social") {
+      return {
+        content:
+          input.conversationReply ??
+          `I am here and ready to help with any support question you have.`,
         citations: null,
         metadata: this.createMetadata(false)
       };
@@ -24,7 +37,15 @@ export class AssistantReplyService implements LlmProvider {
 
     if (input.turnType === "thanks") {
       return {
-        content: "You are welcome. Let me know if you need anything else.",
+        content: input.conversationReply ?? "You are welcome. Let me know if you need anything else.",
+        citations: null,
+        metadata: this.createMetadata(false)
+      };
+    }
+
+    if (input.turnType === "acknowledgement") {
+      return {
+        content: input.conversationReply ?? "Understood. Let me know what you would like to explore next.",
         citations: null,
         metadata: this.createMetadata(false)
       };

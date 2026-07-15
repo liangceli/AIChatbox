@@ -1,78 +1,101 @@
 flowchart TD
-    U["Customer question"] --> W["Customer Widget"]
-    W --> S0["POST /v1/widget/session"]
-    S0 --> IP0["IP rate limit"]
-    IP0 --> T0["Resolve requested tenant"]
-    T0 --> ST["Issue signed tenant + visitor session"]
+    U["用户输入问题"] --> W0["Customer Widget<br/>清空输入框并生成 UUID clientMessageId"]
 
-    W --> M0["POST /v1/chat/messages<br/>clientMessageId + signed session"]
-    M0 --> IP1["IP rate limit"]
-    IP1 --> G1["Verify session signature first"]
-    G1 --> T1["Load ACTIVE tenant from signed tenantId"]
-    T1 --> TM{"Requested tenant matches token?"}
-    TM -- "No" --> DENY["401 deny"]
-    TM -- "Yes" --> RL["Tenant + visitor rate limit"]
-    RL --> CC["ChatController"]
-    CC --> CS["ChatService"]
+    subgraph SESSION["① Widget 会话与请求安全边界"]
+        W0 --> S0{"本地是否已有有效 Widget Session?"}
+        S0 -- "否 / 已过期" --> S1["POST /v1/widget/session<br/>x-tenant-slug"]
+        S1 --> IP0["IP 限流：30 次 / 分钟"]
+        IP0 --> T0["TenantResolutionMiddleware<br/>加载 ACTIVE Tenant"]
+        T0 --> S2["WidgetSessionService<br/>签发 HMAC tenantId + visitorId + expiresAt"]
+        S0 -- "是" --> M0
+        S2 --> M0["POST /v1/chat/messages<br/>message + conversationId? + clientMessageId<br/>x-widget-session + x-tenant-slug"]
+        M0 --> IP1["IP 限流：20 次 / 分钟"]
+        IP1 --> G1["WidgetSessionGuard<br/>先验 HMAC、有效期，再按签名 tenantId 加载 ACTIVE Tenant"]
+        G1 --> TM{"请求 tenantSlug 与签名 Tenant 一致?"}
+        TM -- "否" --> DENY["401 拒绝"]
+        TM -- "是" --> RL["WidgetRateLimitGuard<br/>Tenant 300/分；Visitor+Conversation 20/分"]
+    end
 
-    CS --> ID["Idempotency lookup<br/>tenantId + clientMessageId"]
-    ID --> DUP{"Already processed?"}
-    DUP -- "Yes" --> EXISTING["Return existing conversation + messages"]
-    DUP -- "No" --> TX1["Database transaction"]
-    TX1 --> CU["Upsert Customer<br/>tenantId + visitorId"]
-    CU --> CV["Load/create Conversation<br/>tenant + customer scoped"]
-    CV --> SAVE["Persist customer message"]
-    SAVE --> HS{"Status PENDING_HUMAN or ASSIGNED?"}
-    HS -- "Yes" --> HUMANWAIT["Persist only; AI remains paused"]
-    HS -- "No" --> CTX["Load ConversationState + legacy RAG metadata<br/>and last 8 turns"]
+    subgraph WRITE1["② ChatService：先持久化用户消息"]
+        RL --> ID["按 tenantId + clientMessageId 查询幂等记录"]
+        ID --> DUP{"已处理过?"}
+        DUP -- "是" --> EXISTING["返回原 Conversation + Messages<br/>不重复生成答案"]
+        DUP -- "否" --> TX1["PostgreSQL 事务"]
+        TX1 --> CU["Upsert Customer<br/>tenantId + visitorId"]
+        CU --> CV["校验/创建 Conversation<br/>tenant + customer scoped"]
+        CV --> SAVE["写入 CUSTOMER Message"]
+        SAVE --> HS1{"会话为 PENDING_HUMAN / ASSIGNED?"}
+        HS1 -- "是" --> HUMANWAIT["仅保存消息；assistantMessage = null<br/>AI 保持暂停"]
+        HS1 -- "否" --> CTX["读取 AgentConfig、ConversationState<br/>兼容 legacy metadata.rag，并取最近 8 轮"]
+    end
 
-    CTX --> CLASS["ConversationContextService<br/>clarification reply / follow-up / new question / greeting / thanks"]
-    CLASS --> PEND["Read non-expired pendingClarification"]
-    CLASS --> PC["Read productContext from ConversationState<br/>or legacy metadata fallback"]
-    PEND --> EQ["Build effectiveQuestion"]
-    PC --> EQ
-    EQ --> NQ["Normalize terms, phrases, synonyms, model codes<br/>word-boundary intent + controlled model transposition<br/>hidden product-context terms for follow-ups"]
+    subgraph UNDERSTAND["③ 对话理解与 Query Normalisation"]
+        CTX --> CLASS["ConversationContextService<br/>加载 tenant-configurable conversationRouting<br/>分类：问候 / 社交 / 感谢 / 确认 / 新问题 / 追问 / 澄清回复 / 人工请求"]
+        CLASS --> ROUTE{"会话型 turn？<br/>问候 / 社交 / 感谢 / 确认"}
+        ROUTE -- "是" --> CONV["AssistantReplyService 直接会话回复<br/>跳过 RAG；0 citations；保留 pendingClarification"]
+        ROUTE -- "否" --> PEND["读取未过期 pendingClarification"]
+        ROUTE -- "否" --> PC["读取 productContext<br/>ConversationState → ProductCatalog → legacy fallback"]
+        PEND --> EQ["构造 effectiveQuestion<br/>澄清回复拼回原问题；追问携带隐藏产品上下文"]
+        PC --> EQ
+        EQ --> NQ["标准化关键词、短语、同义词、意图、型号<br/>词边界匹配 + 仅型号允许相邻字符换位"]
+    end
 
-    NQ --> ACTIVE["Active knowledge filter<br/>tenantId + KnowledgeDocument READY + KnowledgeChunk READY"]
-    ACTIVE --> KWPOOL["Keyword pool<br/>bounded to 400"]
-    ACTIVE --> SEMPOOL["Semantic pool<br/>bounded to 400"]
-    KWPOOL --> KWRANK["Score then Keyword Top-20"]
-    SEMPOOL --> LOCALV["Local sparse semantic vector cosine<br/>no external vector DB"]
-    LOCALV --> VRANK["Vector Top-20"]
-    KWPOOL --> PRODUCTS["Discover product/model scopes<br/>across bounded pool"]
-    PRODUCTS --> AMB{"Generic product action has multiple scopes?"}
+    subgraph RAG["④ Tenant-scoped Hybrid RAG 检索"]
+        NQ --> ACTIVE["Prisma 强制过滤<br/>tenantId + Document READY + Chunk READY"]
+        ACTIVE --> KWPOOL["Keyword Candidate Pool ≤ 400<br/>内容/标题 contains"]
+        ACTIVE --> SEMPOOL["Semantic Candidate Pool ≤ 400"]
+        KWPOOL --> KWRANK["词法评分 → Keyword Top-20"]
+        SEMPOOL --> LOCALV["本地稀疏语义向量 + cosine<br/>无外部 Vector DB / 无神经 embedding"]
+        LOCALV --> VRANK["Vector Top-20"]
+        KWPOOL --> PRODUCTS["从候选元数据发现产品/型号 scopes"]
+        PRODUCTS --> AMB{"通用产品动作命中多个 scope?"}
+        AMB -- "是" --> CLARIFY["生成确定性产品澄清问题<br/>保存 pendingClarification（含 TTL）"]
+        CLARIFY --> TXC["写入 Assistant 澄清消息<br/>Conversation = AWAITING_CUSTOMER"]
+        AMB -- "否" --> MERGE["合并并按 chunkId 去重"]
+        KWRANK --> MERGE
+        VRANK --> MERGE
+        MERGE --> WEIGHT["最终分数<br/>Keyword 45% + Semantic 35% + Metadata 15% + Exact 5%"]
+        WEIGHT --> SCOPE["应用已解析产品 scope + intent 过滤"]
+        SCOPE --> TOP["来源多样化 Final Top-3"]
+        TOP --> CONF{"弱证据需要抑制?<br/>score &lt; 0.55，或 coverage/intent 不足且无 scope"]
+    end
 
-    AMB -- "Yes" --> CLARIFY["Ask product clarification<br/>persist pendingClarification"]
-    CLARIFY --> RESP["Return persisted response"]
-    AMB -- "No" --> MERGE["Merge and dedupe candidates"]
-    KWRANK --> MERGE
-    VRANK --> MERGE
-    MERGE --> WEIGHT["Final score<br/>keyword 45% + semantic 35% + metadata 15% + exact 5%"]
-    WEIGHT --> SCOPE["Apply resolved product scope"]
-    SCOPE --> TOP["Diverse Final Top-3"]
-    TOP --> CONF{"Confidence >= 0.55?"}
+    subgraph ANSWER["⑤ 答案生成、Grounding 与 Citation 校验"]
+        CONF -- "是 / 无 chunk" --> SAFE["Deterministic 安全缺口回复<br/>不调用 OpenAI；0 citations"]
+        CONF -- "否" --> PROVIDER{"LlmProviderResolver<br/>AI_PROVIDER"}
+        PROVIDER -- "deterministic" --> DET["AssistantReplyService<br/>仅从 Top-3 选取 grounded sentences"]
+        PROVIDER -- "openai" --> PROMPT["buildOpenAiPrompt<br/>平台安全规则 + Tenant AI Profile<br/>Top-3 chunks + 最近 8 轮 + effectiveQuestion"]
+        PROMPT --> MODEL["OpenAI Responses API<br/>要求 JSON：answer + usedChunkIds"]
+        MODEL --> VALID{"JSON 有效且 usedChunkIds<br/>全部属于后端选定 Top-3?"}
+        VALID -- "否 / timeout / 429 / auth / provider error" --> FALLBACK["回退 Deterministic Provider"]
+        VALID -- "是" --> CIT["后端仅用 used chunks 构建 citations<br/>title / URI / locator / excerpt / score"]
+        DET --> RECHECK
+        CONV --> RECHECK
+        SAFE --> RECHECK
+        FALLBACK --> RECHECK
+        CIT --> RECHECK{"Provider 返回后再次读取会话<br/>期间是否已进入人工模式?"}
+    end
 
-    CONF -- "No" --> SAFE["Deterministic knowledge-miss reply<br/>zero citations"]
-    CONF -- "Yes" --> PROMPT["OpenAI prompt<br/>selected chunks + last 8 turns<br/>KB-only JSON answer + usedChunkIds"]
-    PROMPT --> MODEL["OpenAI Responses API"]
-    MODEL --> VALID{"Valid JSON and usedChunkIds<br/>belong to selected evidence?"}
-    VALID -- "No" --> FALLBACK["Safe deterministic fallback"]
-    VALID -- "Yes" --> CIT["Build citations only from used selected chunks"]
-    SAFE --> TX2["Persist assistant message + retrieval diagnostics"]
-    FALLBACK --> TX2
-    CIT --> TX2
-    TX2 --> RAGMETA["Update ConversationState + legacy metadata<br/>upsert ProductCatalog for resolved product scope"]
-    RAGMETA --> RESP
-    RESP --> W
+    subgraph WRITE2["⑥ 保存答案并返回 Widget"]
+        RECHECK -- "是" --> DISCARD["丢弃生成结果；不写 Assistant 消息<br/>保持人工模式"]
+        RECHECK -- "否" --> TX2["PostgreSQL 事务：写 Assistant Message<br/>content + citations + retrieval/provider diagnostics"]
+        TX2 --> STATE["更新 ConversationState / ProductCatalog<br/>同步或清空 legacy metadata.rag"]
+        STATE --> STATUS["Conversation = AWAITING_CUSTOMER<br/>更新 lastMessageAt"]
+        STATUS --> RESP["返回完整 SendChatMessageResponse<br/>Conversation + customerMessage + assistantMessage + messages"]
+        TXC --> RESP
+        EXISTING --> RESP
+        HUMANWAIT --> RESP
+        DISCARD --> RESP
+        RESP --> RENDER["Widget 更新 React state、保存 conversationId<br/>渲染答案与 citations"]
+        RENDER --> SSE["EventSource：customer_conversation_snapshot<br/>API 每 2 秒查询 tenant + visitor scoped snapshot"]
+        SSE --> RESTORE["刷新后用本地 session/conversationId 恢复历史"]
+    end
 
-    W --> SSE["Customer SSE snapshot stream"]
-    SSE --> RESTORE["Restore messages after refresh"]
+    KB[("PostgreSQL<br/>Tenant / Customer / Conversation / Message<br/>KnowledgeBase / Document / Chunk<br/>ConversationState / ProductCatalog")]
+    ACTIVE <--> KB
+    TX1 <--> KB
+    TX2 <--> KB
+    STATE <--> KB
 
-    W --> HR["Request human support"]
-    HR --> PENDING["PENDING_HUMAN"]
-    PENDING --> CLAIM["Agent atomically claims conversation"]
-    CLAIM --> ASSIGNED["ASSIGNED"]
-    ASSIGNED --> REPLY["Agent reply"]
-    REPLY --> SSE
-    ASSIGNED --> END["End human support"]
-    END --> OPEN["OPEN / AI available"]
+    NOTE["当前真实边界：在线答复在 apps/api 同步完成；<br/>apps/ai-worker 目前仅启动并声明计划队列，不参与这条在线回答链路。"]
+    NOTE -.-> PROVIDER

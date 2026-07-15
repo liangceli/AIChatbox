@@ -285,6 +285,65 @@ async function testGreetingDoesNotConsumePendingClarification() {
   assert.equal(resumed.productContext?.productName, "KMREM");
 }
 
+async function testSocialTurnSkipsRetrievalAndPreservesPendingClarification() {
+  const service = createRetrievalService([
+    productCandidate("kmrem", "KMREM", "Question: How is KMREM paired?\nAnswer: Use the QR code in the app."),
+    productCandidate("remote", "Bluetooth remote", "Question: How is the remote paired?\nAnswer: Hold two buttons.")
+  ]);
+  const first = await service.resolveRetrievalDecision(tenant, "how do I pair a device?");
+  const social = await service.resolveRetrievalDecision(tenant, "How are you?", {
+    rag: {
+      pendingClarification: first.pendingClarification
+    }
+  });
+
+  assert.equal(social.mode, "answer");
+  assert.equal(social.turnType, "social");
+  assert.equal(social.retrievedChunks.length, 0);
+  assert.equal(social.retrievalMetadata.retrievalSkipped, true);
+  assert.equal(social.retrievalMetadata.skipReason, "conversational_turn");
+  assert.deepEqual(social.pendingClarification, first.pendingClarification);
+}
+
+async function testTenantRoutingPolicyExtendsConversationClassificationWithoutProductBranches() {
+  const service = createRetrievalService([]);
+  const decision = await service.resolveRetrievalDecision(
+    tenant,
+    "custom courtesy signal",
+    undefined,
+    3,
+    {
+      conversationRouting: {
+        socialPhrases: ["custom courtesy signal"],
+        responses: {
+          social: "Configured conversational reply."
+        }
+      }
+    }
+  );
+
+  assert.equal(decision.turnType, "social");
+  assert.equal(decision.retrievalMetadata.retrievalSkipped, true);
+  assert.equal(decision.conversationReply, "Configured conversational reply.");
+}
+
+async function testAcknowledgementPreservesPendingClarification() {
+  const service = createRetrievalService([
+    productCandidate("kmrem", "KMREM", "Question: How is KMREM paired?\nAnswer: Use the QR code in the app."),
+    productCandidate("remote", "Bluetooth remote", "Question: How is the remote paired?\nAnswer: Hold two buttons.")
+  ]);
+  const first = await service.resolveRetrievalDecision(tenant, "how do I pair a device?");
+  const acknowledgement = await service.resolveRetrievalDecision(tenant, "Got it", {
+    rag: {
+      pendingClarification: first.pendingClarification
+    }
+  });
+
+  assert.equal(acknowledgement.turnType, "acknowledgement");
+  assert.equal(acknowledgement.retrievalMetadata.retrievalSkipped, true);
+  assert.deepEqual(acknowledgement.pendingClarification, first.pendingClarification);
+}
+
 async function testShortModelReplyResolvesOpenPendingClarification() {
   const service = createRetrievalService([
     productCandidate("kmrem", "KMREM", "Device/Scope: KMREM\nQuestion: How is KMREM paired?\nAnswer: Use the QR code or 11-digit setup code in the app."),
@@ -650,6 +709,9 @@ async function run() {
   await testTransposedShortModelReplyResolvesPendingClarification();
   await testMultipleModelCodeEditsDoNotResolvePendingClarification();
   await testGreetingDoesNotConsumePendingClarification();
+  await testSocialTurnSkipsRetrievalAndPreservesPendingClarification();
+  await testTenantRoutingPolicyExtendsConversationClassificationWithoutProductBranches();
+  await testAcknowledgementPreservesPendingClarification();
   await testShortModelReplyResolvesOpenPendingClarification();
   await testTransposedShortModelReplyResolvesOpenPendingClarification();
   await testConversationProductContextScopesShortFollowup();

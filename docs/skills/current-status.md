@@ -1,5 +1,17 @@
 # Current Status
 
+## 2026-07-15 Conversation intent routing increment
+
+- Complete: conversational messages are classified before RAG, preserve pending product clarification state, and are reported in Answer Debug as retrieval-skipped rather than knowledge misses.
+- Complete: tenant-configurable routing phrases/replies are read from `AgentConfig.metadata.conversationRouting`; no product-specific or tenant-specific branch was added to platform core.
+- Complete: API typecheck and full API test suite pass. Browser acceptance of the updated Answer Debug labels remains a manual local check.
+
+## 2026-07-15 Editable Chat Architecture Baseline
+
+- `docs/architecture/current-chat-system-flow.mmd` and its Markdown Mermaid block now describe the current Widget-to-answer runtime in detail and remain byte-for-byte synchronized after trimming.
+- `docs/architecture/current-chat-system-flow.drawio` is the editable three-page visual source: clean main flow, detailed RAG/answer flow, and component/data boundaries. Long cross-phase return lines were removed in favor of local terminal branches.
+- The architecture baseline explicitly marks `apps/api` as the current synchronous online/ingestion runtime and `apps/ai-worker` as planned-only for those paths.
+
 ## 2026-07-13 Reproducible Lifecycle and State Safety
 
 - Forward migration `20260713000000_fix_knowledge_chunk_version_index` is applied locally and removes the initial version-blind chunk unique index.

@@ -41,14 +41,18 @@ export class AnswerDebugService {
       throw new BadRequestException("Debug question cannot be empty.");
     }
 
-    const [retrievalDecision, agentConfig] = await Promise.all([
-      this.knowledgeRetrievalService.resolveRetrievalDecision(tenant, question),
-      this.prisma.client.agentConfig.findUnique({
-        where: {
-          tenantId: tenant.id
-        }
-      })
-    ]);
+    const agentConfig = await this.prisma.client.agentConfig.findUnique({
+      where: {
+        tenantId: tenant.id
+      }
+    });
+    const retrievalDecision = await this.knowledgeRetrievalService.resolveRetrievalDecision(
+      tenant,
+      question,
+      undefined,
+      3,
+      agentConfig?.metadata
+    );
 
     if (retrievalDecision.mode === "clarification") {
       return this.buildClarificationResult(tenant, question, retrievalDecision);
@@ -79,7 +83,8 @@ export class AnswerDebugService {
       latestCustomerMessage: retrievalDecision.effectiveQuestion,
       retrievedChunks: retrievalDecision.retrievedChunks,
       noKnowledgeEvidence,
-      turnType: retrievalDecision.turnType
+      turnType: retrievalDecision.turnType,
+      conversationReply: retrievalDecision.conversationReply
     });
 
     return this.buildResult(tenant, question, provider.name, retrievalDecision, response);
@@ -94,6 +99,7 @@ export class AnswerDebugService {
   ): AnswerDebugResult {
     const retrievedChunks = retrievalDecision.retrievedChunks;
     const citations = this.sanitizeCitations(response.citations);
+    const retrievalSkipped = retrievalDecision.retrievalMetadata?.retrievalSkipped ?? false;
     const hasKnowledge = retrievedChunks.length > 0;
     const retrievalConfidence = this.resolveRetrievalConfidence(retrievalDecision, citations.length);
 
@@ -104,16 +110,31 @@ export class AnswerDebugService {
       },
       question,
       answer: response.content,
-      answerSource: this.resolveAnswerSource(hasKnowledge, citations.length, response.metadata),
+      answerSource: this.resolveAnswerSource(
+        hasKnowledge,
+        citations.length,
+        response.metadata,
+        retrievalSkipped
+      ),
       knowledge: {
-        outcome: hasKnowledge ? "hit" : "miss",
+        outcome: retrievalSkipped ? "skipped" : hasKnowledge ? "hit" : "miss",
         retrievalConfidence,
-        reason: this.resolveKnowledgeReason(hasKnowledge, citations.length, response.metadata),
+        reason: this.resolveKnowledgeReason(
+          hasKnowledge,
+          citations.length,
+          response.metadata,
+          retrievalSkipped
+        ),
         retrievedChunkCount: retrievedChunks.length,
         citationCount: citations.length,
         sourceDiversity: new Set(retrievedChunks.map((chunk) => chunk.knowledgeDocumentId)).size,
         warnings: [
-          ...this.buildKnowledgeWarnings(retrievedChunks, citations.length, response.metadata),
+          ...this.buildKnowledgeWarnings(
+            retrievedChunks,
+            citations.length,
+            response.metadata,
+            retrievalSkipped
+          ),
           ...retrievalDecision.warnings
         ],
         detection: this.buildDetectionSummary(retrievalDecision),
@@ -212,8 +233,13 @@ export class AnswerDebugService {
   private resolveAnswerSource(
     hasKnowledge: boolean,
     citationCount: number,
-    metadata: LlmProviderMetadata
+    metadata: LlmProviderMetadata,
+    retrievalSkipped: boolean
   ): AnswerDebugResult["answerSource"] {
+    if (retrievalSkipped) {
+      return "conversation";
+    }
+
     if (!hasKnowledge) {
       return "knowledge_miss";
     }
@@ -228,8 +254,13 @@ export class AnswerDebugService {
   private resolveKnowledgeReason(
     hasKnowledge: boolean,
     citationCount: number,
-    metadata: LlmProviderMetadata
+    metadata: LlmProviderMetadata,
+    retrievalSkipped: boolean
   ): string {
+    if (retrievalSkipped) {
+      return "A conversational turn was handled without knowledge retrieval.";
+    }
+
     if (!hasKnowledge) {
       return "No relevant READY knowledge chunks met the retrieval threshold.";
     }
@@ -273,16 +304,24 @@ export class AnswerDebugService {
       confidenceReason: retrievalDecision.confidence.reason,
       confidenceBestScore: retrievalDecision.confidence.bestScore,
       confidenceBestCoverage: retrievalDecision.confidence.bestCoverage,
-      clarificationOptions: retrievalDecision.ambiguity.options
+      clarificationOptions: retrievalDecision.ambiguity.options,
+      turnType: retrievalDecision.turnType,
+      retrievalSkipped: retrievalDecision.retrievalMetadata?.retrievalSkipped ?? false,
+      skipReason: retrievalDecision.retrievalMetadata?.skipReason
     };
   }
 
   private buildKnowledgeWarnings(
     retrievedChunks: LlmRetrievedKnowledgeChunk[],
     citationCount: number,
-    metadata: LlmProviderMetadata
+    metadata: LlmProviderMetadata,
+    retrievalSkipped: boolean
   ): string[] {
     const warnings: string[] = [];
+
+    if (retrievalSkipped) {
+      return warnings;
+    }
 
     if (retrievedChunks.length === 0) {
       warnings.push("No READY knowledge chunks met the retrieval threshold.");

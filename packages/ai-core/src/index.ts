@@ -48,6 +48,7 @@ export interface LlmProviderRequest {
   retrievedChunks: LlmRetrievedKnowledgeChunk[];
   noKnowledgeEvidence?: boolean;
   turnType?: string;
+  conversationReply?: string;
 }
 
 export interface LlmProviderMetadata {

@@ -1,5 +1,22 @@
 # AI Chatbox Skill
 
+## 2026-07-15 Conversation Intent Routing
+
+- `ConversationContextService` now routes conversational turns before Hybrid RAG: `greeting`, `social`, `thanks`, and `acknowledgement` receive a deterministic conversational reply with no knowledge retrieval and zero citations.
+- Routing keeps `pendingClarification` intact, so a courtesy interruption cannot discard a product/model clarification that is waiting for a later reply.
+- The platform baseline remains tenant-neutral. Operators may extend phrase sets and reply copy through `AgentConfig.metadata.conversationRouting` (`greetingPhrases`, `socialPhrases`, `thanksPhrases`, `acknowledgementPhrases`, `followUpPhrases`, `humanRequestPhrases`, and `responses`); do not add customer/product branches to core code.
+- Answer Debug distinguishes a conversation reply from a knowledge miss with `turnType`, `retrievalSkipped`, and `skipReason: conversational_turn`.
+- Architecture sources `docs/architecture/current-chat-system-flow.mmd`, `.md`, and `.drawio` are synchronized. In the Draw.io file, this increment is red so the current routing changes remain traceable.
+
+## 2026-07-15 Editable Current Architecture Diagram
+
+- The canonical current chat architecture now has three synchronized views: Mermaid source in `docs/architecture/current-chat-system-flow.mmd`, rendered Markdown in `docs/architecture/current-chat-system-flow.md`, and an editable three-page diagrams.net file in `docs/architecture/current-chat-system-flow.drawio`.
+- Page 1 is the clean online spine from Widget session/bootstrap through guards, idempotent user-message persistence, the answer engine, the post-provider human-mode recheck, answer persistence, Widget rendering, and SSE restore. Branches terminate locally instead of drawing long return lines across phases.
+- Page 2 expands conversation context, query normalization, hybrid retrieval, product clarification, evidence gating, provider resolution, OpenAI grounding validation, deterministic fallback, and backend citations.
+- Page 3 separates browser apps, NestJS API modules, shared packages, PostgreSQL/browser state, OpenAI, synchronous knowledge ingestion, and the current `ai-worker` boundary.
+- Do not draw `apps/ai-worker` as participating in the current online answer or ingestion path: it currently boots and records planned queues only.
+- When the runtime flow changes, keep the Mermaid block, `.mmd`, and `.drawio` semantics aligned; planned queues, neural embeddings, and an external vector database must remain explicitly marked as unimplemented until code exists.
+
 ## 2026-07-13 Product Context Reset Invariant
 
 - Persisted product context is continuity state, not permanent conversation identity.

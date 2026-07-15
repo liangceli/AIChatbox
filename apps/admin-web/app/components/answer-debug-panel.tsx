@@ -97,6 +97,7 @@ export function AnswerDebugPanel({
             <DebugFact label="Requested provider" value={result.provider.requestedMode} />
             <DebugFact label="Used provider" value={result.provider.usedMode} />
             <DebugFact label="Fallback" value={result.provider.usedFallback ? "Yes" : "No"} />
+            <DebugFact label="Turn type" value={result.knowledge.detection?.turnType ?? "new_question"} />
             <DebugFact label="Confidence" value={result.knowledge.retrievalConfidence} />
             <DebugFact label="Retrieved chunks" value={String(result.knowledge.retrievedChunkCount)} />
             <DebugFact label="Citations" value={String(result.knowledge.citationCount)} />
@@ -131,6 +132,9 @@ export function AnswerDebugPanel({
                   ? formatKnowledgeMetadata(result.knowledge.detection.productContext)
                   : "none"}
               </small>
+              {result.knowledge.detection.retrievalSkipped ? (
+                <small>Retrieval: skipped ({result.knowledge.detection.skipReason ?? "conversational_turn"})</small>
+              ) : null}
               {result.knowledge.detection.confidenceBestScore !== undefined ? (
                 <small>
                   Best score: {result.knowledge.detection.confidenceBestScore}
@@ -175,6 +179,10 @@ export function AnswerDebugPanel({
                 <DebugFact
                   label="Hybrid confidence"
                   value={result.knowledge.retrieval.confidence.toFixed(4)}
+                />
+                <DebugFact
+                  label="Retrieval"
+                  value={result.knowledge.retrieval.retrievalSkipped ? "skipped" : "executed"}
                 />
               </div>
               <small>Effective question: {result.knowledge.retrieval.effectiveQuestion}</small>
@@ -326,6 +334,8 @@ function formatKnowledgeOutcome(outcome: AnswerDebugResult["knowledge"]["outcome
       return "Knowledge hit";
     case "clarification":
       return "Clarification";
+    case "skipped":
+      return "Conversation reply";
     default:
       return "Knowledge miss";
   }

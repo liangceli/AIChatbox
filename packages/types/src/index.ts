@@ -394,6 +394,8 @@ export interface HybridRetrievalDebug {
   scores: HybridRetrievalDebugScore[];
   confidence: number;
   noKnowledgeEvidence: boolean;
+  retrievalSkipped: boolean;
+  skipReason?: "conversational_turn";
   ambiguity: {
     detected: boolean;
     candidateProductNames: string[];
@@ -408,13 +410,14 @@ export interface AnswerDebugResult {
   question: string;
   answer: string;
   answerSource:
+    | "conversation"
     | "knowledge_hit"
     | "knowledge_miss"
     | "clarification"
     | "provider_fallback"
     | "retrieval_hit_without_citations";
   knowledge: {
-    outcome: "hit" | "miss" | "clarification";
+    outcome: "hit" | "miss" | "clarification" | "skipped";
     retrievalConfidence: "strong" | "weak" | "none";
     reason: string;
     retrievedChunkCount: number;
@@ -428,6 +431,9 @@ export interface AnswerDebugResult {
       confidenceBestScore?: number;
       confidenceBestCoverage?: number;
       clarificationOptions?: string[];
+      turnType?: string;
+      retrievalSkipped?: boolean;
+      skipReason?: "conversational_turn";
     };
     ambiguity?: {
       isAmbiguous: boolean;

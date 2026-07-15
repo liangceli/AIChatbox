@@ -1,6 +1,12 @@
 # Status
 
-Date: 2026-07-13
+Date: 2026-07-15
+
+Latest completed capability: editable current chat architecture documentation.
+- Re-audited the end-to-end Widget-to-answer flow against the current working tree.
+- Updated the synchronized Mermaid source/preview and added a three-page editable diagrams.net file covering the clean online spine, detailed RAG/provider grounding, and component/data boundaries. Long cross-phase return lines were removed to keep the editable diagram legible.
+- The diagram records the actual security, idempotency, conversation-state, hybrid retrieval, confidence, provider fallback, citation validation, human-mode concurrency, persistence, SSE, and restore paths.
+- Planned worker queues, neural embeddings, and an external vector database are not shown as implemented.
 
 Latest completed capability: reproducible knowledge versioning and state/log safety closeout.
 - Added and locally applied forward migration `20260713000000_fix_knowledge_chunk_version_index`.

@@ -312,7 +312,9 @@ export class ChatService {
     const retrievalDecision = await this.knowledgeRetrievalService.resolveRetrievalDecision(
       tenant,
       normalizedMessage,
-      retrievalContext
+      retrievalContext,
+      3,
+      preparedMessage.agentConfig?.metadata
     );
 
     if (retrievalDecision.mode === "clarification") {
@@ -452,7 +454,8 @@ export class ChatService {
       latestCustomerMessage: retrievalDecision.effectiveQuestion,
       retrievedChunks,
       noKnowledgeEvidence,
-      turnType: retrievalDecision.turnType
+      turnType: retrievalDecision.turnType,
+      conversationReply: retrievalDecision.conversationReply
     });
 
     return this.prisma.client.$transaction(async (tx) => {
@@ -513,6 +516,7 @@ export class ChatService {
               confidence: retrievalDecision.confidence,
               warnings: retrievalDecision.warnings,
               turnType: retrievalDecision.turnType,
+              retrievalSkipped: retrievalDecision.retrievalMetadata?.retrievalSkipped ?? false,
               noKnowledgeEvidence,
               hybrid: retrievalDecision.retrievalMetadata
             },
